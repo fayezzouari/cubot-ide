@@ -17,6 +17,7 @@ import {
   Home,
   Plus,
   MoreVertical,
+  Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -92,6 +93,9 @@ export default function IDEPage() {
   const [selectedFile, setSelectedFile] = useState<string | null>('2');
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [fileContents, setFileContents] = useState<Record<string, string>>(mockFileContents);
+  const [editedContent, setEditedContent] = useState<string>('');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const handleSendMessage = () => {
     if (!chatInput.trim()) return;
@@ -119,10 +123,44 @@ export default function IDEPage() {
     }, 1000);
   };
 
-  const currentFileContent = selectedFile ? mockFileContents[selectedFile] : null;
+  const handleFileSelect = (fileId: string) => {
+    // Save current changes before switching if there are any
+    if (hasUnsavedChanges && selectedFile) {
+      const confirmSwitch = window.confirm('You have unsaved changes. Do you want to discard them?');
+      if (!confirmSwitch) return;
+    }
+    
+    setSelectedFile(fileId);
+    setEditedContent(fileContents[fileId] || '');
+    setHasUnsavedChanges(false);
+  };
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditedContent(e.target.value);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSaveFile = () => {
+    if (selectedFile) {
+      setFileContents(prev => ({
+        ...prev,
+        [selectedFile]: editedContent,
+      }));
+      setHasUnsavedChanges(false);
+      // TODO: Call API to save file to backend
+      // useProject().updateFile(selectedFile, editedContent);
+    }
+  };
+
+  const currentFileContent = selectedFile ? fileContents[selectedFile] : null;
   const currentFileName = selectedFile 
     ? mockFileTree.flatMap(f => f.type === 'folder' && f.children ? f.children : [f]).find(f => f.id === selectedFile)?.name 
     : null;
+
+  // Initialize edited content when file is selected
+  if (selectedFile && editedContent === '' && currentFileContent) {
+    setEditedContent(currentFileContent);
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
@@ -173,7 +211,7 @@ export default function IDEPage() {
                   key={node.id} 
                   node={node}
                   selectedFile={selectedFile}
-                  onSelectFile={setSelectedFile}
+                  onSelectFile={handleFileSelect}
                 />
               ))}
             </div>
@@ -184,29 +222,40 @@ export default function IDEPage() {
         <main className="flex-1 flex flex-col overflow-hidden">
           {/* Tabs */}
           {currentFileName && (
-            <div className="h-10 border-b-2 border-foreground flex items-center px-2">
+            <div className="h-10 border-b-2 border-foreground flex items-center justify-between px-2">
               <div className="flex items-center gap-2 px-3 py-1 bg-muted border-2 border-foreground">
                 <File size={12} />
-                <span className="text-sm font-bold">{currentFileName}</span>
+                <span className="text-sm font-bold">
+                  {currentFileName}
+                  {hasUnsavedChanges && <span className="ml-1 text-amber-500">*</span>}
+                </span>
               </div>
+              <Button
+                onClick={handleSaveFile}
+                size="sm"
+                variant="outline"
+                className="border-2 border-foreground font-black h-7"
+                disabled={!hasUnsavedChanges}
+              >
+                <Save size={14} className="mr-1" />
+                SAVE
+              </Button>
             </div>
           )}
           
           {/* Code Editor / Logo Display */}
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-hidden">
             {currentFileContent ? (
-              <div className="p-4 font-mono text-sm">
-                <pre className="whitespace-pre-wrap">
-                  {currentFileContent.split('\n').map((line, i) => (
-                    <div key={i} className="flex">
-                      <span className="w-10 text-right pr-4 text-muted-foreground select-none">
-                        {i + 1}
-                      </span>
-                      <code>{line}</code>
-                    </div>
-                  ))}
-                </pre>
-              </div>
+              <textarea
+                value={editedContent}
+                onChange={handleContentChange}
+                className="w-full h-full p-4 font-mono text-sm bg-background text-foreground border-none outline-none resize-none"
+                spellCheck={false}
+                style={{
+                  tabSize: 2,
+                  lineHeight: '1.5',
+                }}
+              />
             ) : (
               <div className="h-full flex items-center justify-center">
                 <div className="text-center">

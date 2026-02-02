@@ -2,6 +2,7 @@ import React from "react"
 import type { Metadata } from 'next'
 import { Space_Grotesk, IBM_Plex_Serif, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { ProjectProvider } from '@/contexts/project-context'
 import './globals.css'
 
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: '--font-sans' });
@@ -39,7 +40,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${ibmPlexSerif.variable} ${jetbrainsMono.variable}`}>
       <body className={`font-sans antialiased`}>
-        {children}
+        <ProjectProvider>
+          {children}
+        </ProjectProvider>
         <Analytics />
       </body>
     </html>
