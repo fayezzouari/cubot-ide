@@ -15,7 +15,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "strict": true,
     "baseUrl": ".",
     "paths": {
@@ -27,13 +27,16 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "allowJs": true,
+    "incremental": true
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

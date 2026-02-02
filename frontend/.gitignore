@@ -31,5 +31,5 @@ Thumbs.db
 # Build
 *.tsbuildinfo
 
-backend/core/__pycache__/
+backend/core/__pycache__
 backend/core/*.pyc
