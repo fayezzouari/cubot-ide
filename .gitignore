@@ -1,0 +1,13 @@
+frontend/node_modules/
+backend/venv
+backend/__pycache__/
+backend/*.pyc
+backend/services/__pycache__
+backend/services/*.pyc
+backend/routes/__pycache__
+backend/routes/*.pyc
+backend/models/__pycache__
+backend/models/*.pyc
+backend/controllers/__pycache__
+backend/controllers/*.pyc
+frontend/.next/
