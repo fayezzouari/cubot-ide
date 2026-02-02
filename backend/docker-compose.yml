@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # MongoDB database
+  mongodb:
+    image: mongo:7.0
+    container_name: cubot-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-cubot}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-cubot_secret}
+      MONGO_INITDB_DATABASE: cubot_ide
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - cubot-network
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cubot-backend
+    restart: unless-stopped
+    environment:
+      - MONGODB_URI=mongodb://${MONGO_USER:-cubot}:${MONGO_PASSWORD:-cubot_secret}@mongodb:27017/cubot_ide?authSource=admin
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-gpt-oss-120-v1:0}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongodb
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - cubot-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  cubot-network:
+    driver: bridge

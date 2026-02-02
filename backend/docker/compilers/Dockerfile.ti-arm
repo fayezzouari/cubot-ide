@@ -1,0 +1,18 @@
+# Minimal TI ARM compiler container
+FROM alpine:3.18
+
+# Install ARM GCC toolchain
+RUN apk add --no-cache \
+    gcc-arm-none-eabi \
+    newlib-arm-none-eabi \
+    make \
+    cmake
+
+# Create non-root user
+RUN adduser -D -u 1000 compiler
+USER compiler
+
+WORKDIR /src
+
+# Default command
+CMD ["arm-none-eabi-gcc", "--version"]

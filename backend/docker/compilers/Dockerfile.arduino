@@ -1,0 +1,29 @@
+# Minimal Arduino compiler container
+FROM alpine:3.18
+
+# Install dependencies and Arduino CLI
+RUN apk add --no-cache \
+    bash \
+    curl \
+    python3 \
+    py3-pip \
+    ca-certificates
+
+# Download and install Arduino CLI
+RUN curl -fsSL https://downloads.arduino.cc/arduino-cli/arduino-cli_0.34.2_Linux_64bit.tar.gz -o /tmp/arduino-cli.tar.gz \
+    && tar -xzf /tmp/arduino-cli.tar.gz -C /usr/local/bin \
+    && rm /tmp/arduino-cli.tar.gz \
+    && chmod +x /usr/local/bin/arduino-cli
+
+# Install Arduino AVR core
+RUN arduino-cli core update-index \
+    && arduino-cli core install arduino:avr
+
+# Create non-root user
+RUN adduser -D -u 1000 compiler
+USER compiler
+
+WORKDIR /src
+
+# Default command
+CMD ["arduino-cli", "version"]

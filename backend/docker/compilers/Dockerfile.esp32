@@ -1,0 +1,16 @@
+# ESP32 IDF compiler container
+# Using official ESP-IDF image for reliability
+FROM espressif/idf:v5.1.2
+
+# Create non-root user
+RUN useradd -m -u 1000 compiler
+
+# Set up IDF environment
+ENV IDF_PATH=/opt/esp/idf
+ENV PATH="${IDF_PATH}/tools:${PATH}"
+
+USER compiler
+WORKDIR /src
+
+# Default command
+CMD ["idf.py", "--version"]
