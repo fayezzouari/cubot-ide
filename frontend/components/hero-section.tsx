@@ -1,8 +1,14 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Cpu, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import WorkspaceModal from '@/components/workspace-modal';
 
 export default function HeroSection() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   return (
     <section className="pt-32 pb-20 px-6 bg-background min-h-screen flex flex-col justify-center">
       <div className="max-w-5xl mx-auto w-full">
@@ -23,10 +29,13 @@ export default function HeroSection() {
 
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row gap-6 items-start">
-          <Button className="px-8 py-4 bg-primary border-4 border-foreground text-primary-foreground font-black text-base">
-            START BUILDING
-            <ArrowRight size={20} className="ml-2" />
-          </Button>
+            <Button
+              onClick={() => setIsModalOpen(true)}
+              className="px-8 py-4 bg-primary border-4 border-foreground text-primary-foreground font-black text-base cursor-pointer hover:bg-muted hover:text-black transition-all flex items-center"
+            >
+              START BUILDING
+              <ArrowRight size={20} className="ml-2" />
+            </Button>
           <a
             href="https://github.com"
             target="_blank"
@@ -36,6 +45,9 @@ export default function HeroSection() {
             VIEW ON GITHUB
           </a>
         </div>
+
+        {/* Workspace Selection Modal */}
+        <WorkspaceModal open={isModalOpen} onOpenChange={setIsModalOpen} />
       </div>
 
       {/* Raw Code Preview Box */}
