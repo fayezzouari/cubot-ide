@@ -2,9 +2,11 @@ import asyncio
 import tempfile
 import os
 import shutil
+import subprocess
 from typing import Optional, Dict, Any
 from datetime import datetime
 import docker
+from docker.errors import DockerException
 from docker.errors import ContainerError, ImageNotFound, APIError
 
 from core.config import settings
@@ -26,17 +28,36 @@ class CompilerService:
     def _get_client(self) -> docker.DockerClient:
         """Get Docker client (lazy initialization)"""
         if self.client is None:
-            self.client = docker.from_env()
+            try:
+                docker_host = os.environ.get("DOCKER_HOST")
+                if docker_host and docker_host.startswith("http+docker"):
+                    docker_host = "unix:///var/run/docker.sock"
+                if docker_host:
+                    self.client = docker.DockerClient(base_url=docker_host)
+                else:
+                    self.client = docker.from_env()
+            except DockerException:
+                # Fallback to default local socket
+                self.client = docker.DockerClient(base_url="unix:///var/run/docker.sock")
         return self.client
     
     async def check_docker_available(self) -> bool:
         """Check if Docker is available"""
         try:
-            client = self._get_client()
-            client.ping()
-            return True
-        except Exception:
-            return False
+            if shutil.which("docker") is None:
+                return False
+            result = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return True
+            print(f"Docker CLI unavailable: {result.stderr.strip()}")
+        except Exception as cli_error:
+            print(f"Docker CLI check failed: {cli_error}")
+        return False
     
     async def pull_compiler_image(self, compiler: CompilerType) -> bool:
         """Pull the compiler Docker image if not present"""
