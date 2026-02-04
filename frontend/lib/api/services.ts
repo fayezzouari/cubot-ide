@@ -44,8 +44,16 @@ export const projectService = {
   get: (projectId: string) => 
     apiClient.get<ProjectResponse>(`/projects/${projectId}`),
 
-  getWithFiles: (projectId: string) => 
-    apiClient.get<ProjectWithFiles>(`/projects/${projectId}/files`),
+  getWithFiles: async (projectId: string) => {
+    const [project, files] = await Promise.all([
+      apiClient.get<ProjectResponse>(`/projects/${projectId}`),
+      apiClient.get<FileResponse[]>(`/files/project/${projectId}`),
+    ]);
+    return {
+      ...project,
+      files,
+    } as ProjectWithFiles;
+  },
 
   getAll: () => 
     apiClient.get<ProjectResponse[]>('/projects/'),
