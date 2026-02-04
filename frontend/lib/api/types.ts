@@ -1,9 +1,16 @@
 // API Types matching backend models
 
 export enum FileType {
-  SOURCE = 'source',
-  HEADER = 'header',
-  CONFIG = 'config',
+  C = 'c',
+  CPP = 'cpp',
+  H = 'h',
+  HPP = 'hpp',
+  INO = 'ino',
+  PY = 'py',
+  TXT = 'txt',
+  MD = 'md',
+  JSON = 'json',
+  MAKEFILE = 'makefile',
   OTHER = 'other',
 }
 

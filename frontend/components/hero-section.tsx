@@ -1,13 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { ArrowRight, Cpu, Zap } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowRight, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import WorkspaceModal from '@/components/workspace-modal';
 
 export default function HeroSection() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const router = useRouter();
 
   return (
     <section className="pt-32 pb-20 px-6 bg-background min-h-screen flex flex-col justify-center">
@@ -30,7 +28,7 @@ export default function HeroSection() {
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row gap-6 items-start">
             <Button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => router.push('/dashboard')}
               className="px-8 py-4 bg-primary border-4 border-foreground text-primary-foreground font-black text-base cursor-pointer hover:bg-muted hover:text-black transition-all flex items-center"
             >
               START BUILDING
@@ -46,8 +44,6 @@ export default function HeroSection() {
           </a>
         </div>
 
-        {/* Workspace Selection Modal */}
-        <WorkspaceModal open={isModalOpen} onOpenChange={setIsModalOpen} />
       </div>
 
       {/* Raw Code Preview Box */}

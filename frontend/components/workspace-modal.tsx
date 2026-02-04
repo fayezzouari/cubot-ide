@@ -1,7 +1,9 @@
 'use client';
 
-import { Code2, Blocks, ArrowRight } from 'lucide-react';
+import { Code2, Blocks, ArrowRight, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useProject } from '@/contexts/project-context';
+import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,15 +17,77 @@ interface WorkspaceModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// Default starter code for Arduino
+const STARTER_CODE = `// Arduino Starter Code
+// Created with CuBot IDE
+
+void setup() {
+  // Initialize serial communication
+  Serial.begin(9600);
+  
+  // Set pin 13 as output (built-in LED)
+  pinMode(13, OUTPUT);
+  
+  Serial.println("CuBot IDE - Ready!");
+}
+
+void loop() {
+  // Blink the LED
+  digitalWrite(13, HIGH);
+  delay(1000);
+  
+  digitalWrite(13, LOW);
+  delay(1000);
+}
+`;
+
 export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalProps) {
   const router = useRouter();
+  const { createProject, createFile, loadProject } = useProject();
+  const [isCreating, setIsCreating] = useState(false);
 
-  const handleSelectWorkspace = (type: 'ide' | 'blocks') => {
-    onOpenChange(false);
-    if (type === 'ide') {
-      router.push('/ide');
-    } else {
-      router.push('/blocks');
+  const handleSelectWorkspace = async (type: 'ide' | 'blocks') => {
+    setIsCreating(true);
+    try {
+      // Create a new project
+      const project = await createProject(
+        `My ${type === 'ide' ? 'Code' : 'Block'} Project`,
+        `Created on ${new Date().toLocaleDateString()}`,
+        'arduino' // Default to Arduino
+      );
+      
+      // Save project ID and workspace type to localStorage
+      localStorage.setItem('cubot-ide-last-project', project.id);
+      localStorage.setItem(`cubot-ide-project-workspace-${project.id}`, type);
+      
+      // Load the project to set it as current
+      await loadProject(project.id);
+      
+      // Create an initial file for IDE projects
+      if (type === 'ide') {
+        try {
+          await createFile('main.ino', 'main.ino', STARTER_CODE, 'ino');
+          console.log('Created initial file for project');
+        } catch (fileError) {
+          console.error('Failed to create initial file:', fileError);
+        }
+      }
+      
+      onOpenChange(false);
+      
+      // Navigate with project ID
+      if (type === 'ide') {
+        router.push(`/ide?project=${project.id}`);
+      } else {
+        router.push(`/blocks?project=${project.id}`);
+      }
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      // Fallback: navigate without project (will use mock data)
+      onOpenChange(false);
+      router.push(type === 'ide' ? '/ide' : '/blocks');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -43,11 +107,12 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
           {/* IDE Option */}
           <button
             onClick={() => handleSelectWorkspace('ide')}
-            className="group border-4 border-foreground p-6 text-left hover:bg-foreground hover:text-background transition-all"
+            disabled={isCreating}
+            className="group border-4 border-foreground p-6 text-left hover:bg-foreground hover:text-background transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 border-2 border-current flex items-center justify-center">
-                <Code2 size={24} />
+                {isCreating ? <Loader2 size={24} className="animate-spin" /> : <Code2 size={24} />}
               </div>
               <h3 className="font-black text-lg">CODE IDE</h3>
             </div>
@@ -55,7 +120,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
               Write C/C++ code with AI assistance. Full-featured code editor with syntax highlighting, autocomplete, and integrated chat.
             </p>
             <div className="flex items-center gap-2 font-black text-sm">
-              <span>OPEN IDE</span>
+              <span>{isCreating ? 'CREATING PROJECT...' : 'OPEN IDE'}</span>
               <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
             </div>
           </button>
@@ -63,11 +128,12 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
           {/* Block Workspace Option */}
           <button
             onClick={() => handleSelectWorkspace('blocks')}
-            className="group border-4 border-foreground p-6 text-left hover:bg-foreground hover:text-background transition-all"
+            disabled={isCreating}
+            className="group border-4 border-foreground p-6 text-left hover:bg-foreground hover:text-background transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 border-2 border-current flex items-center justify-center">
-                <Blocks size={24} />
+                {isCreating ? <Loader2 size={24} className="animate-spin" /> : <Blocks size={24} />}
               </div>
               <h3 className="font-black text-lg">BLOCK WORKSPACE</h3>
             </div>
@@ -75,7 +141,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
               Visual no-code programming with drag-and-drop blocks. Perfect for beginners learning embedded concepts.
             </p>
             <div className="flex items-center gap-2 font-black text-sm">
-              <span>OPEN BLOCKS</span>
+              <span>{isCreating ? 'CREATING PROJECT...' : 'OPEN BLOCKS'}</span>
               <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
             </div>
           </button>
