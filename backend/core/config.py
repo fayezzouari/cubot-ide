@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     DOCKER_SOCKET: str = "unix:///var/run/docker.sock"
     
     # Compiler Images
-    ARDUINO_IMAGE: str = "cubot-arduino-compiler:latest"
-    TI_ARM_IMAGE: str = "cubot-ti-arm-compiler:latest"
-    ESP32_IMAGE: str = "cubot-esp32-compiler:latest"
+    ARDUINO_IMAGE: str = "cubot/arduino-compiler:latest"
+    TI_ARM_IMAGE: str = "cubot/ti-arm-compiler:latest"
+    ESP32_IMAGE: str = "cubot/esp32-compiler:latest"
     
     # Compilation settings
     COMPILE_TIMEOUT: int = 60  # seconds

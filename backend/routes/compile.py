@@ -148,3 +148,9 @@ async def check_compiler_status():
         "docker_available": docker_available,
         "message": "Docker is running" if docker_available else "Docker is not available"
     }
+
+
+@router.get("/compilers/status")
+async def check_compilers_status():
+    """Check compiler images and tools using test scripts"""
+    return await compiler_service.check_compilers_status()

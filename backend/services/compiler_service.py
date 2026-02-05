@@ -58,6 +58,57 @@ class CompilerService:
         except Exception as cli_error:
             print(f"Docker CLI check failed: {cli_error}")
         return False
+
+    def _run_docker_cli(self, args: list[str], timeout: int = 30) -> tuple[int, str, str]:
+        """Run a docker CLI command and return (code, stdout, stderr)."""
+        result = subprocess.run(
+            ["docker", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+    async def check_compilers_status(self) -> Dict[str, Any]:
+        """Check availability of compiler images and validate tools via test commands."""
+        docker_available = await self.check_docker_available()
+        if not docker_available:
+            return {
+                "docker_available": False,
+                "compilers": {},
+                "message": "Docker is not available",
+            }
+
+        test_commands = {
+            CompilerType.ARDUINO: "arduino-cli version",
+            CompilerType.TI_ARM: "arm-none-eabi-gcc --version",
+            CompilerType.ESP32: "idf.py --version",
+        }
+
+        results: Dict[str, Any] = {}
+        for compiler, image_name in self._container_images.items():
+            command = test_commands.get(compiler, "")
+            if not command:
+                results[compiler.value] = {
+                    "available": False,
+                    "message": "No test command configured",
+                }
+                continue
+
+            exit_code, stdout, stderr = self._run_docker_cli(
+                ["run", "--rm", image_name, "sh", "-lc", command],
+                timeout=60,
+            )
+            results[compiler.value] = {
+                "available": exit_code == 0,
+                "message": stdout or stderr or "No output",
+            }
+
+        return {
+            "docker_available": True,
+            "compilers": results,
+            "message": "Compiler checks completed",
+        }
     
     async def pull_compiler_image(self, compiler: CompilerType) -> bool:
         """Pull the compiler Docker image if not present"""
