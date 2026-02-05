@@ -210,22 +210,36 @@ Important guidelines:
             )
             
             response_body = json.loads(response["body"].read())
-            
+
             # Extract text from response (handle different model response formats)
-            if "content" in response_body:
+            content_text = ""
+            if "choices" in response_body:
+                # OpenAI-style format
+                choices = response_body.get("choices", [])
+                if choices:
+                    message = choices[0].get("message", {})
+                    content_text = message.get("content", "")
+            elif "content" in response_body:
                 # Anthropic format
                 content = response_body["content"]
                 if isinstance(content, list) and len(content) > 0:
-                    return content[0].get("text", "")
-                return str(content)
+                    content_text = content[0].get("text", "")
+                else:
+                    content_text = str(content)
             elif "completion" in response_body:
                 # Legacy format
-                return response_body["completion"]
+                content_text = response_body["completion"]
             elif "generation" in response_body:
                 # Amazon Titan format
-                return response_body["generation"]
+                content_text = response_body["generation"]
             else:
-                return str(response_body)
+                content_text = str(response_body)
+
+            # Strip reasoning tags if present
+            import re
+            content_text = re.sub(r"<reasoning>.*?</reasoning>", "", content_text, flags=re.DOTALL)
+            content_text = re.sub(r"<thinking>.*?</thinking>", "", content_text, flags=re.DOTALL)
+            return content_text.strip()
                 
         except Exception as e:
             raise Exception(f"Bedrock invocation failed: {str(e)}")

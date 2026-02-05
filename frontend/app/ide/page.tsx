@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import ReactMarkdown from 'react-markdown';
 import {
   Dialog,
   DialogContent,
@@ -584,7 +585,11 @@ export default function IDEPage() {
             {explanation && (
               <div className="border-2 border-foreground bg-background p-3">
                 <p className="text-xs font-black mb-2">AI EXPLANATION</p>
-                <p className="text-xs font-mono whitespace-pre-wrap">{explanation}</p>
+                <ScrollArea className="h-48">
+                  <div className="prose prose-sm max-w-none text-foreground">
+                    <ReactMarkdown>{explanation}</ReactMarkdown>
+                  </div>
+                </ScrollArea>
               </div>
             )}
           </div>

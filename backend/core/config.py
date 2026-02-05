@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
-    BEDROCK_MODEL_ID: str = "gpt-oss-120-v1:0"
+    BEDROCK_MODEL_ID: str = "openai.gpt-oss-120b-1:0"
     
     # Docker
     DOCKER_SOCKET: str = "unix:///var/run/docker.sock"
