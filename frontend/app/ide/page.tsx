@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import {
   ChevronRight,
@@ -19,6 +19,7 @@ import {
   MoreVertical,
   Save,
   Loader2,
+  TerminalSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -147,6 +148,14 @@ export default function IDEPage() {
   const [isCompiling, setIsCompiling] = useState(false);
   const [isExplaining, setIsExplaining] = useState(false);
   const [explanation, setExplanation] = useState('');
+  const [isSerialModalOpen, setIsSerialModalOpen] = useState(false);
+  const [serialPort, setSerialPort] = useState('/dev/ttyACM0');
+  const [serialBaud, setSerialBaud] = useState('115200');
+  const [serialLogs, setSerialLogs] = useState('');
+  const [isSerialConnecting, setIsSerialConnecting] = useState(false);
+  const [isSerialConnected, setIsSerialConnected] = useState(false);
+  const [serialError, setSerialError] = useState<string | null>(null);
+  const serialSocketRef = useRef<WebSocket | null>(null);
   const [isCreateFileModalOpen, setIsCreateFileModalOpen] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   const [newFilePath, setNewFilePath] = useState('');
@@ -413,6 +422,58 @@ export default function IDEPage() {
     setIsCompileModalOpen(true);
   };
 
+  const handleOpenSerialModal = () => {
+    setSerialError(null);
+    setSerialLogs('');
+    setIsSerialModalOpen(true);
+  };
+
+  const handleDisconnectSerial = () => {
+    if (serialSocketRef.current) {
+      serialSocketRef.current.close();
+      serialSocketRef.current = null;
+    }
+    setIsSerialConnected(false);
+    setIsSerialConnecting(false);
+  };
+
+  const handleConnectSerial = () => {
+    if (!currentProject) return;
+    if (isSerialConnected || isSerialConnecting) return;
+
+    setSerialError(null);
+    setIsSerialConnecting(true);
+
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+    const wsBase = apiBase.replace(/^http/, 'ws');
+    const wsUrl = `${wsBase}/ws/serial?project_id=${currentProject.id}&port=${encodeURIComponent(
+      serialPort,
+    )}&baud=${encodeURIComponent(serialBaud)}`;
+
+    const ws = new WebSocket(wsUrl);
+    serialSocketRef.current = ws;
+
+    ws.onopen = () => {
+      setIsSerialConnected(true);
+      setIsSerialConnecting(false);
+      setSerialLogs('');
+    };
+
+    ws.onmessage = (event) => {
+      setSerialLogs((prev) => `${prev}${prev ? '\n' : ''}${event.data}`);
+    };
+
+    ws.onerror = () => {
+      setSerialError('Failed to connect to serial monitor.');
+      setIsSerialConnecting(false);
+    };
+
+    ws.onclose = () => {
+      setIsSerialConnected(false);
+      setIsSerialConnecting(false);
+    };
+  };
+
   const handleCompile = async () => {
     if (!currentProject || currentProject.files.length === 0) {
       setCompileLogs('No project files found.');
@@ -547,6 +608,12 @@ export default function IDEPage() {
     initializeProject();
   }, [isInitialized, isLoading, loadProject]);
 
+  useEffect(() => {
+    return () => {
+      handleDisconnectSerial();
+    };
+  }, []);
+
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
       {/* Top Bar */}
@@ -569,10 +636,17 @@ export default function IDEPage() {
             <Play size={14} />
             COMPILE
           </Button>
-          <Button variant="outline" size="sm" className="border-2 border-foreground font-black">
-            <Square size={14} />
-            STOP
-          </Button>
+          {currentProject?.target_compiler === 'arduino' && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-2 border-foreground font-black"
+              onClick={handleOpenSerialModal}
+            >
+              <TerminalSquare size={14} />
+              SERIAL MONITOR
+            </Button>
+          )}
           <Button variant="ghost" size="icon">
             <Settings size={18} />
           </Button>
@@ -678,6 +752,89 @@ export default function IDEPage() {
                 </ScrollArea>
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isSerialModalOpen}
+        onOpenChange={(open) => {
+          setIsSerialModalOpen(open);
+          if (!open) {
+            handleDisconnectSerial();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl border-4 border-foreground bg-background">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-foreground">
+              SERIAL MONITOR
+            </DialogTitle>
+            <DialogDescription className="text-foreground/70 font-bold">
+              Connect to the Arduino serial port and view output
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-black">PORT</label>
+                <Input
+                  value={serialPort}
+                  onChange={(e) => setSerialPort(e.target.value)}
+                  className="border-2 border-foreground font-bold"
+                  placeholder="/dev/ttyACM0"
+                  disabled={isSerialConnected || isSerialConnecting}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-black">BAUD</label>
+                <Input
+                  value={serialBaud}
+                  onChange={(e) => setSerialBaud(e.target.value)}
+                  className="border-2 border-foreground font-bold"
+                  placeholder="115200"
+                  disabled={isSerialConnected || isSerialConnecting}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {!isSerialConnected ? (
+                <Button
+                  onClick={handleConnectSerial}
+                  className="px-4 py-2 bg-foreground text-background font-black text-sm hover:bg-muted hover:text-foreground transition-all"
+                  disabled={isSerialConnecting}
+                >
+                  {isSerialConnecting ? (
+                    <>
+                      <Loader2 size={14} className="mr-2 animate-spin" />
+                      CONNECTING...
+                    </>
+                  ) : (
+                    'CONNECT'
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleDisconnectSerial}
+                  className="px-4 py-2 bg-destructive text-destructive-foreground font-black text-sm hover:bg-destructive/90"
+                >
+                  DISCONNECT
+                </Button>
+              )}
+              {serialError && (
+                <span className="text-sm font-bold text-destructive">{serialError}</span>
+              )}
+            </div>
+
+            <div className="border-2 border-foreground bg-muted p-3 h-64 overflow-hidden">
+              <ScrollArea className="h-full">
+                <pre className="text-xs font-mono whitespace-pre-wrap">
+                  {serialLogs || 'No serial data yet.'}
+                </pre>
+              </ScrollArea>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
