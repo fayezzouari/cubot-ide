@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
 import ReactMarkdown from 'react-markdown';
 import { compileService } from '@/lib/api';
 import type { CompilerType } from '@/lib/api/types';
@@ -117,6 +118,9 @@ export default function IDEPage() {
   const [isCompiling, setIsCompiling] = useState(false);
   const [isExplaining, setIsExplaining] = useState(false);
   const [explanation, setExplanation] = useState('');
+  const [isCreateFileModalOpen, setIsCreateFileModalOpen] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [newFilePath, setNewFilePath] = useState('');
 
   // Convert project files to file tree structure
   const projectFileTree = useMemo((): FileNode[] => {
@@ -249,26 +253,30 @@ export default function IDEPage() {
     }
   };
 
-  const handleCreateNewFile = async () => {
-    const fileName = prompt('Enter file name (e.g., main.cpp):');
-    if (!fileName) return;
-    
-    const filePath = prompt('Enter file path (e.g., src/main.cpp):', fileName);
-    if (!filePath) return;
-    
+  const handleCreateNewFile = () => {
+    setIsCreateFileModalOpen(true);
+  };
+
+  const handleCreateFileSubmit = async () => {
+    if (!newFileName.trim() || !newFilePath.trim()) return;
+
     // Determine file type from extension
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    const ext = newFileName.split('.').pop()?.toLowerCase() || '';
     const fileType = ext === 'c' ? 'c' : ext === 'cpp' ? 'cpp' : ext === 'h' ? 'h' : 'other';
-    
+
     if (currentProject) {
       setIsCreatingFile(true);
       try {
-        const newFile = await createFile(fileName, filePath, '', fileType);
+        const newFile = await createFile(newFileName, newFilePath, '', fileType);
         console.log('File created in MongoDB:', newFile);
         // Select the new file
         setSelectedFile(newFile.id);
         setEditedContent('');
         setFileContents(prev => ({ ...prev, [newFile.id]: '' }));
+        // Close modal and reset form
+        setIsCreateFileModalOpen(false);
+        setNewFileName('');
+        setNewFilePath('');
       } catch (error) {
         console.error('Failed to create file:', error);
         alert('Failed to create file. Please try again.');
@@ -596,6 +604,69 @@ export default function IDEPage() {
                 </ScrollArea>
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create File Modal */}
+      <Dialog open={isCreateFileModalOpen} onOpenChange={setIsCreateFileModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-black">CREATE NEW FILE</DialogTitle>
+            <DialogDescription>
+              Add a new file to your project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-black text-foreground mb-2 block">
+                FILE NAME
+              </label>
+              <Input
+                value={newFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
+                placeholder="e.g., main.cpp"
+                className="font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-black text-foreground mb-2 block">
+                FILE PATH
+              </label>
+              <Input
+                value={newFilePath}
+                onChange={(e) => setNewFilePath(e.target.value)}
+                placeholder="e.g., src/main.cpp"
+                className="font-mono text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-6">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCreateFileModalOpen(false);
+                setNewFileName('');
+                setNewFilePath('');
+              }}
+              className="border-2 border-foreground font-black"
+            >
+              CANCEL
+            </Button>
+            <Button
+              onClick={handleCreateFileSubmit}
+              disabled={isCreatingFile || !newFileName.trim() || !newFilePath.trim()}
+              className="px-6 py-2 bg-primary border-2 border-foreground text-primary-foreground font-black hover:bg-muted hover:text-black transition-all"
+            >
+              {isCreatingFile ? (
+                <>
+                  <Loader2 size={14} className="mr-2 animate-spin" />
+                  CREATING...
+                </>
+              ) : (
+                'CREATE FILE'
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
