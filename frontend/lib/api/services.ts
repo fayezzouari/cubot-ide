@@ -9,6 +9,8 @@ import type {
   ProjectWithFiles,
   CompileRequest,
   CompilationResponse,
+  CompileExplainRequest,
+  CompileExplainResponse,
   ChatRequest,
   ChatResponse,
   ChatMessageInDB,
@@ -69,6 +71,9 @@ export const projectService = {
 export const compileService = {
   compile: (data: CompileRequest) => 
     apiClient.post<CompilationResponse>('/compile/', data),
+
+  explainLogs: (data: CompileExplainRequest) =>
+    apiClient.post<CompileExplainResponse>('/compile/explain', data),
 
   downloadBinary: async (
     projectId: string,

@@ -148,6 +148,16 @@ Important guidelines:
 - Consider memory constraints
 - Be mindful of timing and interrupts
 """
+
+    def _build_short_system_prompt(self, compiler: Optional[str] = None) -> str:
+        """Build a short system prompt for concise explanations"""
+        compiler_info = f" (compiler: {compiler})" if compiler else ""
+        return (
+            "You are CuBot, an embedded systems assistant."
+            f" Explain compile logs concisely{compiler_info}."
+            " Provide a 1-sentence summary and list only the top 2 fixes."
+            " Use minimal words. Be extremely brief."
+        )
     
     async def _build_user_prompt(
         self,
@@ -170,6 +180,7 @@ Important guidelines:
         system_prompt: str,
         user_prompt: str,
         history: List[dict] = None,
+        max_tokens: int = 4096,
     ) -> str:
         """Invoke Bedrock model to generate response"""
         client = self._get_bedrock_runtime()
@@ -195,7 +206,7 @@ Important guidelines:
         # Using Converse API format for better compatibility
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 4096,
+            "max_tokens": max_tokens,
             "system": system_prompt,
             "messages": messages,
             "temperature": 0.7,
@@ -243,6 +254,28 @@ Important guidelines:
                 
         except Exception as e:
             raise Exception(f"Bedrock invocation failed: {str(e)}")
+
+    async def explain_compile_logs(
+        self,
+        project_id: str,
+        logs: str,
+        errors: Optional[List[str]] = None,
+        compiler: Optional[str] = None,
+    ) -> str:
+        """Generate a concise explanation for compile logs."""
+        system_prompt = self._build_short_system_prompt(compiler)
+        error_section = "\n".join(errors or [])
+        user_prompt = (
+            "Summarize errors in 1 sentence. List only top 2 fixes."
+            f"\n\nLogs:\n{logs}\n\nErrors:\n{error_section}"
+        )
+        # add logs for the user prompt
+        return await self._invoke_bedrock(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            history=[],
+            max_tokens=256,
+        )
     
     def _parse_file_operations(self, response_text: str) -> List[dict]:
         """Parse file operations from AI response"""

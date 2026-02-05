@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, status, Response
 from typing import List, Optional
 
-from models.compilation import CompileRequest, CompilationResponse
+from models.compilation import CompileRequest, CompilationResponse, CompileExplainRequest, CompileExplainResponse
 from models.file import CompilerType
 from services.compiler_service import compiler_service
 from services.file_service import file_service
+from services.ai_service import ai_service
 
 router = APIRouter(prefix="/compile", tags=["compilation"])
 
@@ -148,6 +149,18 @@ async def check_compiler_status():
         "docker_available": docker_available,
         "message": "Docker is running" if docker_available else "Docker is not available"
     }
+
+
+@router.post("/explain", response_model=CompileExplainResponse)
+async def explain_compile_logs(request: CompileExplainRequest):
+    """Explain compile logs with a concise AI summary"""
+    explanation = await ai_service.explain_compile_logs(
+        project_id=request.project_id,
+        logs=request.logs,
+        errors=request.errors,
+        compiler=request.compiler.value if request.compiler else None,
+    )
+    return CompileExplainResponse(explanation=explanation)
 
 
 @router.get("/compilers/status")

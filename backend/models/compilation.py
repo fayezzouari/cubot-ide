@@ -57,3 +57,16 @@ class CompilationResponse(BaseModel):
     binary_name: Optional[str]
     compile_time_ms: int
     has_binary: bool
+
+
+class CompileExplainRequest(BaseModel):
+    """Request to explain compile logs"""
+    project_id: str
+    compiler: Optional[CompilerType] = None
+    logs: str
+    errors: Optional[List[str]] = None
+
+
+class CompileExplainResponse(BaseModel):
+    """Response with concise explanation"""
+    explanation: str

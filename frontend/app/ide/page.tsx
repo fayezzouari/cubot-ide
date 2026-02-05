@@ -23,6 +23,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import ReactMarkdown from 'react-markdown';
+import { compileService } from '@/lib/api';
+import type { CompilerType } from '@/lib/api/types';
 import {
   Dialog,
   DialogContent,
@@ -98,7 +100,7 @@ function FileTreeItem({
 }
 
 export default function IDEPage() {
-  const { currentProject, updateFile, loadProject, createFile, compileProject, sendChatMessage, isLoading, error } = useProject();
+  const { currentProject, updateFile, loadProject, createFile, compileProject, isLoading, error } = useProject();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -109,7 +111,7 @@ export default function IDEPage() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [isCompileModalOpen, setIsCompileModalOpen] = useState(false);
-  const [selectedCompiler, setSelectedCompiler] = useState<'arduino' | 'ti_arm' | 'esp32'>('arduino');
+  const [selectedCompiler, setSelectedCompiler] = useState<CompilerType>('arduino' as CompilerType);
   const [compileLogs, setCompileLogs] = useState('');
   const [compileErrors, setCompileErrors] = useState<string[]>([]);
   const [isCompiling, setIsCompiling] = useState(false);
@@ -378,11 +380,13 @@ export default function IDEPage() {
     setExplanation('');
 
     try {
-      const response = await sendChatMessage(
-        `Explain the following compiler logs and errors in simple steps. Provide likely fixes.\n\nLogs:\n${compileLogs}\n\nErrors:\n${compileErrors.join('\n')}`,
-        []
-      );
-      setExplanation(response.message || 'No explanation returned.');
+      const response = await compileService.explainLogs({
+        project_id: currentProject.id,
+        compiler: selectedCompiler,
+        logs: compileLogs,
+        errors: compileErrors,
+      });
+      setExplanation(response.explanation || 'No explanation returned.');
     } catch (err: any) {
       setExplanation(err?.message || 'Failed to explain logs.');
     } finally {
@@ -514,7 +518,7 @@ export default function IDEPage() {
               <label className="text-sm font-black">COMPILER</label>
               <select
                 value={selectedCompiler}
-                onChange={(e) => setSelectedCompiler(e.target.value as 'arduino' | 'ti_arm' | 'esp32')}
+                onChange={(e) => setSelectedCompiler(e.target.value as CompilerType)}
                 className="border-2 border-foreground px-3 py-2 font-bold bg-background"
                 disabled={isCompiling}
               >

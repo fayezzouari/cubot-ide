@@ -99,6 +99,17 @@ export interface CompilationResponse {
   has_binary: boolean;
 }
 
+export interface CompileExplainRequest {
+  project_id: string;
+  compiler?: CompilerType;
+  logs: string;
+  errors?: string[];
+}
+
+export interface CompileExplainResponse {
+  explanation: string;
+}
+
 export interface FileContext {
   path: string;
   content: string;
