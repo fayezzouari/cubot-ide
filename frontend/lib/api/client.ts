@@ -13,6 +13,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
     throw new ApiError(response.status, error || response.statusText);
   }
   
+  // For 204 No Content responses, return null/undefined
+  if (response.status === 204) {
+    return null as any;
+  }
+  
   const contentType = response.headers.get('content-type');
   if (contentType && contentType.includes('application/json')) {
     return response.json();

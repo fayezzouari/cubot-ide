@@ -8,7 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
-import { Plus, ArrowRight, FolderOpen } from 'lucide-react';
+import { Plus, ArrowRight, FolderOpen, Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -16,6 +27,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<ProjectResponse | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -64,6 +76,20 @@ export default function DashboardPage() {
       router.push(`/blocks?project=${project.id}`);
     } else {
       router.push(`/ide?project=${project.id}`);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return;
+
+    try {
+      await projectService.delete(projectToDelete.id);
+      // Refresh projects list
+      const data = await projectService.getAll();
+      setProjects(Array.isArray(data) ? data : []);
+      setProjectToDelete(null);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to delete project');
     }
   };
 
@@ -117,7 +143,38 @@ export default function DashboardPage() {
                     <CardHeader className="pb-3">
                       <CardTitle className="text-2xl font-black flex items-start justify-between gap-4">
                         <span className="truncate">{project.name}</span>
-                        <FolderOpen size={20} className="mt-1" />
+                        <div className="flex items-center gap-2">
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <button
+                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                onClick={() => setProjectToDelete(project)}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Project</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete "{project.name}"? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setProjectToDelete(null)}>
+                                  Cancel
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={handleDeleteProject}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                          <FolderOpen size={20} className="mt-1" />
+                        </div>
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
