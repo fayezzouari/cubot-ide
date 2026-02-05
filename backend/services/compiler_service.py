@@ -113,17 +113,21 @@ class CompilerService:
     async def pull_compiler_image(self, compiler: CompilerType) -> bool:
         """Pull the compiler Docker image if not present"""
         try:
-            client = self._get_client()
             image_name = self._container_images.get(compiler)
             
             if not image_name:
                 return False
-            
-            try:
-                client.images.get(image_name)
-            except ImageNotFound:
-                client.images.pull(image_name)
-            
+
+            if shutil.which("docker") is None:
+                return False
+
+            inspect_code, _, _ = self._run_docker_cli(["image", "inspect", image_name], timeout=10)
+            if inspect_code != 0:
+                pull_code, _, pull_err = self._run_docker_cli(["pull", image_name], timeout=600)
+                if pull_code != 0:
+                    print(f"Error pulling image for {compiler}: {pull_err}")
+                    return False
+
             return True
         except Exception as e:
             print(f"Error pulling image for {compiler}: {e}")
@@ -164,20 +168,45 @@ class CompilerService:
                 errors=[f"No image configured for {request.compiler}"],
                 compile_time_ms=0,
             )
+
+        # Normalize Arduino sketches to required folder/file naming
+        files_to_write = files
+        main_file = request.main_file
+        if request.compiler == CompilerType.ARDUINO:
+            sketch_dir = "sketch"
+            sketch_file = f"{sketch_dir}/sketch.ino"
+            main_content = files.get(request.main_file)
+            if main_content is None:
+                return CompileResult(
+                    status=CompilationStatus.ERROR,
+                    output=f"Main file {request.main_file} not found",
+                    errors=[f"Main file {request.main_file} not found"],
+                    compile_time_ms=0,
+                )
+
+            normalized_files: Dict[str, str] = {}
+            for path, content in files.items():
+                if path == request.main_file:
+                    continue
+                normalized_files[f"{sketch_dir}/{path}"] = content
+            normalized_files[sketch_file] = main_content
+
+            files_to_write = normalized_files
+            main_file = sketch_dir
         
         # Create temporary directory for compilation
         temp_dir = tempfile.mkdtemp(prefix="cubot_compile_")
         
         try:
             # Write files to temp directory
-            await self._write_files_to_temp(temp_dir, files)
+            await self._write_files_to_temp(temp_dir, files_to_write)
             
             # Run compilation in container
             result = await self._run_compilation(
                 image_name=image_name,
                 compiler=request.compiler,
                 source_dir=temp_dir,
-                main_file=request.main_file,
+                main_file=main_file,
                 build_flags=request.build_flags,
             )
             
@@ -229,40 +258,43 @@ class CompilerService:
         build_flags: Optional[list] = None,
     ) -> CompileResult:
         """Run the compilation in a Docker container"""
-        client = self._get_client()
-        
         # Build the compile command based on compiler type
         command = self._build_compile_command(compiler, main_file, build_flags)
         
         try:
-            # Pull image if not present
-            try:
-                client.images.get(image_name)
-            except ImageNotFound:
-                client.images.pull(image_name)
-            
-            # Run container
-            container = client.containers.run(
+            if shutil.which("docker") is None:
+                return CompileResult(
+                    status=CompilationStatus.ERROR,
+                    output="Docker CLI not found.",
+                    errors=["Docker CLI not available"],
+                    compile_time_ms=0,
+                )
+
+            docker_args = [
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "-m",
+                "512m",
+                "--cpus",
+                "0.5",
+                "-v",
+                f"{source_dir}:/src",
+                "-w",
+                "/src",
                 image_name,
-                command=command,
-                volumes={
-                    source_dir: {"bind": "/src", "mode": "rw"}
-                },
-                working_dir="/src",
-                detach=True,
-                mem_limit="512m",
-                cpu_period=100000,
-                cpu_quota=50000,  # 50% CPU
-                network_disabled=True,
+                "sh",
+                "-lc",
+                command,
+            ]
+
+            exit_code, stdout, stderr = self._run_docker_cli(
+                docker_args,
+                timeout=settings.COMPILE_TIMEOUT,
             )
-            
-            # Wait for container to finish with timeout
-            try:
-                result = container.wait(timeout=settings.COMPILE_TIMEOUT)
-                exit_code = result.get("StatusCode", 1)
-                logs = container.logs().decode("utf-8")
-            finally:
-                container.remove(force=True)
+
+            logs = "\n".join([text for text in [stdout, stderr] if text])
             
             # Check for output binary
             binary_data = None
@@ -320,7 +352,8 @@ class CompilerService:
         
         if compiler == CompilerType.ARDUINO:
             # Arduino CLI compile command
-            return f"arduino-cli compile --fqbn arduino:avr:uno {flags} /src"
+            sketch_path = f"/src/{main_file}" if main_file else "/src"
+            return f"arduino-cli compile --fqbn arduino:avr:uno {flags} {sketch_path}"
         
         elif compiler == CompilerType.TI_ARM:
             # TI ARM compiler command

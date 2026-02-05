@@ -12,9 +12,7 @@ class MessageRole(str, Enum):
 
 class FileContext(BaseModel):
     """File context for chat messages"""
-    file_id: str
-    file_name: str
-    file_path: str
+    path: str
     content: str
 
 
@@ -24,18 +22,12 @@ class ChatMessageBase(BaseModel):
     content: str
     
 
-class ChatMessageCreate(ChatMessageBase):
-    """Model for creating a chat message"""
-    project_id: str
-    context_files: List[FileContext] = Field(default=[])
-
-
 class ChatMessageInDB(ChatMessageBase):
     """Chat message as stored in MongoDB"""
     id: str = Field(alias="_id")
     project_id: str
-    context_files: List[FileContext] = []
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    file_context: List[FileContext] = []
     
     # For assistant messages, track any file operations
     file_operations: List[dict] = Field(default=[], description="Files created/edited by this message")
@@ -44,27 +36,15 @@ class ChatMessageInDB(ChatMessageBase):
         populate_by_name = True
 
 
-class ChatMessageResponse(ChatMessageBase):
-    """Chat message response model"""
-    id: str
-    project_id: str
-    context_files: List[FileContext] = []
-    created_at: datetime
-    file_operations: List[dict] = []
-    
-    class Config:
-        from_attributes = True
-
-
 class ChatRequest(BaseModel):
     """Chat request from frontend"""
-    project_id: str
     message: str
-    context_file_ids: List[str] = Field(default=[], description="File IDs to include as context")
+    file_context: Optional[List[FileContext]] = None
+    compiler: Optional[str] = None
+    conversation_history: Optional[List[dict]] = None
 
 
 class ChatResponse(BaseModel):
     """Chat response to frontend"""
-    message: ChatMessageResponse
-    files_created: List[dict] = []
-    files_updated: List[dict] = []
+    message: str
+    file_operations: List[dict] = []

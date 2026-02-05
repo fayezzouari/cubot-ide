@@ -16,20 +16,21 @@ class CompilationStatus(str, Enum):
 
 class CompileRequest(BaseModel):
     """Request to compile code"""
-    project_id: str
     compiler: CompilerType
-    main_file: Optional[str] = Field(default=None, description="Main file to compile, defaults to main.c or main.ino")
+    file_ids: List[str]
+    main_file: str
+    build_flags: Optional[List[str]] = None
+    project_id: Optional[str] = None
     
 
 class CompileResult(BaseModel):
     """Compilation result"""
     status: CompilationStatus
-    stdout: str = ""
-    stderr: str = ""
-    binary_size: Optional[int] = None
-    compilation_time: float = 0.0  # seconds
-    errors: List[dict] = []
-    warnings: List[dict] = []
+    output: str = ""
+    errors: List[str] = []
+    binary_data: Optional[bytes] = None
+    binary_name: Optional[str] = None
+    compile_time_ms: int = 0
 
 
 class CompilationInDB(BaseModel):
@@ -38,27 +39,21 @@ class CompilationInDB(BaseModel):
     project_id: str
     compiler: CompilerType
     status: CompilationStatus
-    stdout: str = ""
-    stderr: str = ""
-    binary_size: Optional[int] = None
-    compilation_time: float = 0.0
+    output: str = ""
+    errors: List[str] = []
+    binary_name: Optional[str] = None
+    compile_time_ms: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     class Config:
         populate_by_name = True
 
 
 class CompilationResponse(BaseModel):
     """Compilation response to frontend"""
-    id: str
-    project_id: str
-    compiler: CompilerType
     status: CompilationStatus
-    stdout: str
-    stderr: str
-    binary_size: Optional[int]
-    compilation_time: float
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
+    output: str
+    errors: List[str]
+    binary_name: Optional[str]
+    compile_time_ms: int
+    has_binary: bool

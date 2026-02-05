@@ -22,6 +22,13 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { useProject } from '@/contexts/project-context';
 import {
   mockMessages as initialMessages,
@@ -90,7 +97,7 @@ function FileTreeItem({
 }
 
 export default function IDEPage() {
-  const { currentProject, updateFile, loadProject, createFile, isLoading, error } = useProject();
+  const { currentProject, updateFile, loadProject, createFile, compileProject, sendChatMessage, isLoading, error } = useProject();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -100,6 +107,13 @@ export default function IDEPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [isCompileModalOpen, setIsCompileModalOpen] = useState(false);
+  const [selectedCompiler, setSelectedCompiler] = useState<'arduino' | 'ti_arm' | 'esp32'>('arduino');
+  const [compileLogs, setCompileLogs] = useState('');
+  const [compileErrors, setCompileErrors] = useState<string[]>([]);
+  const [isCompiling, setIsCompiling] = useState(false);
+  const [isExplaining, setIsExplaining] = useState(false);
+  const [explanation, setExplanation] = useState('');
 
   // Convert project files to file tree structure
   const projectFileTree = useMemo((): FileNode[] => {
@@ -307,6 +321,74 @@ export default function IDEPage() {
     }
   };
 
+  const handleOpenCompileModal = () => {
+    setCompileLogs('');
+    setCompileErrors([]);
+    setExplanation('');
+    setIsCompileModalOpen(true);
+  };
+
+  const handleCompile = async () => {
+    if (!currentProject || currentProject.files.length === 0) {
+      setCompileLogs('No project files found.');
+      return;
+    }
+
+    const mainFilePath =
+      currentProject.files.find(f => f.id === selectedFile)?.path ||
+      currentProject.files[0]?.path;
+
+    if (!mainFilePath) {
+      setCompileLogs('No main file selected.');
+      return;
+    }
+
+    setIsCompiling(true);
+    setCompileErrors([]);
+    setCompileLogs('Starting compilation...\n');
+
+    try {
+      const result = await compileProject(
+        mainFilePath,
+        currentProject.files.map(f => f.id),
+        selectedCompiler
+      );
+      setCompileLogs(prev => `${prev}${result.output || ''}`.trim());
+      setCompileErrors(result.errors || []);
+    } catch (err: any) {
+      setCompileLogs(prev => `${prev}\nCompilation failed.`.trim());
+      setCompileErrors([err?.message || 'Unknown error']);
+    } finally {
+      setIsCompiling(false);
+    }
+  };
+
+  const handleExplainLogs = async () => {
+    if (!currentProject) {
+      setExplanation('No project loaded.');
+      return;
+    }
+    if (!compileLogs && compileErrors.length === 0) {
+      setExplanation('No logs to explain yet.');
+      return;
+    }
+
+    setIsExplaining(true);
+    setExplanation('');
+
+    try {
+      const response = await sendChatMessage(
+        `Explain the following compiler logs and errors in simple steps. Provide likely fixes.\n\nLogs:\n${compileLogs}\n\nErrors:\n${compileErrors.join('\n')}`,
+        []
+      );
+      setExplanation(response.message || 'No explanation returned.');
+    } catch (err: any) {
+      setExplanation(err?.message || 'Failed to explain logs.');
+    } finally {
+      setIsExplaining(false);
+    }
+  };
+
   const currentFileContent = selectedFile ? fileContents[selectedFile] : null;
   const currentFileName = selectedFile 
     ? currentProject?.files.find(f => f.id === selectedFile)?.name
@@ -391,7 +473,12 @@ export default function IDEPage() {
           </Link>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="border-2 border-foreground font-black">
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-2 border-foreground font-black"
+            onClick={handleOpenCompileModal}
+          >
             <Play size={14} />
             COMPILE
           </Button>
@@ -409,6 +496,100 @@ export default function IDEPage() {
           </Link>
         </div>
       </header>
+
+      <Dialog open={isCompileModalOpen} onOpenChange={setIsCompileModalOpen}>
+        <DialogContent className="max-w-2xl border-4 border-foreground bg-background">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black text-foreground">
+              COMPILE PROJECT
+            </DialogTitle>
+            <DialogDescription className="text-foreground/70 font-bold">
+              Choose a compiler and view logs in real time
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-black">COMPILER</label>
+              <select
+                value={selectedCompiler}
+                onChange={(e) => setSelectedCompiler(e.target.value as 'arduino' | 'ti_arm' | 'esp32')}
+                className="border-2 border-foreground px-3 py-2 font-bold bg-background"
+                disabled={isCompiling}
+              >
+                <option value="arduino">Arduino</option>
+                <option value="ti_arm">TI ARM</option>
+                <option value="esp32">ESP32</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleCompile}
+                className="px-4 py-2 bg-foreground text-background font-black text-sm hover:bg-muted hover:text-foreground transition-all"
+                disabled={isCompiling}
+              >
+                {isCompiling ? (
+                  <>
+                    <Loader2 size={14} className="mr-2 animate-spin" />
+                    COMPILING...
+                  </>
+                ) : (
+                  'RUN COMPILE'
+                )}
+              </Button>
+              <Button
+                onClick={handleExplainLogs}
+                className="px-4 py-2 bg-primary border-2 border-foreground text-primary-foreground font-black text-sm hover:bg-muted hover:text-black transition-all"
+                disabled={isCompiling || isExplaining}
+              >
+                {isExplaining ? (
+                  <>
+                    <Loader2 size={14} className="mr-2 animate-spin" />
+                    EXPLAINING...
+                  </>
+                ) : (
+                  'EXPLAIN'
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                className="border-2 border-foreground font-black"
+                onClick={() => setIsCompileModalOpen(false)}
+                disabled={isCompiling}
+              >
+                CLOSE
+              </Button>
+            </div>
+
+            <div className="border-2 border-foreground bg-muted p-3 min-h-[200px]">
+              <ScrollArea className="h-48">
+                <pre className="text-xs font-mono whitespace-pre-wrap">
+                  {compileLogs || 'Logs will appear here...'}
+                </pre>
+              </ScrollArea>
+            </div>
+
+            {compileErrors.length > 0 && (
+              <div className="border-2 border-red-600 bg-red-50 p-3">
+                <p className="text-xs font-black text-red-700 mb-2">ERRORS</p>
+                <ul className="text-xs font-mono text-red-700 list-disc pl-4 space-y-1">
+                  {compileErrors.map((err, idx) => (
+                    <li key={`${err}-${idx}`}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {explanation && (
+              <div className="border-2 border-foreground bg-background p-3">
+                <p className="text-xs font-black mb-2">AI EXPLANATION</p>
+                <p className="text-xs font-mono whitespace-pre-wrap">{explanation}</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
