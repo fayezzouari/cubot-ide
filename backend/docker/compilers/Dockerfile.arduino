@@ -1,13 +1,14 @@
-# Minimal Arduino compiler container
-FROM alpine:3.18
+# Arduino compiler container (Debian-based for avr-g++ compatibility)
+FROM debian:bookworm-slim
 
 # Install dependencies and Arduino CLI
-RUN apk add --no-cache \
-    bash \
-    curl \
-    python3 \
-    py3-pip \
-    ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        curl \
+        python3 \
+        ca-certificates \
+        tar \
+    && rm -rf /var/lib/apt/lists/*
 
 # Download and install Arduino CLI
 RUN curl -fsSL https://downloads.arduino.cc/arduino-cli/arduino-cli_0.34.2_Linux_64bit.tar.gz -o /tmp/arduino-cli.tar.gz \
@@ -15,13 +16,16 @@ RUN curl -fsSL https://downloads.arduino.cc/arduino-cli/arduino-cli_0.34.2_Linux
     && rm /tmp/arduino-cli.tar.gz \
     && chmod +x /usr/local/bin/arduino-cli
 
-# Install Arduino AVR core
-RUN arduino-cli core update-index \
-    && arduino-cli core install arduino:avr
-
 # Create non-root user
-RUN adduser -D -u 1000 compiler
+RUN useradd -m -u 1000 compiler
+
+# Install Arduino AVR core as compiler user (store indexes in user home)
 USER compiler
+ENV ARDUINO_DATA_DIR=/home/compiler/.arduino15
+ENV ARDUINO_USER_DIR=/home/compiler/.arduino15
+RUN arduino-cli core update-index \
+    && arduino-cli core install arduino:avr \
+    && arduino-cli lib update-index
 
 WORKDIR /src
 
