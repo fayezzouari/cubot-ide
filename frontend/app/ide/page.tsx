@@ -33,6 +33,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { useProject } from '@/contexts/project-context';
 import {
   mockMessages as initialMessages,
@@ -45,11 +51,15 @@ function FileTreeItem({
   depth = 0, 
   selectedFile,
   onSelectFile,
+  onRenameFile,
+  onDeleteFile,
 }: { 
   node: FileNode; 
   depth?: number;
   selectedFile: string | null;
   onSelectFile: (id: string) => void;
+  onRenameFile: (id: string) => void;
+  onDeleteFile: (id: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(true);
   const isFolder = node.type === 'folder';
@@ -57,32 +67,49 @@ function FileTreeItem({
 
   return (
     <div>
-      <button
-        className={`w-full flex items-center gap-2 px-2 py-1 text-left text-sm font-bold hover:bg-muted transition-colors ${
-          isSelected ? 'bg-muted border-l-2 border-foreground' : ''
-        }`}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        onClick={() => {
-          if (isFolder) {
-            setIsOpen(!isOpen);
-          } else {
-            onSelectFile(node.id);
-          }
-        }}
-      >
-        {isFolder ? (
-          <>
-            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            {isOpen ? <FolderOpen size={14} /> : <Folder size={14} />}
-          </>
-        ) : (
-          <>
-            <span className="w-3.5" />
-            <File size={14} />
-          </>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <button
+            className={`w-full flex items-center gap-2 px-2 py-1 text-left text-sm font-bold hover:bg-muted transition-colors ${
+              isSelected ? 'bg-muted border-l-2 border-foreground' : ''
+            }`}
+            style={{ paddingLeft: `${depth * 12 + 8}px` }}
+            onClick={() => {
+              if (isFolder) {
+                setIsOpen(!isOpen);
+              } else {
+                onSelectFile(node.id);
+              }
+            }}
+          >
+            {isFolder ? (
+              <>
+                {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {isOpen ? <FolderOpen size={14} /> : <Folder size={14} />}
+              </>
+            ) : (
+              <>
+                <span className="w-3.5" />
+                <File size={14} />
+              </>
+            )}
+            <span className="truncate">{node.name}</span>
+          </button>
+        </ContextMenuTrigger>
+        {!isFolder && (
+          <ContextMenuContent>
+            <ContextMenuItem onClick={() => onRenameFile(node.id)}>
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => onDeleteFile(node.id)}
+              className="text-destructive"
+            >
+              Delete
+            </ContextMenuItem>
+          </ContextMenuContent>
         )}
-        <span className="truncate">{node.name}</span>
-      </button>
+      </ContextMenu>
       {isFolder && isOpen && node.children && (
         <div>
           {node.children.map((child) => (
@@ -92,6 +119,8 @@ function FileTreeItem({
               depth={depth + 1}
               selectedFile={selectedFile}
               onSelectFile={onSelectFile}
+              onRenameFile={onRenameFile}
+              onDeleteFile={onDeleteFile}
             />
           ))}
         </div>
@@ -101,7 +130,7 @@ function FileTreeItem({
 }
 
 export default function IDEPage() {
-  const { currentProject, updateFile, loadProject, createFile, compileProject, isLoading, error } = useProject();
+  const { currentProject, updateFile, deleteFile, loadProject, createFile, compileProject, isLoading, error } = useProject();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -121,6 +150,9 @@ export default function IDEPage() {
   const [isCreateFileModalOpen, setIsCreateFileModalOpen] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   const [newFilePath, setNewFilePath] = useState('');
+  const [isRenamingFile, setIsRenamingFile] = useState(false);
+  const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
+  const [newFileNameInput, setNewFileNameInput] = useState('');
 
   // Convert project files to file tree structure
   const projectFileTree = useMemo((): FileNode[] => {
@@ -237,7 +269,7 @@ export default function IDEPage() {
         if (currentProject) {
           const file = currentProject.files.find(f => f.id === selectedFile);
           if (file) {
-            await updateFile(file.id, editedContent);
+            await updateFile(file.id, { content: editedContent });
             console.log('File saved to MongoDB:', file.name);
           }
         }
@@ -284,6 +316,48 @@ export default function IDEPage() {
         setIsCreatingFile(false);
       }
     }
+  };
+
+  const handleRenameFile = (fileId: string) => {
+    const file = currentProject?.files.find(f => f.id === fileId);
+    if (file) {
+      setRenamingFileId(fileId);
+      setNewFileNameInput(file.name);
+      setIsRenamingFile(true);
+    }
+  };
+
+  const handleRenameFileSubmit = async () => {
+    if (!renamingFileId || !newFileNameInput.trim()) return;
+
+    try {
+      await updateFile(renamingFileId, { name: newFileNameInput.trim() });
+      setIsRenamingFile(false);
+      setRenamingFileId(null);
+      setNewFileNameInput('');
+    } catch (error) {
+      console.error('Failed to rename file:', error);
+      alert('Failed to rename file. Please try again.');
+    }
+  };
+
+  const handleDeleteFile = async (fileId: string) => {
+    try {
+      await deleteFile(fileId);
+      if (selectedFile === fileId) {
+        setSelectedFile(null);
+        setEditedContent('');
+      }
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      alert('Failed to delete file. Please try again.');
+    }
+  };
+
+  const handleRenameFileCancel = () => {
+    setIsRenamingFile(false);
+    setRenamingFileId(null);
+    setNewFileNameInput('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -703,6 +777,8 @@ export default function IDEPage() {
                       node={node}
                       selectedFile={selectedFile}
                       onSelectFile={handleFileSelect}
+                      onRenameFile={handleRenameFile}
+                      onDeleteFile={handleDeleteFile}
                     />
                   ))
                 ) : (
@@ -713,6 +789,41 @@ export default function IDEPage() {
                 )}
               </div>
             </ScrollArea>
+          )}
+          {isRenamingFile && (
+            <div className="p-2 border-t border-border">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newFileNameInput}
+                  onChange={(e) => setNewFileNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleRenameFileSubmit();
+                    } else if (e.key === 'Escape') {
+                      handleRenameFileCancel();
+                    }
+                  }}
+                  placeholder="New file name"
+                  className="flex-1 h-8 text-sm"
+                  autoFocus
+                />
+                <Button
+                  size="sm"
+                  onClick={handleRenameFileSubmit}
+                  className="h-8 px-2"
+                >
+                  Rename
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRenameFileCancel}
+                  className="h-8 px-2"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
           )}
         </aside>
 

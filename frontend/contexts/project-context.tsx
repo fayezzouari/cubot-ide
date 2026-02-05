@@ -6,6 +6,7 @@ import type {
   ProjectResponse,
   ProjectWithFiles,
   FileResponse,
+  FileUpdate,
   CompileRequest,
   CompilationResponse,
   ChatRequest,
@@ -24,7 +25,7 @@ interface ProjectContextType {
   
   // File operations
   createFile: (name: string, path: string, content: string, fileType: string) => Promise<FileResponse>;
-  updateFile: (fileId: string, content: string) => Promise<FileResponse>;
+  updateFile: (fileId: string, data: FileUpdate) => Promise<FileResponse>;
   deleteFile: (fileId: string) => Promise<void>;
   refreshFiles: () => Promise<void>;
   
@@ -105,16 +106,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }
   }, [currentProject, loadProject]);
 
-  const updateFile = useCallback(async (fileId: string, content: string) => {
+  const updateFile = useCallback(async (fileId: string, data: FileUpdate) => {
     setIsLoading(true);
     setError(null);
     try {
-      const file = await fileService.update(fileId, { content });
+      const file = await fileService.update(fileId, data);
       
       // Update in current project
       if (currentProject) {
         const updatedFiles = currentProject.files.map(f => 
-          f.id === fileId ? { ...f, content } : f
+          f.id === fileId ? { ...f, ...data } : f
         );
         setCurrentProject({ ...currentProject, files: updatedFiles });
       }
