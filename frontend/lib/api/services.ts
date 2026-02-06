@@ -15,6 +15,8 @@ import type {
   ChatResponse,
   ChatMessageInDB,
   CompilerType,
+  WiringRequest,
+  WiringResponse,
 } from './types';
 
 // File Service
@@ -121,4 +123,10 @@ export const chatService = {
       `/chat/${projectId}/apply-operations`,
       operations
     ),
+};
+
+// Wiring Service
+export const wiringService = {
+  generate: (data: WiringRequest) =>
+    apiClient.post<WiringResponse>('/wiring/generate', data),
 };

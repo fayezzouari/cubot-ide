@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.database import connect_to_mongo, close_mongo_connection
-from routes import files_router, projects_router, compile_router, chat_router, serial_router, simulator_router
+from routes import files_router, projects_router, compile_router, chat_router, serial_router, simulator_router, wiring_router
 import uvicorn
 
 
@@ -39,6 +39,7 @@ app.include_router(compile_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(serial_router, prefix="/api")
 app.include_router(simulator_router)
+app.include_router(wiring_router, prefix="/api")
 
 
 @app.get("/")

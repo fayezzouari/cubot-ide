@@ -143,3 +143,37 @@ export interface ChatMessageInDB {
   file_context: FileContext[];
   file_operations: any[];
 }
+
+// Wiring
+export interface WiringConnectionDTO {
+  from: string;
+  to: string;
+  color: string;
+  note: string;
+}
+
+export interface DetectedComponentDTO {
+  name: string;
+  type: string;
+  connections: WiringConnectionDTO[];
+  notes: string[];
+  pins: string[];
+}
+
+export interface WiringGuideDTO {
+  components: DetectedComponentDTO[];
+  power: WiringConnectionDTO[];
+  warnings: string[];
+  summary: string;
+  explanation?: string;
+}
+
+export interface WiringRequest {
+  source_code: string;
+  compiler?: string;
+}
+
+export interface WiringResponse {
+  guide: WiringGuideDTO;
+  llm_generated: boolean;
+}

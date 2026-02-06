@@ -10,15 +10,39 @@ import {
   Cpu,
   Lightbulb,
   RotateCcw,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { compileService } from '@/lib/api';
-import { CompilerType } from '@/lib/api/types';
+import { Input } from '@/components/ui/input';
+import { compileService, wiringService } from '@/lib/api';
+import { CompilerType, WiringGuideDTO } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
+import WiringDiagram from '@/components/wiring-diagram';
 
 const WS_BASE_URL =
   process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+
+const SENSOR_OPTIONS = [
+  { type: 'Temperature', unit: '°C', min: -20, max: 80, defaultValue: 25, defaultPin: 'A0' },
+  { type: 'Humidity', unit: '%', min: 0, max: 100, defaultValue: 45, defaultPin: 'A1' },
+  { type: 'Light (LDR)', unit: '%', min: 0, max: 100, defaultValue: 60, defaultPin: 'A2' },
+  { type: 'Distance (Ultrasonic)', unit: 'cm', min: 2, max: 400, defaultValue: 50, defaultPin: 'A3' },
+  { type: 'Sound', unit: '%', min: 0, max: 100, defaultValue: 30, defaultPin: 'A4' },
+  { type: 'Gas', unit: '%', min: 0, max: 100, defaultValue: 10, defaultPin: 'A5' },
+  { type: 'Pressure', unit: 'kPa', min: 80, max: 120, defaultValue: 101, defaultPin: 'A0' },
+  { type: 'Soil Moisture', unit: '%', min: 0, max: 100, defaultValue: 40, defaultPin: 'A1' },
+  { type: 'Potentiometer', unit: '%', min: 0, max: 100, defaultValue: 50, defaultPin: 'A2' },
+  { type: 'Motion (PIR)', unit: 'state', min: 0, max: 1, defaultValue: 0, defaultPin: 'D2' },
+];
+
+type SensorConfig = {
+  id: string;
+  type: string;
+  pin: string;
+  value: number;
+};
 
 export default function SimulatorPage() {
   const searchParams = useSearchParams();
@@ -34,6 +58,10 @@ export default function SimulatorPage() {
   const [compileError, setCompileError] = useState('');
   const [hexData, setHexData] = useState<string | null>(null);
   const [simState, setSimState] = useState<string>('idle');
+  const [sensors, setSensors] = useState<SensorConfig[]>([]);
+  const [wiringGuide, setWiringGuide] = useState<WiringGuideDTO | null>(null);
+  const [isGeneratingWiring, setIsGeneratingWiring] = useState(false);
+  const [wiringError, setWiringError] = useState('');
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -104,6 +132,53 @@ export default function SimulatorPage() {
     });
   }, []);
 
+  const getSensorOption = useCallback((type: string) => {
+    return SENSOR_OPTIONS.find((opt) => opt.type === type) || SENSOR_OPTIONS[0];
+  }, []);
+
+  const handleAddSensor = useCallback(() => {
+    const option = SENSOR_OPTIONS[0];
+    setSensors((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type: option.type,
+        pin: option.defaultPin,
+        value: option.defaultValue,
+      },
+    ]);
+  }, []);
+
+  const handleRemoveSensor = useCallback((id: string) => {
+    setSensors((prev) => prev.filter((sensor) => sensor.id !== id));
+  }, []);
+
+  const handleUpdateSensor = useCallback(
+    (id: string, updates: Partial<SensorConfig>) => {
+      setSensors((prev) =>
+        prev.map((sensor) => (sensor.id === id ? { ...sensor, ...updates } : sensor))
+      );
+    },
+    []
+  );
+
+  const handleGenerateWiring = useCallback(async (sourceCode: string) => {
+    setIsGeneratingWiring(true);
+    setWiringError('');
+    try {
+      const response = await wiringService.generate({
+        source_code: sourceCode,
+        compiler: 'arduino',
+      });
+      setWiringGuide(response.guide);
+    } catch (err: any) {
+      setWiringError(err?.message || 'Failed to generate wiring guide');
+      setWiringGuide(null);
+    } finally {
+      setIsGeneratingWiring(false);
+    }
+  }, []);
+
   const handleCompile = useCallback(async () => {
     if (!currentProject || currentProject.files.length === 0) {
       setCompileError('No files to compile');
@@ -113,6 +188,8 @@ export default function SimulatorPage() {
 
     setCompileStatus('compiling');
     setCompileError('');
+    setWiringGuide(null);
+    setWiringError('');
 
     try {
       const mainFile = currentProject.files.find(
@@ -133,6 +210,10 @@ export default function SimulatorPage() {
       if (result.success && result.hex_output) {
         setHexData(result.hex_output);
         setCompileStatus('ready');
+        const sourceCode = currentProject.files
+          .map((file) => `// FILE: ${file.path}\n${file.content}`)
+          .join('\n\n');
+        await handleGenerateWiring(sourceCode);
       } else {
         throw new Error(result.errors?.join('\n') || 'Compilation failed');
       }
@@ -140,7 +221,7 @@ export default function SimulatorPage() {
       setCompileError(err.message || 'Compilation failed');
       setCompileStatus('error');
     }
-  }, [currentProject]);
+  }, [currentProject, handleGenerateWiring]);
 
   const handleStart = useCallback(async () => {
     if (!hexData) {
@@ -291,6 +372,82 @@ export default function SimulatorPage() {
             </div>
           </div>
 
+          {/* Sensors */}
+          <div className="mt-6 border-2 border-foreground p-3 max-w-md bg-background">
+            <div className="flex items-center justify-between">
+              <span className="font-black text-sm">SENSORS</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-2 border-foreground font-black h-7"
+                onClick={handleAddSensor}
+              >
+                <Plus size={12} />
+                ADD
+              </Button>
+            </div>
+            {sensors.length === 0 ? (
+              <p className="text-xs text-muted-foreground mt-2">No sensors added yet.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {sensors.map((sensor) => {
+                  const option = getSensorOption(sensor.type);
+                  return (
+                    <div key={sensor.id} className="border-2 border-foreground p-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={sensor.type}
+                          onChange={(e) => {
+                            const next = getSensorOption(e.target.value);
+                            handleUpdateSensor(sensor.id, {
+                              type: next.type,
+                              pin: next.defaultPin,
+                              value: next.defaultValue,
+                            });
+                          }}
+                          className="flex-1 border-2 border-foreground px-2 py-1 text-xs font-bold bg-background"
+                        >
+                          {SENSOR_OPTIONS.map((opt) => (
+                            <option key={opt.type} value={opt.type}>
+                              {opt.type}
+                            </option>
+                          ))}
+                        </select>
+                        <Input
+                          value={sensor.pin}
+                          onChange={(e) => handleUpdateSensor(sensor.id, { pin: e.target.value })}
+                          className="w-20 h-7 text-xs font-mono border-2 border-foreground"
+                          placeholder="A0"
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7 border-2 border-foreground"
+                          onClick={() => handleRemoveSensor(sensor.id)}
+                        >
+                          <Trash2 size={12} />
+                        </Button>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={option.min}
+                          max={option.max}
+                          value={sensor.value}
+                          onChange={(e) => handleUpdateSensor(sensor.id, { value: Number(e.target.value) })}
+                          className="flex-1"
+                        />
+                        <span className="text-xs font-bold w-16 text-right">
+                          {sensor.value} {option.unit}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Compile status */}
           {compileStatus === 'error' && (
             <div className="mt-4 p-3 bg-destructive/10 border-2 border-destructive rounded">
@@ -307,16 +464,38 @@ export default function SimulatorPage() {
           )}
         </div>
 
-        {/* Serial Monitor */}
-        <div className="w-1/2 flex flex-col">
-          <div className="h-10 border-b-2 border-foreground flex items-center px-4">
-            <span className="font-black text-sm">SERIAL MONITOR</span>
+        {/* Right panel: Wiring Diagram + Serial Monitor */}
+        <div className="w-1/2 flex flex-col min-h-0">
+          {/* Wiring Diagram */}
+          <div className="h-1/2 border-b-4 border-foreground flex flex-col min-h-0">
+            <div className="h-10 border-b-2 border-foreground flex items-center px-4 shrink-0">
+              <span className="font-black text-sm">WIRING DIAGRAM</span>
+              {isGeneratingWiring && (
+                <span className="ml-auto text-xs font-bold text-primary">Generating…</span>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 relative">
+              <WiringDiagram
+                guide={wiringGuide}
+                loading={isGeneratingWiring}
+                error={wiringError || undefined}
+              />
+            </div>
           </div>
-          <ScrollArea className="flex-1 p-4">
-            <pre className="font-mono text-sm whitespace-pre-wrap">
-              {serialOutput || 'No serial output yet.'}
-            </pre>
-          </ScrollArea>
+
+          {/* Serial Monitor */}
+          <div className="h-1/2 flex flex-col min-h-0">
+            <div className="h-10 border-b-2 border-foreground flex items-center px-4 shrink-0">
+              <span className="font-black text-sm">SERIAL MONITOR</span>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <ScrollArea className="h-full p-4">
+                <pre className="font-mono text-sm whitespace-pre-wrap">
+                  {serialOutput || 'No serial output yet.'}
+                </pre>
+              </ScrollArea>
+            </div>
+          </div>
         </div>
       </div>
     </div>
