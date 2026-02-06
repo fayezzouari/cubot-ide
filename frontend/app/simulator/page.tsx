@@ -12,6 +12,17 @@ import {
   RotateCcw,
   Plus,
   Trash2,
+  Thermometer,
+  Droplets,
+  Sun,
+  Wind,
+  Flame,
+  CloudRain,
+  Snowflake,
+  X,
+  Link2,
+  Unlink,
+  FlaskConical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,16 +36,70 @@ const WS_BASE_URL =
   process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
 
 const SENSOR_OPTIONS = [
-  { type: 'Temperature', unit: '°C', min: -20, max: 80, defaultValue: 25, defaultPin: 'A0' },
-  { type: 'Humidity', unit: '%', min: 0, max: 100, defaultValue: 45, defaultPin: 'A1' },
-  { type: 'Light (LDR)', unit: '%', min: 0, max: 100, defaultValue: 60, defaultPin: 'A2' },
-  { type: 'Distance (Ultrasonic)', unit: 'cm', min: 2, max: 400, defaultValue: 50, defaultPin: 'A3' },
-  { type: 'Sound', unit: '%', min: 0, max: 100, defaultValue: 30, defaultPin: 'A4' },
-  { type: 'Gas', unit: '%', min: 0, max: 100, defaultValue: 10, defaultPin: 'A5' },
-  { type: 'Pressure', unit: 'kPa', min: 80, max: 120, defaultValue: 101, defaultPin: 'A0' },
-  { type: 'Soil Moisture', unit: '%', min: 0, max: 100, defaultValue: 40, defaultPin: 'A1' },
-  { type: 'Potentiometer', unit: '%', min: 0, max: 100, defaultValue: 50, defaultPin: 'A2' },
-  { type: 'Motion (PIR)', unit: 'state', min: 0, max: 1, defaultValue: 0, defaultPin: 'D2' },
+  { type: 'Temperature', unit: '°C', min: -20, max: 80, defaultValue: 25, defaultPin: 'A0', icon: 'thermometer' },
+  { type: 'Humidity', unit: '%', min: 0, max: 100, defaultValue: 45, defaultPin: 'A1', icon: 'droplets' },
+  { type: 'Light (LDR)', unit: '%', min: 0, max: 100, defaultValue: 60, defaultPin: 'A2', icon: 'sun' },
+  { type: 'Distance (Ultrasonic)', unit: 'cm', min: 2, max: 400, defaultValue: 50, defaultPin: 'A3', icon: 'wind' },
+  { type: 'Sound', unit: '%', min: 0, max: 100, defaultValue: 30, defaultPin: 'A4', icon: 'wind' },
+  { type: 'Gas', unit: '%', min: 0, max: 100, defaultValue: 10, defaultPin: 'A5', icon: 'flask' },
+  { type: 'Pressure', unit: 'kPa', min: 80, max: 120, defaultValue: 101, defaultPin: 'A0', icon: 'wind' },
+  { type: 'Soil Moisture', unit: '%', min: 0, max: 100, defaultValue: 40, defaultPin: 'A1', icon: 'droplets' },
+  { type: 'Potentiometer', unit: '%', min: 0, max: 100, defaultValue: 50, defaultPin: 'A2', icon: 'sun' },
+  { type: 'Motion (PIR)', unit: 'state', min: 0, max: 1, defaultValue: 0, defaultPin: 'D2', icon: 'wind' },
+];
+
+type EnvironmentPreset = {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  /** Mapping from sensor type → value to set when this environment is active */
+  sensorValues: Record<string, number>;
+};
+
+const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
+  {
+    id: 'kitchen-fire',
+    name: 'Kitchen Fire',
+    icon: 'flame',
+    description: 'High temp, gas leak, smoke detected',
+    sensorValues: { Temperature: 72, Humidity: 15, Gas: 85, 'Light (LDR)': 90, Sound: 70 },
+  },
+  {
+    id: 'rainy-day',
+    name: 'Rainy Day',
+    icon: 'rain',
+    description: 'Cool, high humidity, low light',
+    sensorValues: { Temperature: 14, Humidity: 92, 'Light (LDR)': 15, 'Soil Moisture': 85, Pressure: 98, Sound: 40 },
+  },
+  {
+    id: 'sunny-day',
+    name: 'Sunny Day',
+    icon: 'sun',
+    description: 'Warm, dry, bright daylight',
+    sensorValues: { Temperature: 32, Humidity: 25, 'Light (LDR)': 95, 'Soil Moisture': 20, Pressure: 103 },
+  },
+  {
+    id: 'freezing',
+    name: 'Freezing Cold',
+    icon: 'snowflake',
+    description: 'Below zero, icy conditions',
+    sensorValues: { Temperature: -10, Humidity: 70, 'Light (LDR)': 30, 'Soil Moisture': 5, Pressure: 105 },
+  },
+  {
+    id: 'dark-room',
+    name: 'Dark Room',
+    icon: 'moon',
+    description: 'No light, quiet, room temperature',
+    sensorValues: { Temperature: 22, Humidity: 50, 'Light (LDR)': 2, Sound: 5, 'Motion (PIR)': 0 },
+  },
+  {
+    id: 'greenhouse',
+    name: 'Greenhouse',
+    icon: 'flask',
+    description: 'Warm, humid, bright, moist soil',
+    sensorValues: { Temperature: 35, Humidity: 80, 'Light (LDR)': 75, 'Soil Moisture': 70, Gas: 3 },
+  },
 ];
 
 type SensorConfig = {
@@ -42,6 +107,14 @@ type SensorConfig = {
   type: string;
   pin: string;
   value: number;
+  /** Which environment preset is linked to this sensor (if any) */
+  linkedEnv: string | null;
+};
+
+type CustomEnvironment = {
+  id: string;
+  name: string;
+  sensorValues: Record<string, number>;
 };
 
 export default function SimulatorPage() {
@@ -59,6 +132,10 @@ export default function SimulatorPage() {
   const [hexData, setHexData] = useState<string | null>(null);
   const [simState, setSimState] = useState<string>('idle');
   const [sensors, setSensors] = useState<SensorConfig[]>([]);
+  const [activeEnvironment, setActiveEnvironment] = useState<string | null>(null);
+  const [customEnvironments, setCustomEnvironments] = useState<CustomEnvironment[]>([]);
+  const [showCreateEnv, setShowCreateEnv] = useState(false);
+  const [newEnvName, setNewEnvName] = useState('');
   const [wiringGuide, setWiringGuide] = useState<WiringGuideDTO | null>(null);
   const [isGeneratingWiring, setIsGeneratingWiring] = useState(false);
   const [wiringError, setWiringError] = useState('');
@@ -145,6 +222,7 @@ export default function SimulatorPage() {
         type: option.type,
         pin: option.defaultPin,
         value: option.defaultValue,
+        linkedEnv: null,
       },
     ]);
   }, []);
@@ -161,6 +239,94 @@ export default function SimulatorPage() {
     },
     []
   );
+
+  /** Activate an environment preset and push its values to linked sensors */
+  const handleActivateEnvironment = useCallback(
+    (envId: string) => {
+      const isDeactivating = activeEnvironment === envId;
+      setActiveEnvironment(isDeactivating ? null : envId);
+
+      if (isDeactivating) return;
+
+      // Find the preset or custom env
+      const preset = ENVIRONMENT_PRESETS.find((e) => e.id === envId);
+      const custom = customEnvironments.find((e) => e.id === envId);
+      const sensorValues = preset?.sensorValues ?? custom?.sensorValues ?? {};
+
+      setSensors((prev) =>
+        prev.map((sensor) => {
+          if (sensor.linkedEnv === envId && sensorValues[sensor.type] !== undefined) {
+            return { ...sensor, value: sensorValues[sensor.type] };
+          }
+          return sensor;
+        })
+      );
+    },
+    [activeEnvironment, customEnvironments]
+  );
+
+  /** Link / unlink a sensor to the currently active environment */
+  const handleToggleSensorLink = useCallback(
+    (sensorId: string, envId: string) => {
+      setSensors((prev) =>
+        prev.map((sensor) => {
+          if (sensor.id !== sensorId) return sensor;
+          const alreadyLinked = sensor.linkedEnv === envId;
+          if (alreadyLinked) return { ...sensor, linkedEnv: null };
+
+          // Apply value from environment immediately
+          const preset = ENVIRONMENT_PRESETS.find((e) => e.id === envId);
+          const custom = customEnvironments.find((e) => e.id === envId);
+          const sensorValues = preset?.sensorValues ?? custom?.sensorValues ?? {};
+          const envValue = sensorValues[sensor.type];
+
+          return {
+            ...sensor,
+            linkedEnv: envId,
+            ...(envValue !== undefined ? { value: envValue } : {}),
+          };
+        })
+      );
+    },
+    [customEnvironments]
+  );
+
+  /** Create a custom environment from current sensor values */
+  const handleCreateCustomEnvironment = useCallback(() => {
+    if (!newEnvName.trim()) return;
+    const vals: Record<string, number> = {};
+    sensors.forEach((s) => {
+      vals[s.type] = s.value;
+    });
+    const env: CustomEnvironment = {
+      id: `custom-${Date.now()}`,
+      name: newEnvName.trim(),
+      sensorValues: vals,
+    };
+    setCustomEnvironments((prev) => [...prev, env]);
+    setNewEnvName('');
+    setShowCreateEnv(false);
+  }, [newEnvName, sensors]);
+
+  const handleDeleteCustomEnvironment = useCallback((envId: string) => {
+    setCustomEnvironments((prev) => prev.filter((e) => e.id !== envId));
+    setActiveEnvironment((prev) => (prev === envId ? null : prev));
+    setSensors((prev) =>
+      prev.map((s) => (s.linkedEnv === envId ? { ...s, linkedEnv: null } : s))
+    );
+  }, []);
+
+  const getEnvIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'flame': return <Flame size={14} />;
+      case 'rain': return <CloudRain size={14} />;
+      case 'sun': return <Sun size={14} />;
+      case 'snowflake': return <Snowflake size={14} />;
+      case 'moon': return <Sun size={14} />;
+      case 'flask': return <FlaskConical size={14} />;
+      default: return <Thermometer size={14} />;
+    }
+  };
 
   const handleGenerateWiring = useCallback(async (sourceCode: string) => {
     setIsGeneratingWiring(true);
@@ -264,7 +430,7 @@ export default function SimulatorPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground">
+    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       {/* Header */}
       <header className="h-14 border-b-4 border-foreground flex items-center justify-between px-4">
         <div className="flex items-center gap-4">
@@ -326,9 +492,9 @@ export default function SimulatorPage() {
       </header>
 
       {/* Main content */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Arduino Board Visualization */}
-        <div className="w-1/2 border-r-4 border-foreground p-6">
+        <div className="w-1/2 border-r-4 border-foreground p-6 overflow-y-auto">
           <h2 className="text-xl font-black mb-4">ARDUINO UNO</h2>
 
           {/* Simple board representation */}
@@ -372,80 +538,197 @@ export default function SimulatorPage() {
             </div>
           </div>
 
-          {/* Sensors */}
-          <div className="mt-6 border-2 border-foreground p-3 max-w-md bg-background">
-            <div className="flex items-center justify-between">
-              <span className="font-black text-sm">SENSORS</span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-2 border-foreground font-black h-7"
-                onClick={handleAddSensor}
-              >
-                <Plus size={12} />
-                ADD
-              </Button>
-            </div>
-            {sensors.length === 0 ? (
-              <p className="text-xs text-muted-foreground mt-2">No sensors added yet.</p>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {sensors.map((sensor) => {
-                  const option = getSensorOption(sensor.type);
-                  return (
-                    <div key={sensor.id} className="border-2 border-foreground p-2">
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={sensor.type}
-                          onChange={(e) => {
-                            const next = getSensorOption(e.target.value);
-                            handleUpdateSensor(sensor.id, {
-                              type: next.type,
-                              pin: next.defaultPin,
-                              value: next.defaultValue,
-                            });
-                          }}
-                          className="flex-1 border-2 border-foreground px-2 py-1 text-xs font-bold bg-background"
-                        >
-                          {SENSOR_OPTIONS.map((opt) => (
-                            <option key={opt.type} value={opt.type}>
-                              {opt.type}
-                            </option>
-                          ))}
-                        </select>
-                        <Input
-                          value={sensor.pin}
-                          onChange={(e) => handleUpdateSensor(sensor.id, { pin: e.target.value })}
-                          className="w-20 h-7 text-xs font-mono border-2 border-foreground"
-                          placeholder="A0"
-                        />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-7 w-7 border-2 border-foreground"
-                          onClick={() => handleRemoveSensor(sensor.id)}
-                        >
-                          <Trash2 size={12} />
-                        </Button>
-                      </div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <input
-                          type="range"
-                          min={option.min}
-                          max={option.max}
-                          value={sensor.value}
-                          onChange={(e) => handleUpdateSensor(sensor.id, { value: Number(e.target.value) })}
-                          className="flex-1"
-                        />
-                        <span className="text-xs font-bold w-16 text-right">
-                          {sensor.value} {option.unit}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+          {/* Environment Simulator & Sensors */}
+          <div className="mt-6 border-2 border-foreground max-w-md bg-background">
+            {/* Environment Presets */}
+            <div className="border-b-2 border-foreground p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-black text-sm">ENVIRONMENTS</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-2 border-foreground font-black h-7 text-xs"
+                  onClick={() => setShowCreateEnv((v) => !v)}
+                >
+                  <Plus size={12} />
+                  CUSTOM
+                </Button>
               </div>
-            )}
+
+              {showCreateEnv && (
+                <div className="mb-2 flex items-center gap-2 p-2 border-2 border-dashed border-primary rounded">
+                  <Input
+                    value={newEnvName}
+                    onChange={(e) => setNewEnvName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateCustomEnvironment()}
+                    placeholder="Environment name..."
+                    className="h-7 text-xs flex-1 border-2 border-foreground"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs border-2 border-foreground font-black"
+                    onClick={handleCreateCustomEnvironment}
+                    disabled={!newEnvName.trim() || sensors.length === 0}
+                  >
+                    SAVE
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => setShowCreateEnv(false)}
+                  >
+                    <X size={12} />
+                  </Button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-1.5">
+                {ENVIRONMENT_PRESETS.map((env) => (
+                  <button
+                    key={env.id}
+                    onClick={() => handleActivateEnvironment(env.id)}
+                    title={env.description}
+                    className={`flex flex-col items-center gap-1 p-2 rounded border-2 text-xs font-bold transition-all ${
+                      activeEnvironment === env.id
+                        ? 'border-primary bg-primary/15 text-primary shadow-md'
+                        : 'border-foreground/30 hover:border-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {getEnvIcon(env.icon)}
+                    <span className="truncate w-full text-center leading-tight">{env.name}</span>
+                  </button>
+                ))}
+                {customEnvironments.map((env) => (
+                  <div key={env.id} className="relative group">
+                    <button
+                      onClick={() => handleActivateEnvironment(env.id)}
+                      className={`flex flex-col items-center gap-1 p-2 rounded border-2 text-xs font-bold transition-all w-full ${
+                        activeEnvironment === env.id
+                          ? 'border-primary bg-primary/15 text-primary shadow-md'
+                          : 'border-foreground/30 hover:border-foreground hover:bg-muted'
+                      }`}
+                    >
+                      <FlaskConical size={14} />
+                      <span className="truncate w-full text-center leading-tight">{env.name}</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCustomEnvironment(env.id)}
+                      className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X size={8} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {activeEnvironment && (
+                <p className="text-[10px] text-muted-foreground mt-2 leading-tight">
+                  ✓ Active — link sensors below to this environment so their values update when it&apos;s activated.
+                </p>
+              )}
+            </div>
+
+            {/* Sensors */}
+            <div className="p-3">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-sm">SENSORS</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-2 border-foreground font-black h-7"
+                  onClick={handleAddSensor}
+                >
+                  <Plus size={12} />
+                  ADD
+                </Button>
+              </div>
+              {sensors.length === 0 ? (
+                <p className="text-xs text-muted-foreground mt-2">No sensors added yet. Click ADD to attach virtual sensors.</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {sensors.map((sensor) => {
+                    const option = getSensorOption(sensor.type);
+                    const linked = sensor.linkedEnv !== null;
+                    const linkedEnvName =
+                      ENVIRONMENT_PRESETS.find((e) => e.id === sensor.linkedEnv)?.name ??
+                      customEnvironments.find((e) => e.id === sensor.linkedEnv)?.name;
+                    return (
+                      <div
+                        key={sensor.id}
+                        className={`border-2 p-2 rounded transition-colors ${
+                          linked ? 'border-primary/60 bg-primary/5' : 'border-foreground'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={sensor.type}
+                            onChange={(e) => {
+                              const next = getSensorOption(e.target.value);
+                              handleUpdateSensor(sensor.id, {
+                                type: next.type,
+                                pin: next.defaultPin,
+                                value: next.defaultValue,
+                              });
+                            }}
+                            className="flex-1 border-2 border-foreground px-2 py-1 text-xs font-bold bg-background rounded"
+                          >
+                            {SENSOR_OPTIONS.map((opt) => (
+                              <option key={opt.type} value={opt.type}>
+                                {opt.type}
+                              </option>
+                            ))}
+                          </select>
+                          <Input
+                            value={sensor.pin}
+                            onChange={(e) => handleUpdateSensor(sensor.id, { pin: e.target.value })}
+                            className="w-16 h-7 text-xs font-mono border-2 border-foreground"
+                            placeholder="A0"
+                          />
+                          {activeEnvironment && (
+                            <Button
+                              variant={linked ? 'default' : 'outline'}
+                              size="icon"
+                              className={`h-7 w-7 border-2 ${linked ? 'border-primary' : 'border-foreground'}`}
+                              onClick={() => handleToggleSensorLink(sensor.id, activeEnvironment)}
+                              title={linked ? `Linked to ${linkedEnvName}` : 'Link to active environment'}
+                            >
+                              {linked ? <Link2 size={12} /> : <Unlink size={12} />}
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-7 w-7 border-2 border-foreground"
+                            onClick={() => handleRemoveSensor(sensor.id)}
+                          >
+                            <Trash2 size={12} />
+                          </Button>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={option.min}
+                            max={option.max}
+                            value={sensor.value}
+                            onChange={(e) => handleUpdateSensor(sensor.id, { value: Number(e.target.value) })}
+                            className="flex-1 accent-primary"
+                          />
+                          <span className="text-xs font-bold w-16 text-right tabular-nums">
+                            {sensor.value} {option.unit}
+                          </span>
+                        </div>
+                        {linked && (
+                          <div className="mt-1 text-[10px] text-primary flex items-center gap-1">
+                            <Link2 size={8} /> Linked to {linkedEnvName}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Compile status */}
@@ -465,9 +748,9 @@ export default function SimulatorPage() {
         </div>
 
         {/* Right panel: Wiring Diagram + Serial Monitor */}
-        <div className="w-1/2 flex flex-col min-h-0">
+        <div className="w-1/2 flex flex-col min-h-0 overflow-hidden">
           {/* Wiring Diagram */}
-          <div className="h-1/2 border-b-4 border-foreground flex flex-col min-h-0">
+          <div className="flex-1 border-b-4 border-foreground flex flex-col min-h-0 overflow-hidden">
             <div className="h-10 border-b-2 border-foreground flex items-center px-4 shrink-0">
               <span className="font-black text-sm">WIRING DIAGRAM</span>
               {isGeneratingWiring && (
@@ -484,7 +767,7 @@ export default function SimulatorPage() {
           </div>
 
           {/* Serial Monitor */}
-          <div className="h-1/2 flex flex-col min-h-0">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <div className="h-10 border-b-2 border-foreground flex items-center px-4 shrink-0">
               <span className="font-black text-sm">SERIAL MONITOR</span>
             </div>
