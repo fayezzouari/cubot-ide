@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   ChevronRight,
   ChevronDown,
@@ -47,6 +48,8 @@ import {
   type FileNode,
   type ChatMessage,
 } from '@/lib/mock-data';
+
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 
 function FileTreeItem({ 
   node, 
@@ -259,8 +262,8 @@ export default function IDEPage() {
     }
   };
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setEditedContent(e.target.value);
+  const handleContentChange = (value: string | undefined) => {
+    setEditedContent(value ?? '');
     setHasUnsavedChanges(true);
   };
 
@@ -294,6 +297,19 @@ export default function IDEPage() {
       }
     }
   };
+
+  useEffect(() => {
+    const handleGlobalSave = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (hasUnsavedChanges) {
+          handleSaveFile();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalSave);
+    return () => window.removeEventListener('keydown', handleGlobalSave);
+  }, [hasUnsavedChanges, handleSaveFile]);
 
   const handleCreateNewFile = () => {
     setIsCreateFileModalOpen(true);
@@ -370,49 +386,33 @@ export default function IDEPage() {
     setNewFileNameInput('');
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Handle Tab key for indentation
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const target = e.target as HTMLTextAreaElement;
-      const start = target.selectionStart;
-      const end = target.selectionEnd;
-      const value = target.value;
-
-      if (e.shiftKey) {
-        // Shift+Tab: Remove indentation
-        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-        const line = value.substring(lineStart, start);
-        
-        if (line.startsWith('  ')) {
-          const newValue = value.substring(0, lineStart) + value.substring(lineStart + 2);
-          setEditedContent(newValue);
-          setHasUnsavedChanges(true);
-          
-          setTimeout(() => {
-            target.selectionStart = start - 2;
-            target.selectionEnd = end - 2;
-          }, 0);
-        }
-      } else {
-        // Tab: Add indentation (2 spaces)
-        const newValue = value.substring(0, start) + '  ' + value.substring(end);
-        setEditedContent(newValue);
-        setHasUnsavedChanges(true);
-        
-        setTimeout(() => {
-          target.selectionStart = start + 2;
-          target.selectionEnd = start + 2;
-        }, 0);
-      }
-    }
-    
-    // Ctrl+S or Cmd+S to save
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault();
-      if (hasUnsavedChanges) {
-        handleSaveFile();
-      }
+  const getLanguageFromFileName = (name?: string | null) => {
+    if (!name) return 'plaintext';
+    const ext = name.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'c':
+        return 'c';
+      case 'h':
+        return 'cpp';
+      case 'cpp':
+      case 'hpp':
+        return 'cpp';
+      case 'ino':
+        return 'cpp';
+      case 'js':
+      case 'jsx':
+        return 'javascript';
+      case 'ts':
+      case 'tsx':
+        return 'typescript';
+      case 'py':
+        return 'python';
+      case 'json':
+        return 'json';
+      case 'md':
+        return 'markdown';
+      default:
+        return 'plaintext';
     }
   };
 
@@ -616,9 +616,10 @@ export default function IDEPage() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground">
+    <div className="h-screen flex flex-col bg-background text-foreground relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_45%)]" />
       {/* Top Bar */}
-      <header className="h-14 border-b-4 border-foreground flex items-center justify-between px-4">
+      <header className="h-14 border-b-4 border-foreground flex items-center justify-between px-4 bg-gradient-to-r from-primary/15 via-background to-primary/10 shadow-sm relative z-10">
         <div className="flex items-center gap-4">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary border-2 border-foreground flex items-center justify-center">
@@ -916,9 +917,9 @@ export default function IDEPage() {
       </Dialog>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative z-10">
         {/* File Sidebar */}
-        <aside className="w-64 border-r-4 border-foreground flex flex-col">
+        <aside className="w-64 border-r-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
           <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
             <span className="font-black text-sm">
               {currentProject ? 'PROJECT FILES' : 'EXPLORER'}
@@ -998,11 +999,11 @@ export default function IDEPage() {
         </aside>
 
         {/* Editor Area */}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col overflow-hidden bg-background/90">
           {/* Tabs */}
           {currentFileName && (
             <div className="h-10 border-b-2 border-foreground flex items-center justify-between px-2">
-              <div className="flex items-center gap-2 px-3 py-1 bg-muted border-2 border-foreground">
+              <div className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-primary/10 to-muted border-2 border-foreground shadow-sm">
                 <File size={12} />
                 <span className="text-sm font-bold">
                   {currentFileName}
@@ -1011,7 +1012,8 @@ export default function IDEPage() {
               </div>
               <div className="flex items-center gap-2">
                 {currentProject && (
-                  <span className="text-xs text-muted-foreground font-bold">
+                  <span className="text-xs text-muted-foreground font-bold flex items-center gap-2">
+                    <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                     {currentProject.name}
                   </span>
                 )}
@@ -1030,20 +1032,30 @@ export default function IDEPage() {
           )}
           
           {/* Code Editor / Logo Display */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden relative bg-slate-950/90">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_55%)] animate-pulse" />
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,_rgba(148,163,184,0.06)_1px,_transparent_1px),linear-gradient(to_bottom,_rgba(148,163,184,0.06)_1px,_transparent_1px)] bg-[size:24px_24px]" />
             {currentFileContent ? (
-              <textarea
-                value={editedContent}
-                onChange={handleContentChange}
-                onKeyDown={handleKeyDown}
-                className="w-full h-full p-4 font-mono text-sm bg-background text-foreground border-none outline-none resize-none"
-                spellCheck={false}
-                style={{
-                  tabSize: 2,
-                  lineHeight: '1.5',
-                }}
-                placeholder="Start typing..."
-              />
+              <div className="w-full h-full relative z-10">
+                <MonacoEditor
+                  value={editedContent}
+                  onChange={handleContentChange}
+                  language={getLanguageFromFileName(currentFileName)}
+                  theme="vs-dark"
+                  options={{
+                    fontSize: 13,
+                    minimap: { enabled: true },
+                    wordWrap: 'on',
+                    smoothScrolling: true,
+                    cursorSmoothCaretAnimation: 'on',
+                    padding: { top: 12, bottom: 12 },
+                    scrollBeyondLastLine: false,
+                    renderLineHighlight: 'all',
+                    lineNumbersMinChars: 3,
+                    fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)',
+                  }}
+                />
+              </div>
             ) : (
               <div className="h-full flex items-center justify-center">
                 <div className="text-center">
@@ -1059,7 +1071,7 @@ export default function IDEPage() {
         </main>
 
         {/* Chat Sidebar */}
-        <aside className="w-80 border-l-4 border-foreground flex flex-col">
+        <aside className="w-80 border-l-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
           <div className="p-3 border-b-2 border-foreground flex items-center gap-2">
             <Bot size={18} />
             <span className="font-black text-sm">AI ASSISTANT</span>
