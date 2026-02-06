@@ -1,3 +1,8 @@
+from services.wiring_service import wiring_service
+
+__all__ = [
+    "wiring_service",
+]
 from services.file_service import file_service, FileService
 from services.project_service import project_service, ProjectService
 from services.compiler_service import compiler_service, CompilerService
