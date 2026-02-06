@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, Blocks, ArrowRight, Loader2 } from 'lucide-react';
+import { Code2, Blocks, ArrowRight, Loader2, Box } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/contexts/project-context';
 import { useState } from 'react';
@@ -46,7 +46,14 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
   const { createProject, createFile, loadProject } = useProject();
   const [isCreating, setIsCreating] = useState(false);
 
-  const handleSelectWorkspace = async (type: 'ide' | 'blocks') => {
+  const handleSelectWorkspace = async (type: 'ide' | 'blocks' | 'cad') => {
+    // CAD doesn't require a project — navigate directly
+    if (type === 'cad') {
+      onOpenChange(false);
+      router.push(`/cad?session=cad-${Date.now()}`);
+      return;
+    }
+
     setIsCreating(true);
     try {
       // Create a new project
@@ -93,7 +100,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl border-4 border-foreground bg-background p-0 gap-0">
+      <DialogContent className="max-w-4xl border-4 border-foreground bg-background p-0 gap-0">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle className="text-2xl font-black text-foreground">
             CHOOSE YOUR WORKSPACE
@@ -103,7 +110,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
           {/* IDE Option */}
           <button
             onClick={() => handleSelectWorkspace('ide')}
@@ -142,6 +149,27 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
             </p>
             <div className="flex items-center gap-2 font-black text-sm">
               <span>{isCreating ? 'CREATING PROJECT...' : 'OPEN BLOCKS'}</span>
+              <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+            </div>
+          </button>
+
+          {/* CAD Assistant Option */}
+          <button
+            onClick={() => handleSelectWorkspace('cad')}
+            disabled={isCreating}
+            className="group border-4 border-foreground p-6 text-left hover:bg-foreground hover:text-background transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 border-2 border-current flex items-center justify-center">
+                <Box size={24} />
+              </div>
+              <h3 className="font-black text-lg">CAD ASSISTANT</h3>
+            </div>
+            <p className="text-sm font-bold mb-6 opacity-80">
+              AI-powered 3D modeling assistant. Describe components in plain language and get CAD models instantly. Export to STL.
+            </p>
+            <div className="flex items-center gap-2 font-black text-sm">
+              <span>OPEN CAD</span>
               <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
             </div>
           </button>

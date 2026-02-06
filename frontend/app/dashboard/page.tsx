@@ -74,6 +74,8 @@ export default function DashboardPage() {
 
     if (workspaceType === 'blocks') {
       router.push(`/blocks?project=${project.id}`);
+    } else if (workspaceType === 'cad') {
+      router.push(`/cad?session=${project.id}`);
     } else {
       router.push(`/ide?project=${project.id}`);
     }

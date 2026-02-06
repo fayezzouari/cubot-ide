@@ -28,3 +28,6 @@ passlib[bcrypt]==1.7.4
 
 # Serial monitor
 pyserial==3.5
+
+# CAD
+cadquery==2.4.0

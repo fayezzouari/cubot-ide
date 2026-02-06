@@ -177,3 +177,27 @@ export interface WiringResponse {
   guide: WiringGuideDTO;
   llm_generated: boolean;
 }
+
+// CAD
+export interface CadChatRequest {
+  message: string;
+  conversation_history?: Array<{ role: string; content: string }>;
+  current_code?: string;
+}
+
+export interface CadChatResponse {
+  message: string;
+  cadquery_code?: string | null;
+  stl_base64?: string | null;
+  error?: string | null;
+}
+
+export interface CadSessionHistory {
+  messages: Array<{
+    role: string;
+    content: string;
+    cadquery_code?: string | null;
+    has_model?: boolean;
+  }>;
+  current_code?: string | null;
+}

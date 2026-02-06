@@ -17,6 +17,9 @@ import type {
   CompilerType,
   WiringRequest,
   WiringResponse,
+  CadChatRequest,
+  CadChatResponse,
+  CadSessionHistory,
 } from './types';
 
 // File Service
@@ -129,4 +132,27 @@ export const chatService = {
 export const wiringService = {
   generate: (data: WiringRequest) =>
     apiClient.post<WiringResponse>('/wiring/generate', data),
+};
+
+// CAD Service
+export const cadService = {
+  generate: (sessionId: string, data: CadChatRequest) =>
+    apiClient.post<CadChatResponse>(`/cad/${sessionId}/generate`, data),
+
+  getHistory: (sessionId: string) =>
+    apiClient.get<CadSessionHistory>(`/cad/${sessionId}/history`),
+
+  exportStl: async (cadqueryCode: string): Promise<Blob> => {
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+    const response = await fetch(`${API_BASE_URL}/cad/export-stl`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cadquery_code: cadqueryCode }),
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || 'Export failed');
+    }
+    return response.blob();
+  },
 };
