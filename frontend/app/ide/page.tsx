@@ -1,138 +1,21 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import Link from 'next/link';
-import dynamic from 'next/dynamic';
-import {
-  ChevronRight,
-  ChevronDown,
-  File,
-  Folder,
-  FolderOpen,
-  Send,
-  Bot,
-  User,
-  Play,
-  Square,
-  Settings,
-  Home,
-  Plus,
-  MoreVertical,
-  Save,
-  Loader2,
-  TerminalSquare,
-  Cpu,
-} from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
-import ReactMarkdown from 'react-markdown';
 import { compileService } from '@/lib/api';
 import type { CompilerType } from '@/lib/api/types';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu';
 import { useProject } from '@/contexts/project-context';
-import {
-  mockMessages as initialMessages,
-  type FileNode,
-  type ChatMessage,
-} from '@/lib/mock-data';
-
-const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
-
-function FileTreeItem({ 
-  node, 
-  depth = 0, 
-  selectedFile,
-  onSelectFile,
-  onRenameFile,
-  onDeleteFile,
-}: { 
-  node: FileNode; 
-  depth?: number;
-  selectedFile: string | null;
-  onSelectFile: (id: string) => void;
-  onRenameFile: (id: string) => void;
-  onDeleteFile: (id: string) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(true);
-  const isFolder = node.type === 'folder';
-  const isSelected = selectedFile === node.id;
-
-  return (
-    <div>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <button
-            className={`w-full flex items-center gap-2 px-2 py-1 text-left text-sm font-bold hover:bg-muted transition-colors ${
-              isSelected ? 'bg-muted border-l-2 border-foreground' : ''
-            }`}
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-            onClick={() => {
-              if (isFolder) {
-                setIsOpen(!isOpen);
-              } else {
-                onSelectFile(node.id);
-              }
-            }}
-          >
-            {isFolder ? (
-              <>
-                {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                {isOpen ? <FolderOpen size={14} /> : <Folder size={14} />}
-              </>
-            ) : (
-              <>
-                <span className="w-3.5" />
-                <File size={14} />
-              </>
-            )}
-            <span className="truncate">{node.name}</span>
-          </button>
-        </ContextMenuTrigger>
-        {!isFolder && (
-          <ContextMenuContent>
-            <ContextMenuItem onClick={() => onRenameFile(node.id)}>
-              Rename
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={() => onDeleteFile(node.id)}
-              className="text-destructive"
-            >
-              Delete
-            </ContextMenuItem>
-          </ContextMenuContent>
-        )}
-      </ContextMenu>
-      {isFolder && isOpen && node.children && (
-        <div>
-          {node.children.map((child) => (
-            <FileTreeItem 
-              key={child.id} 
-              node={child} 
-              depth={depth + 1}
-              selectedFile={selectedFile}
-              onSelectFile={onSelectFile}
-              onRenameFile={onRenameFile}
-              onDeleteFile={onDeleteFile}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import { mockMessages as initialMessages, type FileNode, type ChatMessage } from '@/lib/mock-data';
+import TopBar from '@/components/ide/top-bar';
+import FileTreeItem from '@/components/ide/file-tree-item';
+import EditorPanel from '@/components/ide/editor-panel';
+import ChatSidebar from '@/components/ide/chat-sidebar';
+import CompileDialog from '@/components/ide/compile-dialog';
+import SerialDialog from '@/components/ide/serial-dialog';
+import CreateFileDialog from '@/components/ide/create-file-dialog';
 
 export default function IDEPage() {
   const { currentProject, updateFile, deleteFile, loadProject, createFile, compileProject, isLoading, error } = useProject();
@@ -539,8 +422,8 @@ export default function IDEPage() {
   };
 
   const currentFileContent = selectedFile ? fileContents[selectedFile] : null;
-  const currentFileName = selectedFile 
-    ? currentProject?.files.find(f => f.id === selectedFile)?.name
+  const currentFileName = selectedFile
+    ? currentProject?.files.find(f => f.id === selectedFile)?.name ?? null
     : null;
 
   // Load project files from backend on mount or when project changes
@@ -618,303 +501,57 @@ export default function IDEPage() {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground relative overflow-hidden">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_45%)]" />
-      {/* Top Bar */}
-      <header className="h-14 border-b-4 border-foreground flex items-center justify-between px-4 bg-gradient-to-r from-primary/15 via-background to-primary/10 shadow-sm relative z-10">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary border-2 border-foreground flex items-center justify-center">
-              <span className="text-primary-foreground font-black text-sm">⚙</span>
-            </div>
-            <span className="font-serif text-xl font-black">CUBOT IDE</span>
-          </Link>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-2 border-foreground font-black"
-            onClick={handleOpenCompileModal}
-          >
-            <Play size={14} />
-            COMPILE
-          </Button>
-          {currentProject?.target_compiler === 'arduino' && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-2 border-foreground font-black"
-                onClick={handleOpenSerialModal}
-              >
-                <TerminalSquare size={14} />
-                SERIAL MONITOR
-              </Button>
-              <Link href={`/simulator?project=${currentProject.id}`}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-2 border-foreground font-black"
-                >
-                  <Cpu size={14} />
-                  SIMULATE
-                </Button>
-              </Link>
-            </>
-          )}
-          <Button variant="ghost" size="icon">
-            <Settings size={18} />
-          </Button>
-          <Link href="/">
-            <Button variant="ghost" size="icon">
-              <Home size={18} />
-            </Button>
-          </Link>
-        </div>
-      </header>
+      <TopBar
+        projectId={currentProject?.id ?? null}
+        isArduinoProject={currentProject?.target_compiler === 'arduino'}
+        onOpenCompile={handleOpenCompileModal}
+        onOpenSerial={handleOpenSerialModal}
+      />
 
-      <Dialog open={isCompileModalOpen} onOpenChange={setIsCompileModalOpen}>
-        <DialogContent className="max-w-2xl border-4 border-foreground bg-background">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black text-foreground">
-              COMPILE PROJECT
-            </DialogTitle>
-            <DialogDescription className="text-foreground/70 font-bold">
-              Choose a compiler and view logs in real time
-            </DialogDescription>
-          </DialogHeader>
+      <CompileDialog
+        open={isCompileModalOpen}
+        onOpenChange={setIsCompileModalOpen}
+        selectedCompiler={selectedCompiler}
+        onSelectCompiler={(compiler) => setSelectedCompiler(compiler)}
+        onCompile={handleCompile}
+        onExplainLogs={handleExplainLogs}
+        isCompiling={isCompiling}
+        isExplaining={isExplaining}
+        compileLogs={compileLogs}
+        compileErrors={compileErrors}
+        explanation={explanation}
+      />
 
-          <div className="space-y-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-black">COMPILER</label>
-              <select
-                value={selectedCompiler}
-                onChange={(e) => setSelectedCompiler(e.target.value as CompilerType)}
-                className="border-2 border-foreground px-3 py-2 font-bold bg-background"
-                disabled={isCompiling}
-              >
-                <option value="arduino">Arduino</option>
-                <option value="ti_arm">TI ARM</option>
-                <option value="esp32">ESP32</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={handleCompile}
-                className="px-4 py-2 bg-foreground text-background font-black text-sm hover:bg-muted hover:text-foreground transition-all"
-                disabled={isCompiling}
-              >
-                {isCompiling ? (
-                  <>
-                    <Loader2 size={14} className="mr-2 animate-spin" />
-                    COMPILING...
-                  </>
-                ) : (
-                  'RUN COMPILE'
-                )}
-              </Button>
-              <Button
-                onClick={handleExplainLogs}
-                className="px-4 py-2 bg-primary border-2 border-foreground text-primary-foreground font-black text-sm hover:bg-muted hover:text-black transition-all"
-                disabled={isCompiling || isExplaining}
-              >
-                {isExplaining ? (
-                  <>
-                    <Loader2 size={14} className="mr-2 animate-spin" />
-                    EXPLAINING...
-                  </>
-                ) : (
-                  'EXPLAIN'
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                className="border-2 border-foreground font-black"
-                onClick={() => setIsCompileModalOpen(false)}
-                disabled={isCompiling}
-              >
-                CLOSE
-              </Button>
-            </div>
-
-            <div className="border-2 border-foreground bg-muted p-3 min-h-[200px]">
-              <ScrollArea className="h-48">
-                <pre className="text-xs font-mono whitespace-pre-wrap">
-                  {compileLogs || 'Logs will appear here...'}
-                </pre>
-              </ScrollArea>
-            </div>
-
-            {compileErrors.length > 0 && (
-              <div className="border-2 border-red-600 bg-red-50 p-3">
-                <p className="text-xs font-black text-red-700 mb-2">ERRORS</p>
-                <ul className="text-xs font-mono text-red-700 list-disc pl-4 space-y-1">
-                  {compileErrors.map((err, idx) => (
-                    <li key={`${err}-${idx}`}>{err}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {explanation && (
-              <div className="border-2 border-foreground bg-background p-3">
-                <p className="text-xs font-black mb-2">AI EXPLANATION</p>
-                <ScrollArea className="h-48">
-                  <div className="prose prose-sm max-w-none text-foreground">
-                    <ReactMarkdown>{explanation}</ReactMarkdown>
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
+      <SerialDialog
         open={isSerialModalOpen}
-        onOpenChange={(open) => {
-          setIsSerialModalOpen(open);
-          if (!open) {
-            handleDisconnectSerial();
-          }
+        onOpenChange={setIsSerialModalOpen}
+        serialPort={serialPort}
+        onSerialPortChange={setSerialPort}
+        serialBaud={serialBaud}
+        onSerialBaudChange={setSerialBaud}
+        isSerialConnected={isSerialConnected}
+        isSerialConnecting={isSerialConnecting}
+        serialError={serialError}
+        serialLogs={serialLogs}
+        onConnect={handleConnectSerial}
+        onDisconnect={handleDisconnectSerial}
+      />
+
+      <CreateFileDialog
+        open={isCreateFileModalOpen}
+        onOpenChange={setIsCreateFileModalOpen}
+        newFileName={newFileName}
+        newFilePath={newFilePath}
+        onNewFileNameChange={setNewFileName}
+        onNewFilePathChange={setNewFilePath}
+        isCreatingFile={isCreatingFile}
+        onCreate={handleCreateFileSubmit}
+        onCancel={() => {
+          setIsCreateFileModalOpen(false);
+          setNewFileName('');
+          setNewFilePath('');
         }}
-      >
-        <DialogContent className="max-w-2xl border-4 border-foreground bg-background">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black text-foreground">
-              SERIAL MONITOR
-            </DialogTitle>
-            <DialogDescription className="text-foreground/70 font-bold">
-              Connect to the Arduino serial port and view output
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-black">PORT</label>
-                <Input
-                  value={serialPort}
-                  onChange={(e) => setSerialPort(e.target.value)}
-                  className="border-2 border-foreground font-bold"
-                  placeholder="/dev/ttyACM0"
-                  disabled={isSerialConnected || isSerialConnecting}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-black">BAUD</label>
-                <Input
-                  value={serialBaud}
-                  onChange={(e) => setSerialBaud(e.target.value)}
-                  className="border-2 border-foreground font-bold"
-                  placeholder="115200"
-                  disabled={isSerialConnected || isSerialConnecting}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {!isSerialConnected ? (
-                <Button
-                  onClick={handleConnectSerial}
-                  className="px-4 py-2 bg-foreground text-background font-black text-sm hover:bg-muted hover:text-foreground transition-all"
-                  disabled={isSerialConnecting}
-                >
-                  {isSerialConnecting ? (
-                    <>
-                      <Loader2 size={14} className="mr-2 animate-spin" />
-                      CONNECTING...
-                    </>
-                  ) : (
-                    'CONNECT'
-                  )}
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleDisconnectSerial}
-                  className="px-4 py-2 bg-destructive text-destructive-foreground font-black text-sm hover:bg-destructive/90"
-                >
-                  DISCONNECT
-                </Button>
-              )}
-              {serialError && (
-                <span className="text-sm font-bold text-destructive">{serialError}</span>
-              )}
-            </div>
-
-            <div className="border-2 border-foreground bg-muted p-3 h-64 overflow-hidden">
-              <ScrollArea className="h-full">
-                <pre className="text-xs font-mono whitespace-pre-wrap">
-                  {serialLogs || 'No serial data yet.'}
-                </pre>
-              </ScrollArea>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Create File Modal */}
-      <Dialog open={isCreateFileModalOpen} onOpenChange={setIsCreateFileModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-black">CREATE NEW FILE</DialogTitle>
-            <DialogDescription>
-              Add a new file to your project.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-black text-foreground mb-2 block">
-                FILE NAME
-              </label>
-              <Input
-                value={newFileName}
-                onChange={(e) => setNewFileName(e.target.value)}
-                placeholder="e.g., main.cpp"
-                className="font-mono text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-black text-foreground mb-2 block">
-                FILE PATH
-              </label>
-              <Input
-                value={newFilePath}
-                onChange={(e) => setNewFilePath(e.target.value)}
-                placeholder="e.g., src/main.cpp"
-                className="font-mono text-sm"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 mt-6">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateFileModalOpen(false);
-                setNewFileName('');
-                setNewFilePath('');
-              }}
-              className="border-2 border-foreground font-black"
-            >
-              CANCEL
-            </Button>
-            <Button
-              onClick={handleCreateFileSubmit}
-              disabled={isCreatingFile || !newFileName.trim() || !newFilePath.trim()}
-              className="px-6 py-2 bg-primary border-2 border-foreground text-primary-foreground font-black hover:bg-muted hover:text-black transition-all"
-            >
-              {isCreatingFile ? (
-                <>
-                  <Loader2 size={14} className="mr-2 animate-spin" />
-                  CREATING...
-                </>
-              ) : (
-                'CREATE FILE'
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden relative z-10">
@@ -998,139 +635,24 @@ export default function IDEPage() {
           )}
         </aside>
 
-        {/* Editor Area */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-background/90">
-          {/* Tabs */}
-          {currentFileName && (
-            <div className="h-10 border-b-2 border-foreground flex items-center justify-between px-2">
-              <div className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-primary/10 to-muted border-2 border-foreground shadow-sm">
-                <File size={12} />
-                <span className="text-sm font-bold">
-                  {currentFileName}
-                  {hasUnsavedChanges && <span className="ml-1 text-amber-500">●</span>}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {currentProject && (
-                  <span className="text-xs text-muted-foreground font-bold flex items-center gap-2">
-                    <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                    {currentProject.name}
-                  </span>
-                )}
-                <Button
-                  onClick={handleSaveFile}
-                  size="sm"
-                  variant="outline"
-                  className="border-2 border-foreground font-black h-7"
-                  disabled={!hasUnsavedChanges || isSaving}
-                >
-                  <Save size={14} className="mr-1" />
-                  {isSaving ? 'SAVING...' : 'SAVE'}
-                </Button>
-              </div>
-            </div>
-          )}
-          
-          {/* Code Editor / Logo Display */}
-          <div className="flex-1 overflow-hidden relative bg-slate-950/90">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_55%)] animate-pulse" />
-            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,_rgba(148,163,184,0.06)_1px,_transparent_1px),linear-gradient(to_bottom,_rgba(148,163,184,0.06)_1px,_transparent_1px)] bg-[size:24px_24px]" />
-            {currentFileContent ? (
-              <div className="w-full h-full relative z-10">
-                <MonacoEditor
-                  value={editedContent}
-                  onChange={handleContentChange}
-                  language={getLanguageFromFileName(currentFileName)}
-                  theme="vs-dark"
-                  options={{
-                    fontSize: 13,
-                    minimap: { enabled: true },
-                    wordWrap: 'on',
-                    smoothScrolling: true,
-                    cursorSmoothCaretAnimation: 'on',
-                    padding: { top: 12, bottom: 12 },
-                    scrollBeyondLastLine: false,
-                    renderLineHighlight: 'all',
-                    lineNumbersMinChars: 3,
-                    fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)',
-                  }}
-                />
-              </div>
-            ) : (
-              <div className="h-full flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-32 h-32 mx-auto mb-6 bg-primary border-4 border-foreground flex items-center justify-center">
-                    <span className="text-primary-foreground font-black text-6xl">⚙</span>
-                  </div>
-                  <h2 className="text-2xl font-black mb-2">CUBOT IDE</h2>
-                  <p className="text-muted-foreground font-bold">Select a file to start editing</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </main>
+        <EditorPanel
+          currentFileName={currentFileName}
+          currentProjectName={currentProject?.name ?? null}
+          hasUnsavedChanges={hasUnsavedChanges}
+          isSaving={isSaving}
+          onSave={handleSaveFile}
+          currentFileContent={currentFileContent}
+          editedContent={editedContent}
+          onChange={handleContentChange}
+          getLanguageFromFileName={getLanguageFromFileName}
+        />
 
-        {/* Chat Sidebar */}
-        <aside className="w-80 border-l-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
-          <div className="p-3 border-b-2 border-foreground flex items-center gap-2">
-            <Bot size={18} />
-            <span className="font-black text-sm">AI ASSISTANT</span>
-          </div>
-          
-          {/* Messages */}
-          <ScrollArea className="flex-1 p-3">
-            <div className="space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex gap-2 ${
-                    message.role === 'user' ? 'flex-row-reverse' : ''
-                  }`}
-                >
-                  <div
-                    className={`w-8 h-8 flex items-center justify-center border-2 border-foreground ${
-                      message.role === 'assistant' ? 'bg-primary' : 'bg-muted'
-                    }`}
-                  >
-                    {message.role === 'assistant' ? (
-                      <Bot size={14} className="text-primary-foreground" />
-                    ) : (
-                      <User size={14} />
-                    )}
-                  </div>
-                  <div
-                    className={`flex-1 p-3 border-2 border-foreground text-sm ${
-                      message.role === 'user' ? 'bg-muted' : 'bg-background'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-
-          {/* Input */}
-          <div className="p-3 border-t-2 border-foreground">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder="Ask AI for help..."
-                className="flex-1 px-3 py-2 border-2 border-foreground bg-background text-sm font-bold placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-foreground"
-              />
-              <Button
-                onClick={handleSendMessage}
-                size="icon"
-                className="border-2 border-foreground"
-              >
-                <Send size={16} />
-              </Button>
-            </div>
-          </div>
-        </aside>
+        <ChatSidebar
+          messages={messages}
+          chatInput={chatInput}
+          onChatInputChange={setChatInput}
+          onSendMessage={handleSendMessage}
+        />
       </div>
     </div>
   );
