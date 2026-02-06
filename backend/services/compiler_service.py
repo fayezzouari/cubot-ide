@@ -299,6 +299,7 @@ class CompilerService:
             # Check for output binary
             binary_data = None
             binary_name = None
+            hex_output = None
             output_path = self._get_output_path(compiler, main_file)
             full_output_path = os.path.join(source_dir, output_path)
             
@@ -306,6 +307,10 @@ class CompilerService:
                 with open(full_output_path, "rb") as f:
                     binary_data = f.read()
                 binary_name = os.path.basename(output_path)
+                # If it's a .hex file, also read as text for simulation
+                if output_path.endswith('.hex'):
+                    with open(full_output_path, "r") as f:
+                        hex_output = f.read()
             
             if exit_code == 0:
                 return CompileResult(
@@ -314,6 +319,7 @@ class CompilerService:
                     errors=[],
                     binary_data=binary_data,
                     binary_name=binary_name,
+                    hex_output=hex_output,
                     compile_time_ms=0,
                 )
             else:
@@ -353,7 +359,7 @@ class CompilerService:
         if compiler == CompilerType.ARDUINO:
             # Arduino CLI compile command
             sketch_path = f"/src/{main_file}" if main_file else "/src"
-            return f"arduino-cli compile --fqbn arduino:avr:uno {flags} {sketch_path}"
+            return f"arduino-cli compile --fqbn arduino:avr:uno --output-dir /src/build {flags} {sketch_path}"
         
         elif compiler == CompilerType.TI_ARM:
             # TI ARM compiler command
@@ -371,7 +377,8 @@ class CompilerService:
         main_name = os.path.splitext(main_file)[0]
         
         if compiler == CompilerType.ARDUINO:
-            return f"build/arduino.avr.uno/{main_name}.hex"
+            # Get the .ino filename from the sketch folder
+            return f"build/{main_name}.ino.hex"
         elif compiler == CompilerType.TI_ARM:
             return f"{main_name}.elf"
         elif compiler == CompilerType.ESP32:

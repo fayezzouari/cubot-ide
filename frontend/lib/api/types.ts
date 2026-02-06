@@ -84,6 +84,7 @@ export interface ProjectWithFiles extends ProjectResponse {
 }
 
 export interface CompileRequest {
+  project_id: string;
   compiler: CompilerType;
   file_ids: string[];
   main_file: string;
@@ -92,11 +93,13 @@ export interface CompileRequest {
 
 export interface CompilationResponse {
   status: CompilationStatus;
+  success: boolean;
   output: string;
   errors: string[];
   binary_name?: string;
   compile_time_ms: number;
   has_binary: boolean;
+  hex_output?: string;
 }
 
 export interface CompileExplainRequest {

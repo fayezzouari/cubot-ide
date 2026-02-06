@@ -20,6 +20,7 @@ import {
   Save,
   Loader2,
   TerminalSquare,
+  Cpu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -637,15 +638,27 @@ export default function IDEPage() {
             COMPILE
           </Button>
           {currentProject?.target_compiler === 'arduino' && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-2 border-foreground font-black"
-              onClick={handleOpenSerialModal}
-            >
-              <TerminalSquare size={14} />
-              SERIAL MONITOR
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-2 border-foreground font-black"
+                onClick={handleOpenSerialModal}
+              >
+                <TerminalSquare size={14} />
+                SERIAL MONITOR
+              </Button>
+              <Link href={`/simulator?project=${currentProject.id}`}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-2 border-foreground font-black"
+                >
+                  <Cpu size={14} />
+                  SIMULATE
+                </Button>
+              </Link>
+            </>
           )}
           <Button variant="ghost" size="icon">
             <Settings size={18} />

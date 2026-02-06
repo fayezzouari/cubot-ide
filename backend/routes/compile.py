@@ -51,9 +51,11 @@ async def compile_project(request: CompileRequest):
     
     return CompilationResponse(
         status=result.status,
+        success=result.status.value == "success",
         output=result.output,
         errors=result.errors,
         binary_name=result.binary_name,
+        hex_output=result.hex_output,
         compile_time_ms=result.compile_time_ms,
         has_binary=result.binary_data is not None,
     )

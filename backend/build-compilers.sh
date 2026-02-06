@@ -21,8 +21,13 @@ docker build -t cubot/ti-arm-compiler:latest -f "${DOCKER_DIR}/Dockerfile.ti-arm
 echo "Building ESP32 compiler image..."
 docker build -t cubot/esp32-compiler:latest -f "${DOCKER_DIR}/Dockerfile.esp32" "${DOCKER_DIR}"
 
+# Build AVR Simulator
+SIMULATOR_DIR="${SCRIPT_DIR}/docker/simulator"
+echo "Building AVR simulator image..."
+docker build -t cubot/avr-simulator:latest -f "${SIMULATOR_DIR}/Dockerfile.simulator" "${SIMULATOR_DIR}"
+
 echo ""
-echo "All compiler images built successfully!"
+echo "All compiler and simulator images built successfully!"
 echo ""
 echo "Images created:"
 docker images | grep "cubot/"

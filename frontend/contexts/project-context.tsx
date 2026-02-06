@@ -157,6 +157,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const request: CompileRequest = {
+        project_id: currentProject!.id,
         compiler: compiler as any,
         file_ids: fileIds,
         main_file: mainFile,

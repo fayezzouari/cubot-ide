@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     TI_ARM_IMAGE: str = "cubot/ti-arm-compiler:latest"
     ESP32_IMAGE: str = "cubot/esp32-compiler:latest"
     
+    # Simulator Image
+    SIMULATOR_IMAGE: str = "cubot/avr-simulator:latest"
+    
     # Compilation settings
     COMPILE_TIMEOUT: int = 60  # seconds
     MAX_OUTPUT_SIZE: int = 1024 * 1024  # 1MB

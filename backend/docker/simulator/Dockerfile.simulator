@@ -1,0 +1,27 @@
+# AVR Simulator container using simavr
+FROM debian:bookworm-slim
+
+# Install build tools and simavr
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libsimavr-dev \
+        simavr \
+        libelf-dev \
+        avr-libc \
+        gcc-avr \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and compile the custom simulation wrapper
+COPY cubot_sim.c /opt/cubot_sim.c
+RUN gcc -O2 -o /usr/local/bin/cubot_sim /opt/cubot_sim.c \
+        -I/usr/include/simavr \
+        -lsimavr -lelf -lpthread \
+    && rm /opt/cubot_sim.c
+
+# Create non-root user
+RUN useradd -m -u 1000 simulator
+USER simulator
+
+WORKDIR /sim
+
+ENTRYPOINT ["cubot_sim"]

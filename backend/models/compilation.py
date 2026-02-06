@@ -30,6 +30,7 @@ class CompileResult(BaseModel):
     errors: List[str] = []
     binary_data: Optional[bytes] = None
     binary_name: Optional[str] = None
+    hex_output: Optional[str] = None
     compile_time_ms: int = 0
 
 
@@ -52,9 +53,11 @@ class CompilationInDB(BaseModel):
 class CompilationResponse(BaseModel):
     """Compilation response to frontend"""
     status: CompilationStatus
+    success: bool
     output: str
     errors: List[str]
     binary_name: Optional[str]
+    hex_output: Optional[str]
     compile_time_ms: int
     has_binary: bool
 
