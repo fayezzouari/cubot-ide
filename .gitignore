@@ -10,4 +10,8 @@ backend/models/__pycache__
 backend/models/*.pyc
 backend/controllers/__pycache__
 backend/controllers/*.pyc
+backend/core/__pycache__
+backend/core/*.pyc
+backend/schemas/__pycache__
+backend/schemas/*.pyc
 frontend/.next/
