@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Home, Download, Code2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import CadViewer from '@/components/cad/cad-viewer';
 import CadChatPanel, { type CadChatMessage } from '@/components/cad/cad-chat-panel';
 import { cadService } from '@/lib/api';
@@ -168,9 +169,9 @@ export default function CadPage() {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <ResizablePanelGroup direction="horizontal" className="flex-1">
         {/* Chat panel — left side */}
-        <div className="w-[400px] min-w-[320px] border-r-4 border-foreground flex-shrink-0">
+        <ResizablePanel defaultSize={30} minSize={20} maxSize={50}>
           <CadChatPanel
             messages={messages}
             input={input}
@@ -178,13 +179,15 @@ export default function CadPage() {
             onInputChange={setInput}
             onSend={handleSend}
           />
-        </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
 
         {/* 3D Viewer — right side */}
-        <div className="flex-1 relative">
+        <ResizablePanel defaultSize={70}>
           <CadViewer stlBase64={currentStl} />
-        </div>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }

@@ -82,7 +82,7 @@ export default function CadChatPanel({
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+            className={`w-full flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
           >
             <div
               className={`w-8 h-8 flex-shrink-0 flex items-center justify-center border-2 border-foreground ${
@@ -96,7 +96,7 @@ export default function CadChatPanel({
               )}
             </div>
             <div
-              className={`flex-1 p-3 border-2 border-foreground text-sm ${
+              className={`flex-1 w-full min-w-0 p-3 border-2 border-foreground text-sm ${
                 message.role === 'user' ? 'bg-muted' : 'bg-background'
               }`}
             >
@@ -122,11 +122,11 @@ export default function CadChatPanel({
         ))}
 
         {isGenerating && (
-          <div className="flex gap-2">
+          <div className="w-full flex gap-2">
             <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center border-2 border-foreground bg-primary">
               <Bot size={14} className="text-primary-foreground" />
             </div>
-            <div className="flex-1 p-3 border-2 border-foreground bg-background">
+            <div className="flex-1 w-full min-w-0 p-3 border-2 border-foreground bg-background">
               <div className="flex items-center gap-2 text-sm font-bold text-muted-foreground">
                 <Loader2 size={14} className="animate-spin" />
                 Generating model...

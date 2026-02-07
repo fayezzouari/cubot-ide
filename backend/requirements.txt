@@ -30,4 +30,5 @@ passlib[bcrypt]==1.7.4
 pyserial==3.5
 
 # CAD
+numpy<2
 cadquery==2.4.0
