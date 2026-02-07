@@ -47,18 +47,11 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
   const [isCreating, setIsCreating] = useState(false);
 
   const handleSelectWorkspace = async (type: 'ide' | 'blocks' | 'cad') => {
-    // CAD doesn't require a project — navigate directly
-    if (type === 'cad') {
-      onOpenChange(false);
-      router.push(`/cad?session=cad-${Date.now()}`);
-      return;
-    }
-
     setIsCreating(true);
     try {
       // Create a new project
       const project = await createProject(
-        `My ${type === 'ide' ? 'Code' : 'Block'} Project`,
+        `My ${type === 'ide' ? 'Code' : type === 'blocks' ? 'Block' : 'CAD'} Project`,
         `Created on ${new Date().toLocaleDateString()}`,
         'arduino' // Default to Arduino
       );
@@ -67,8 +60,10 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       localStorage.setItem('cubot-ide-last-project', project.id);
       localStorage.setItem(`cubot-ide-project-workspace-${project.id}`, type);
       
-      // Load the project to set it as current
-      await loadProject(project.id);
+      // Load the project to set it as current (IDE/Blocks only)
+      if (type !== 'cad') {
+        await loadProject(project.id);
+      }
       
       // Create an initial file for IDE projects
       if (type === 'ide') {
@@ -85,14 +80,22 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       // Navigate with project ID
       if (type === 'ide') {
         router.push(`/ide?project=${project.id}`);
-      } else {
+      } else if (type === 'blocks') {
         router.push(`/blocks?project=${project.id}`);
+      } else {
+        router.push(`/cad?project=${project.id}`);
       }
     } catch (error) {
       console.error('Failed to create project:', error);
       // Fallback: navigate without project (will use mock data)
       onOpenChange(false);
-      router.push(type === 'ide' ? '/ide' : '/blocks');
+      if (type === 'ide') {
+        router.push('/ide');
+      } else if (type === 'blocks') {
+        router.push('/blocks');
+      } else {
+        router.push(`/cad?project=cad-${Date.now()}`);
+      }
     } finally {
       setIsCreating(false);
     }

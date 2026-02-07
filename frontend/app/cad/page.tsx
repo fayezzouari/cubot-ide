@@ -12,7 +12,10 @@ import { cadService } from '@/lib/api';
 
 export default function CadPage() {
   const searchParams = useSearchParams();
-  const sessionId = searchParams.get('session') || `cad-${Date.now()}`;
+  const sessionId =
+    searchParams.get('project') ||
+    searchParams.get('session') ||
+    `cad-${Date.now()}`;
 
   const [messages, setMessages] = useState<CadChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -21,7 +24,17 @@ export default function CadPage() {
   const [currentCode, setCurrentCode] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Load session history on mount
+  const blobToBase64 = useCallback(async (blob: Blob): Promise<string> => {
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }, []);
+
+  // Load session history on mount and render latest model
   useEffect(() => {
     const loadHistory = async () => {
       try {
@@ -37,8 +50,17 @@ export default function CadPage() {
             })
           );
           setMessages(loadedMessages);
-          if (history.current_code) {
-            setCurrentCode(history.current_code);
+        }
+
+        if (history.current_code) {
+          setCurrentCode(history.current_code);
+          // Render the latest saved model
+          try {
+            const stlBlob = await cadService.exportStl(history.current_code);
+            const stlB64 = await blobToBase64(stlBlob);
+            setCurrentStl(stlB64);
+          } catch (err) {
+            console.error('Failed to render saved model:', err);
           }
         }
       } catch {
@@ -46,7 +68,7 @@ export default function CadPage() {
       }
     };
     loadHistory();
-  }, [sessionId]);
+  }, [sessionId, blobToBase64]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
