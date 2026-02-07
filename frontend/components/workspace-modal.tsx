@@ -1,9 +1,11 @@
 'use client';
 
-import { Code2, Blocks, ArrowRight, Loader2, Box } from 'lucide-react';
+import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/contexts/project-context';
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -45,28 +47,45 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
   const router = useRouter();
   const { createProject, createFile, loadProject } = useProject();
   const [isCreating, setIsCreating] = useState(false);
+  const [step, setStep] = useState<'select' | 'name'>('select');
+  const [selectedType, setSelectedType] = useState<'ide' | 'blocks' | 'cad' | null>(null);
+  const [projectName, setProjectName] = useState('');
 
-  const handleSelectWorkspace = async (type: 'ide' | 'blocks' | 'cad') => {
+  const resetModal = () => {
+    setStep('select');
+    setSelectedType(null);
+    setProjectName('');
+  };
+
+  const handleSelectWorkspace = (type: 'ide' | 'blocks' | 'cad') => {
+    setSelectedType(type);
+    const defaultName = `My ${type === 'ide' ? 'Code' : type === 'blocks' ? 'Block' : 'CAD'} Project`;
+    setProjectName(defaultName);
+    setStep('name');
+  };
+
+  const handleCreateProject = async () => {
+    if (!selectedType) return;
     setIsCreating(true);
     try {
       // Create a new project
       const project = await createProject(
-        `My ${type === 'ide' ? 'Code' : type === 'blocks' ? 'Block' : 'CAD'} Project`,
+        projectName.trim() || `My ${selectedType === 'ide' ? 'Code' : selectedType === 'blocks' ? 'Block' : 'CAD'} Project`,
         `Created on ${new Date().toLocaleDateString()}`,
         'arduino' // Default to Arduino
       );
       
       // Save project ID and workspace type to localStorage
       localStorage.setItem('cubot-ide-last-project', project.id);
-      localStorage.setItem(`cubot-ide-project-workspace-${project.id}`, type);
+      localStorage.setItem(`cubot-ide-project-workspace-${project.id}`, selectedType);
       
       // Load the project to set it as current (IDE/Blocks only)
-      if (type !== 'cad') {
+      if (selectedType !== 'cad') {
         await loadProject(project.id);
       }
       
       // Create an initial file for IDE projects
-      if (type === 'ide') {
+      if (selectedType === 'ide') {
         try {
           await createFile('main.ino', 'main.ino', STARTER_CODE, 'ino');
           console.log('Created initial file for project');
@@ -78,9 +97,9 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       onOpenChange(false);
       
       // Navigate with project ID
-      if (type === 'ide') {
+      if (selectedType === 'ide') {
         router.push(`/ide?project=${project.id}`);
-      } else if (type === 'blocks') {
+      } else if (selectedType === 'blocks') {
         router.push(`/blocks?project=${project.id}`);
       } else {
         router.push(`/cad?project=${project.id}`);
@@ -89,31 +108,43 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       console.error('Failed to create project:', error);
       // Fallback: navigate without project (will use mock data)
       onOpenChange(false);
-      if (type === 'ide') {
+      if (selectedType === 'ide') {
         router.push('/ide');
-      } else if (type === 'blocks') {
+      } else if (selectedType === 'blocks') {
         router.push('/blocks');
       } else {
         router.push(`/cad?project=cad-${Date.now()}`);
       }
     } finally {
       setIsCreating(false);
+      resetModal();
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          resetModal();
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent className="max-w-4xl border-4 border-foreground bg-background p-0 gap-0">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle className="text-2xl font-black text-foreground">
-            CHOOSE YOUR WORKSPACE
+            {step === 'select' ? 'CHOOSE YOUR WORKSPACE' : 'NAME YOUR PROJECT'}
           </DialogTitle>
           <DialogDescription className="text-foreground/70 font-bold">
-            Select how you want to build your embedded project
+            {step === 'select'
+              ? 'Select how you want to build your embedded project'
+              : 'Give your project a descriptive name'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+        {step === 'select' ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
           {/* IDE Option */}
           <button
             onClick={() => handleSelectWorkspace('ide')}
@@ -176,7 +207,51 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
               <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
             </div>
           </button>
-        </div>
+          </div>
+        ) : (
+          <div className="p-6">
+            <div className="space-y-4">
+              <label className="text-sm font-black uppercase tracking-widest text-foreground/70">
+                Project name
+              </label>
+              <Input
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="My CAD Project"
+                className="border-2 border-foreground font-bold"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && projectName.trim() && !isCreating) {
+                    handleCreateProject();
+                  }
+                }}
+              />
+              <div className="flex items-center justify-between pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep('select')}
+                  disabled={isCreating}
+                  className="border-2 border-foreground font-black"
+                >
+                  <ArrowLeft size={16} className="mr-2" />
+                  BACK
+                </Button>
+                <Button
+                  onClick={handleCreateProject}
+                  disabled={isCreating || !projectName.trim()}
+                  className="border-2 border-foreground font-black"
+                >
+                  {isCreating ? (
+                    <Loader2 size={16} className="mr-2 animate-spin" />
+                  ) : (
+                    <ArrowRight size={16} className="mr-2" />
+                  )}
+                  CREATE PROJECT
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
