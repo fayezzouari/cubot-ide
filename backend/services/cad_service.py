@@ -169,9 +169,16 @@ result = (
                         f"**Code (use this as the base; preserve intent and comments where possible):**\n"
                         f"```python\n{cadquery_code}\n```\n\n"
                         f"**Error:**\n```\n{error}\n```\n\n"
-                        f"Fix the code so it runs without errors. Return the FULL corrected script. "
-                        f"Keep the same structure and comments where possible, only change what is needed. "
-                        f"Remember: only geometry code, assign the result to `result`, no export calls, no main()."
+                        f"Fix the code so it runs without errors. Return ONLY a single ```python``` code block.\n"
+                        f"Rules for the fix:\n"
+                        f"- Keep the same structure and comments where possible, only change what is needed.\n"
+                        f"- No helper functions, no classes, no type annotations, no decorators.\n"
+                        f"- No control-flow blocks (if/for/while/with/try).\n"
+                        f"- No extra imports besides `import cadquery as cq`.\n"
+                        f"- Assign the final geometry to `result`.\n"
+                        f"- No export calls, no main().\n\n"
+                        f"Template to follow exactly:\n"
+                        f"```python\nimport cadquery as cq\n\n# Comment\nresult = cq.Workplane(\"XY\").box(10, 10, 10)\n```"
                     )
 
                     cadquery_code, explanation, _ = await self._generate_code(
@@ -303,7 +310,7 @@ result = (
         match = re.search(pattern, text, re.DOTALL)
         if match:
             code = match.group(1).strip()
-            return self._sanitize_code(code)
+            return code
 
         # Fallback: try generic code fence
         pattern2 = r"```\s*\n(.*?)```"
@@ -311,165 +318,10 @@ result = (
         if match2:
             code = match2.group(1).strip()
             if "cadquery" in code or "cq." in code:
-                return self._sanitize_code(code)
+                return code
 
         return None
 
-    def _sanitize_code(self, code: str) -> str:
-        """Remove dangerous or unnecessary patterns from generated CadQuery code.
-        
-        Strategy: parse the code into top-level blocks (functions, if-guards, 
-        loose statements). Keep only imports and loose statements that build 
-        geometry. Remove all function definitions, if __name__ guards, export
-        calls, and forbidden imports.
-        """
-        import re
-
-        lines = code.splitlines()
-
-        # ── Pass 1: identify top-level blocks and classify them ──
-        blocks: list[dict] = []  # {start, end, kind, keep}
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            stripped = line.strip()
-
-            # Calculate indentation level
-            indent = len(line) - len(line.lstrip()) if stripped else 0
-
-            # Top-level function definition → remove entire function
-            if indent == 0 and re.match(r"def\s+\w+\s*\(", stripped):
-                block_start = i
-                i += 1
-                # Consume entire indented body
-                while i < len(lines):
-                    s = lines[i].strip()
-                    if s == "":
-                        i += 1
-                        continue
-                    body_indent = len(lines[i]) - len(lines[i].lstrip())
-                    if body_indent > 0:
-                        i += 1
-                    else:
-                        break
-                blocks.append({"start": block_start, "end": i, "kind": "func", "keep": False})
-                logger.debug("[CAD:sanitize] Removing function block lines %d-%d", block_start + 1, i)
-                continue
-
-            # Top-level class definition → remove
-            if indent == 0 and re.match(r"class\s+\w+", stripped):
-                block_start = i
-                i += 1
-                while i < len(lines):
-                    s = lines[i].strip()
-                    if s == "":
-                        i += 1
-                        continue
-                    body_indent = len(lines[i]) - len(lines[i].lstrip())
-                    if body_indent > 0:
-                        i += 1
-                    else:
-                        break
-                blocks.append({"start": block_start, "end": i, "kind": "class", "keep": False})
-                logger.debug("[CAD:sanitize] Removing class block lines %d-%d", block_start + 1, i)
-                continue
-
-            # if __name__ == "__main__" guard → remove
-            if indent == 0 and re.match(r'if\s+__name__\s*==\s*["\']__main__["\']', stripped):
-                block_start = i
-                i += 1
-                while i < len(lines):
-                    s = lines[i].strip()
-                    if s == "":
-                        i += 1
-                        continue
-                    body_indent = len(lines[i]) - len(lines[i].lstrip())
-                    if body_indent > 0:
-                        i += 1
-                    else:
-                        break
-                blocks.append({"start": block_start, "end": i, "kind": "main_guard", "keep": False})
-                logger.debug("[CAD:sanitize] Removing __main__ guard lines %d-%d", block_start + 1, i)
-                continue
-
-            # Regular line → keep (will filter individually below)
-            blocks.append({"start": i, "end": i + 1, "kind": "line", "keep": True})
-            i += 1
-
-        # ── Pass 2: collect kept lines, filter individual statements ──
-        cleaned = []
-        paren_balance = 0
-        for block in blocks:
-            if not block["keep"]:
-                continue
-            for j in range(block["start"], block["end"]):
-                line = lines[j]
-                stripped = line.strip()
-
-                # Track paren balance to allow multi-line expressions
-                paren_balance += stripped.count("(") - stripped.count(")")
-
-                # Drop indented lines that are not part of a multi-line expression
-                if line.startswith((" ", "\t")) and paren_balance <= 0:
-                    logger.debug("[CAD:sanitize] Removed unexpected indented line: %s", stripped)
-                    continue
-
-                # Skip decorators
-                if re.match(r"^\s*@", line):
-                    logger.debug("[CAD:sanitize] Removed decorator: %s", stripped)
-                    continue
-
-                # Skip top-level control-flow blocks (we only want linear geometry code)
-                if re.match(r"^\s*(if|for|while|with|try|except|elif|else)\b", line):
-                    logger.debug("[CAD:sanitize] Removed control-flow line: %s", stripped)
-                    continue
-
-                # Remove dangling function signature lines like ") -> cq.Solid:"
-                if re.match(r"^\s*\)\s*->.*:\s*$", line):
-                    logger.debug("[CAD:sanitize] Removed dangling type-annotated line: %s", stripped)
-                    continue
-
-                # Remove any standalone block starters ending with ':'
-                if stripped.endswith(":"):
-                    logger.debug("[CAD:sanitize] Removed block-starter line: %s", stripped)
-                    continue
-
-                # Skip empty lines at the edges (keep in middle)
-                # Skip forbidden imports
-                if re.match(r"^\s*(import|from)\s+(sys|os|argparse|pathlib|shutil)\b", line):
-                    logger.debug("[CAD:sanitize] Removed forbidden import: %s", stripped)
-                    continue
-
-                # Remove numpy imports (not needed for geometry generation)
-                if re.match(r"^\s*(import|from)\s+numpy\b", line):
-                    logger.debug("[CAD:sanitize] Removed numpy import: %s", stripped)
-                    continue
-
-                # Skip sys.exit()
-                if "sys.exit" in stripped:
-                    continue
-
-                # Skip export calls
-                if re.search(r"\.(exportStl|exportStep|exportGLB|exportBrep|exportVRML|exportSVG)\s*\(", line):
-                    logger.debug("[CAD:sanitize] Removed export call: %s", stripped)
-                    continue
-                if re.match(r"^\s*cq\.exporters\.export\s*\(", line):
-                    logger.debug("[CAD:sanitize] Removed cq.exporters.export call")
-                    continue
-
-                # Skip print() calls (often used for logging in generated scripts)
-                if re.match(r"^\s*print\s*\(", line):
-                    continue
-
-                cleaned.append(line)
-
-        result = "\n".join(cleaned).strip()
-        if result != code.strip():
-            original_count = len(lines)
-            new_count = len(cleaned)
-            logger.info("[CAD:sanitize] Code sanitized: %d -> %d lines (removed %d)",
-                        original_count, new_count, original_count - new_count)
-        return result
 
     def _extract_explanation(self, full_text: str, code: Optional[str]) -> str:
         """Extract a clean explanation from the response, stripping code and tags."""
