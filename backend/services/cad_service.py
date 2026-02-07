@@ -30,6 +30,7 @@ class CadService:
 
     def __init__(self):
         self._bedrock_runtime = None
+        self._session_tmp_dirs: dict[str, str] = {}
 
     def _get_bedrock_runtime(self):
         """Get Bedrock runtime client (lazy initialization)"""
@@ -133,10 +134,16 @@ result = (
         try:
             system_prompt = self._build_system_prompt()
 
+            # Load session context (memory)
+            session_context = await self._get_session_context(session_id)
+            session_history = session_context.get("history", [])
+            session_code = session_context.get("current_code")
+
             # Build the user prompt — always frame it as a CAD generation task
-            if request.current_code:
+            base_code = request.current_code or session_code
+            if base_code:
                 user_prompt = (
-                    f"Here is the current CadQuery code:\n```python\n{request.current_code}\n```\n\n"
+                    f"Here is the current CadQuery code:\n```python\n{base_code}\n```\n\n"
                     f"Generate an updated CadQuery script for: {request.message}"
                 )
             else:
@@ -145,10 +152,13 @@ result = (
             logger.info("[CAD]   user_prompt (first 200 chars): %.200s", user_prompt)
 
             # ── Initial generation ──
+            # Combine request history with stored session history
+            merged_history = (session_history or []) + (request.conversation_history or [])
+
             cadquery_code, explanation, raw_response = await self._generate_code(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                history=request.conversation_history or [],
+                history=merged_history,
             )
 
             # ── Execute + reflect loop ──
@@ -156,7 +166,7 @@ result = (
             error = None
 
             if cadquery_code:
-                stl_b64, error = self._execute_cadquery(cadquery_code)
+                stl_b64, error = self._execute_cadquery(cadquery_code, session_id=session_id)
 
                 # Reflection: if execution failed, ask the LLM to fix it
                 attempt = 1
@@ -188,7 +198,7 @@ result = (
                     )
 
                     if cadquery_code:
-                        stl_b64, error = self._execute_cadquery(cadquery_code)
+                        stl_b64, error = self._execute_cadquery(cadquery_code, session_id=session_id)
                         if stl_b64:
                             logger.info("[CAD:reflect] ✔ Fixed on attempt %d", attempt)
                             break
@@ -269,6 +279,25 @@ result = (
 
         return cadquery_code, explanation, response_text
 
+    async def _get_session_context(self, session_id: str) -> dict:
+        """Return stored session history and current code for memory."""
+        session = await self.get_session(session_id)
+        if not session:
+            return {"history": [], "current_code": None}
+
+        # Convert stored messages to a lightweight history format
+        history = []
+        for msg in session.get("messages", []):
+            history.append({
+                "role": msg.get("role"),
+                "content": msg.get("content"),
+            })
+
+        return {
+            "history": history,
+            "current_code": session.get("current_code"),
+        }
+
     # ------------------------------------------------------------------
     # Export STL from existing code
     # ------------------------------------------------------------------
@@ -340,16 +369,34 @@ result = (
 
         return cleaned
 
-    def _execute_cadquery(self, code: str) -> tuple[Optional[str], Optional[str]]:
+    def _get_session_tmp_dir(self, session_id: str) -> str:
+        """Get or create a persistent temp directory for a CAD session."""
+        if session_id in self._session_tmp_dirs:
+            return self._session_tmp_dirs[session_id]
+
+        tmp_dir = tempfile.mkdtemp(prefix=f"cad_{session_id}_")
+        self._session_tmp_dirs[session_id] = tmp_dir
+        logger.debug("[CAD:exec] Created session temp dir: %s", tmp_dir)
+        return tmp_dir
+
+    def _execute_cadquery(self, code: str, session_id: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
         """
         Execute CadQuery code in a subprocess and return (stl_base64, error).
         """
         stl_path = None
         script_path = None
         try:
-            # Create a temp file for the STL output
-            stl_fd, stl_path = tempfile.mkstemp(suffix=".stl")
-            os.close(stl_fd)
+            # Use a persistent temp dir per session (reused across retries)
+            if session_id:
+                tmp_dir = self._get_session_tmp_dir(session_id)
+                stl_path = os.path.join(tmp_dir, "current.stl")
+                script_path = os.path.join(tmp_dir, "current.py")
+            else:
+                # Fallback: one-off temp files
+                stl_fd, stl_path = tempfile.mkstemp(suffix=".stl")
+                os.close(stl_fd)
+                script_path = None
+
             logger.debug("[CAD:exec] STL output path: %s", stl_path)
 
             # Build the execution script
@@ -384,9 +431,13 @@ if 'result' in dir() or 'result' in globals():
 else:
     raise ValueError("No 'result' variable found in the CadQuery script")
 """
-            script_fd, script_path = tempfile.mkstemp(suffix=".py")
-            with os.fdopen(script_fd, "w") as f:
-                f.write(exec_script)
+            if script_path:
+                with open(script_path, "w") as f:
+                    f.write(exec_script)
+            else:
+                script_fd, script_path = tempfile.mkstemp(suffix=".py")
+                with os.fdopen(script_fd, "w") as f:
+                    f.write(exec_script)
             logger.debug("[CAD:exec] Script path: %s", script_path)
 
             # Run in subprocess with timeout
@@ -427,10 +478,12 @@ else:
             logger.exception("[CAD:exec] ✘ Unexpected error")
             return None, str(e)
         finally:
-            if stl_path and os.path.exists(stl_path):
-                os.unlink(stl_path)
-            if script_path and os.path.exists(script_path):
-                os.unlink(script_path)
+            # Only remove temp files if not using a session temp dir
+            if session_id is None:
+                if stl_path and os.path.exists(stl_path):
+                    os.unlink(stl_path)
+                if script_path and os.path.exists(script_path):
+                    os.unlink(script_path)
 
     async def _invoke_bedrock(
         self,
