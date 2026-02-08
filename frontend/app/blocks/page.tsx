@@ -25,8 +25,6 @@ import {
   Trash2,
   RotateCcw,
   GripVertical,
-  ChevronLeft,
-  ChevronRight,
   Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -197,6 +195,8 @@ function MovePositionNode({ data }: NodeProps) {
             type="number"
             defaultValue={0}
             step="0.01"
+            min="-5"
+            max="5"
             className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
             onClick={(e) => e.stopPropagation()}
           />
@@ -207,6 +207,8 @@ function MovePositionNode({ data }: NodeProps) {
             type="number"
             defaultValue={0}
             step="0.01"
+            min="-5"
+            max="5"
             className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
             onClick={(e) => e.stopPropagation()}
           />
@@ -217,9 +219,14 @@ function MovePositionNode({ data }: NodeProps) {
             type="number"
             defaultValue={0}
             step="0.01"
+            min="-5"
+            max="5"
             className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+        <div className="text-[9px] text-violet-600 dark:text-violet-300 mt-1 opacity-70">
+          Range: ±5 units
         </div>
       </div>
       <Handle
@@ -264,10 +271,15 @@ function MoveJointNode({ data }: NodeProps) {
             type="number"
             defaultValue={0}
             step="1"
+            min="-180"
+            max="180"
             className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
             onClick={(e) => e.stopPropagation()}
           />
           <span className="text-[10px]">°</span>
+        </div>
+        <div className="text-[9px] text-violet-600 dark:text-violet-300 mt-1 opacity-70">
+          Range: -180° to +180°
         </div>
       </div>
       <Handle
@@ -371,7 +383,6 @@ export default function BlocksPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState(defaultNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(defaultEdges);
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['control', 'loops', 'logic', 'robotics']);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [armState, setArmState] = useState<ArmState>({
     position: { x: 0, y: 0, z: 0 },
     joints: [0, 0, 0, 0, 0, 0],
@@ -610,7 +621,7 @@ export default function BlocksPage() {
         {/* Resizable Canvas and Arm Visualization */}
         <ResizablePanelGroup direction="horizontal" className="flex-1">
           {/* React Flow Canvas */}
-          <ResizablePanel defaultSize={sidebarOpen ? 65 : 100} minSize={30}>
+          <ResizablePanel defaultSize={65} minSize={30}>
             <div className="h-full">
               <ReactFlow
                 nodes={nodes}
@@ -636,48 +647,48 @@ export default function BlocksPage() {
           </ResizablePanel>
 
           {/* Arm Visualization Sidebar */}
-          {sidebarOpen && (
-            <>
-              <ResizableHandle withHandle className="border-l-4 border-foreground" />
-              <ResizablePanel defaultSize={35} minSize={20} maxSize={60}>
-                <div className="h-full flex flex-col relative">
-                  <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
-                    <span className="font-black text-sm">ARM VISUALIZATION</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-1 rounded ${armState.is_moving ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'}`}>
-                        {armState.is_moving ? 'MOVING' : 'READY'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <ArmVisualization position={armState.position} joints={armState.joints} />
-                  </div>
-                  <div className="p-3 border-t-2 border-foreground bg-muted/50">
-                    <div className="text-xs space-y-1 font-mono">
-                      <div className="font-bold mb-2">POSITION:</div>
-                      <div>X: {armState.position.x.toFixed(2)}</div>
-                      <div>Y: {armState.position.y.toFixed(2)}</div>
-                      <div>Z: {armState.position.z.toFixed(2)}</div>
-                      <div className="font-bold mt-2 mb-1">JOINTS:</div>
-                      {armState.joints.map((angle, i) => (
-                        <div key={i}>J{i + 1}: {angle.toFixed(1)}°</div>
-                      ))}
-                    </div>
-                  </div>
+          <ResizableHandle withHandle className="border-l-4 border-foreground" />
+          <ResizablePanel defaultSize={35} minSize={20} maxSize={60}>
+            <div className="h-full flex flex-col">
+              <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
+                <span className="font-black text-sm">ARM VISUALIZATION</span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-1 rounded ${armState.is_moving ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                    {armState.is_moving ? 'MOVING' : 'READY'}
+                  </span>
                 </div>
-              </ResizablePanel>
-            </>
-          )}
+              </div>
+              <div className="flex-1">
+                <ArmVisualization position={armState.position} joints={armState.joints} />
+              </div>
+              <div className="p-3 border-t-2 border-foreground bg-muted/50">
+                <ScrollArea className="h-full max-h-48">
+                  <div className="text-xs space-y-1 font-mono pr-3">
+                    <div className="font-bold mb-2">POSITION:</div>
+                    <div>X: {armState.position.x.toFixed(2)}</div>
+                    <div>Y: {armState.position.y.toFixed(2)}</div>
+                    <div>Z: {armState.position.z.toFixed(2)}</div>
+                    
+                    <div className="font-bold mt-2 mb-1">JOINTS:</div>
+                    {armState.joints.map((angle, i) => (
+                      <div key={i}>J{i + 1}: {angle.toFixed(1)}°</div>
+                    ))}
+                    
+                    <div className="font-bold mt-3 mb-1 text-amber-600 dark:text-amber-400">LIMITATIONS:</div>
+                    <div className="text-[10px] leading-relaxed space-y-1 text-muted-foreground">
+                      <div>• Joint Range: -180° to +180°</div>
+                      <div>• Position Range: ±5 units</div>
+                      <div>• Max Reach: ~4 units</div>
+                      <div>• 6-DOF arm simulation</div>
+                      <div>• No collision detection</div>
+                      <div>• Simplified kinematics</div>
+                    </div>
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          </ResizablePanel>
         </ResizablePanelGroup>
-
-        {/* Toggle Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-background border-2 border-foreground p-2 hover:bg-muted transition-colors shadow-lg"
-          style={{ right: sidebarOpen ? 'auto' : '0' }}
-        >
-          {sidebarOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-        </button>
       </div>
     </div>
   );
