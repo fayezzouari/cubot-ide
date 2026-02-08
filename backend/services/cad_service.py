@@ -106,6 +106,78 @@ result = (
 ```
 
 **What changed:** Added a 5mm through-hole on the top face of the cube.
+
+---
+
+CADQUERY REFERENCE GUIDE:
+
+**Core Philosophy:**
+Models are built primarily on a 2D `Workplane`, which is a coordinate system in 3D space.
+The typical workflow is: **Define a workplane -> Sketch 2D geometry -> Perform 3D operations (extrude, revolve, etc.) -> Select resulting features -> Apply modifications (fillets, chamfers, holes) -> Export.**
+
+**1. Primary 3D Construction Methods:**
+
+**Primitive Creation (Start with these on a workplane):**
+- `box(length, width, height)`: Creates a rectangular solid.
+- `sphere(radius)`: Creates a sphere.
+- `cylinder(height, radius)`: Creates a cylinder.
+- `text(txt, fontsize, distance)`: Creates text as a 3D solid. The `distance` argument controls the extrusion depth.
+
+**Additive Methods (Add material from 2D sketches):**
+- `extrude(until)`: Extrudes the currently pending 2D sketch/wires into a 3D solid. Use `until="next"` or a specific distance.
+- `revolve(angleDegrees)`: Revolves the pending sketch around the workplane's X-axis.
+- `loft(ruled=False)`: Creates a transition solid between multiple 2D profiles.
+- `sweep(path, isFrenet, transitionMode)`: Sweeps a 2D profile along a path.
+
+**Subtractive & Modifying Methods:**
+- `cutBlind(until)`: Cuts material from a solid, stopping at a specified depth.
+- `cutThruAll()`: Cuts entirely through a solid.
+- `hole(diameter, depth)`: Creates a cylindrical hole. If `depth` is `None`, it goes through all.
+- `shell(thickness)`: Hollows out a solid, leaving walls of a specified thickness.
+- `fillet(radius)`: Rounds edges with a specified radius.
+- `chamfer(length)`: Bevels edges with a specified length.
+
+**Boolean Operations:**
+- Combine results using `+` (union), `-` (cut), or `&` (intersection). Use the `combine` argument (`"a"` for union, `"s"` for cut, `"i"` for intersect) in methods like `extrude` for cleaner history.
+- Or use explicit methods: `union(shape)`, `cut(shape)`, `intersect(shape)`.
+
+**2. Selection System (Crucial for modifying specific features):**
+The `faces()`, `edges()`, and `vertices()` methods use selector strings to filter objects.
+
+**Selector String Modifiers:**
+- `|` (Pipe): **Parallel to** an axis (e.g., `"|Z"` selects faces parallel to the XY plane).
+- `#` (Hash): **Perpendicular to** an axis (e.g., `"#Z"` selects faces perpendicular to the Z direction).
+- `+` / `-`: **Positive or Negative** direction along an axis (e.g., `"+Z"` selects faces with normal pointing up).
+- `>` / `<`: **Maximum or Minimum** along an axis (e.g., `faces(">Z")` selects the top-most face).
+- `%` (Percent): Selects by **type** (e.g., `"%Plane"` selects planar faces).
+
+**Key Selector Methods:**
+- `.faces(selector_string)`: Select faces (most common).
+- `.edges(selector_string)`: Select edges.
+- `.vertices(selector_string)`: Select vertices.
+- `.solids()`, `.shells()`: Select higher-level objects.
+
+**3. Workplane Manipulation:**
+- **Positioning:** Use `.workplane(offset=distance, origin=(x, y))` to create a new workplane relative to the current one or a selected face.
+- **Transformation:**
+    - `.translate(Vector(x, y, z))`: Move the workplane.
+    - `.rotateAboutCenter(Vector(axis), angleDegrees)`: Rotate around its own center.
+    - `.rotate(Vector(pointOnAxis), Vector(axisDirection), angleDegrees)`: Rotate around an arbitrary axis.
+- **Named Planes:** Start with predefined planes like `XY`, `YZ`, `XZ`, `front`, `back`, `left`, `right`, `top`, `bottom`.
+
+**4. Import/Export:**
+- **Import:** Use `importers.importDXF(path)` or `importers.importStep(path)`.
+- **Export:** Use `exporters.export(obj, "path/filename.extension")`. Supported extensions: `.step`, `.stl`, `.svg`, `.amf`, `.vrml`, `.json`.
+
+**5. BREP Terminology (Building Block Hierarchy):**
+- `Vertex` -> `Edge` -> `Wire` -> `Face` -> `Shell` -> `Solid` -> `Compound`.
+- Understanding this helps with selection and advanced operations.
+
+**Response Guidelines:**
+1. **Be Practical:** Focus on "how to" achieve common modeling tasks. When a user describes a goal, outline the key steps in the CadQuery workflow.
+2. **Example-Oriented:** If appropriate, provide a minimal code snippet illustrating the core concept (e.g., `result = cq.Workplane("XY").box(10, 20, 5).faces(">Z").hole(3)`).
+3. **Clarify Selection:** If a user's question involves modifying a specific part (like "the top edge"), explain how to construct the correct selector string (e.g., `.edges(">Z")` or `.edges("|Z")`).
+4. **Reference the Workflow:** Always relate answers back to the core workflow: Workplane -> Sketch -> 3D Op -> Select -> Modify.
 """
 
     # ------------------------------------------------------------------
