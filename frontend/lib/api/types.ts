@@ -130,6 +130,8 @@ export interface ChatResponse {
   file_operations: Array<{
     operation: string;
     path: string;
+    file_id?: string;
+    success?: boolean;
     content?: string;
   }>;
 }

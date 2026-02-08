@@ -5,7 +5,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
-import { compileService, chatService } from '@/lib/api';
+import { compileService, chatService, projectService } from '@/lib/api';
 import type { CompilerType } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
 import { mockMessages as initialMessages, type FileNode, type ChatMessage } from '@/lib/mock-data';
@@ -167,6 +167,30 @@ export default function IDEPage() {
         console.log('File operations performed:', response.file_operations);
         // Reload project to get updated files
         await loadProject(currentProject.id);
+        
+        // Update file contents for all files
+        const updatedProject = await projectService.getWithFiles(currentProject.id);
+        const newContents: Record<string, string> = {};
+        updatedProject.files.forEach(file => {
+          newContents[file.id] = file.content;
+        });
+        setFileContents(newContents);
+        
+        // If the currently selected file was updated, refresh its content
+        if (selectedFile && newContents[selectedFile] !== undefined) {
+          setEditedContent(newContents[selectedFile]);
+          setHasUnsavedChanges(false);
+        }
+        
+        // If a new file was created and no file is selected, select it
+        if (!selectedFile && response.file_operations.some(op => op.operation === 'create_file')) {
+          const createdOp = response.file_operations.find(op => op.operation === 'create_file');
+          const fileId = createdOp?.file_id;
+          if (fileId && newContents[fileId]) {
+            setSelectedFile(fileId);
+            setEditedContent(newContents[fileId]);
+          }
+        }
       }
       
     } catch (error) {
