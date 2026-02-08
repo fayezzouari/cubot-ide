@@ -130,7 +130,7 @@ class WiringService:
         return data
 
     async def generate(self, source_code: str, compiler: str | None = None) -> WiringGuide:
-        response_text = await ai_service._invoke_bedrock(
+        response_text = await ai_service.generate_text(
             system_prompt=WIRING_SYSTEM_PROMPT,
             user_prompt=source_code,
             history=[],
@@ -154,7 +154,7 @@ class WiringService:
                 '"warnings":[],"summary":"Simple LED circuit","explanation":"LED on pin 13"}\n\n'
                 "SOURCE CODE:\n"
             )
-            retry_text = await ai_service._invoke_bedrock(
+            retry_text = await ai_service.generate_text(
                 system_prompt="You are a JSON generator. Return ONLY valid JSON with double quotes. No other text.",
                 user_prompt=f"{strict_prompt}{source_code}",
                 history=[],

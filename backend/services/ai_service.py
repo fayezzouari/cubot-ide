@@ -581,26 +581,86 @@ When the user asks you to create or modify code:
         compiler: Optional[str] = None,
     ) -> str:
         """Generate a concise explanation for compile logs (without tools)"""
-        client = self._get_bedrock_runtime()
-        
         system_prompt = f"You are CuBot, an embedded systems assistant. Explain compile logs concisely{' for ' + compiler if compiler else ''}. Provide a 1-sentence summary and list only the top 2 fixes. Be brief."
         
         error_section = "\n".join(errors or [])
         user_prompt = f"Summarize errors in 1 sentence. List only top 2 fixes.\n\nLogs:\n{logs}\n\nErrors:\n{error_section}"
         
-        messages = [{
-            "role": "user",
-            "content": [{"text": user_prompt}]
-        }]
+        return await self.generate_text(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=256
+        )
+    
+    async def generate_text(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        max_tokens: int = 4096
+    ) -> str:
+        """
+        Generate text using Bedrock without tools
+        Public method for other services to use
+        
+        Args:
+            system_prompt: System instructions
+            user_prompt: User message
+            history: Optional conversation history
+            max_tokens: Maximum tokens to generate
+            
+        Returns:
+            Generated text response
+        """
+        client = self._get_bedrock_runtime()
+        
+        # Detect model type
+        model_id = settings.BEDROCK_MODEL_ID.lower()
+        is_claude = "claude" in model_id or "anthropic" in model_id
+        is_openai = "gpt" in model_id or "openai" in model_id
+        
+        messages = []
+        
+        # Add history if provided
+        if history:
+            for msg in history:
+                messages.append({
+                    "role": msg.get("role", "user"),
+                    "content": [{"text": msg.get("content", "")}] if is_claude else msg.get("content", "")
+                })
+        
+        # Add current message
+        if is_claude:
+            messages.append({
+                "role": "user",
+                "content": [{"text": user_prompt}]
+            })
+        else:
+            messages.append({
+                "role": "user",
+                "content": user_prompt
+            })
         
         try:
-            request_body = {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 256,
-                "system": system_prompt,
-                "messages": messages,
-                "temperature": 0.7
-            }
+            if is_claude:
+                # Claude format
+                request_body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": max_tokens,
+                    "system": system_prompt,
+                    "messages": messages,
+                    "temperature": 0.7
+                }
+            else:
+                # OpenAI format
+                openai_messages = [{"role": "system", "content": system_prompt}]
+                openai_messages.extend(messages)
+                request_body = {
+                    "model": settings.BEDROCK_MODEL_ID,
+                    "messages": openai_messages,
+                    "temperature": 0.7,
+                    "max_tokens": max_tokens
+                }
             
             response = client.invoke_model(
                 modelId=settings.BEDROCK_MODEL_ID,
@@ -610,18 +670,25 @@ When the user asks you to create or modify code:
             )
             
             response_body = json.loads(response["body"].read())
-            content = response_body.get("content", [])
             
-            response_text = ""
-            for content_block in content:
-                if content_block.get("type") == "text":
-                    response_text += content_block.get("text", "")
-            
-            return response_text.strip()
+            # Extract text based on model type
+            if is_claude:
+                content = response_body.get("content", [])
+                response_text = ""
+                for content_block in content:
+                    if content_block.get("type") == "text":
+                        response_text += content_block.get("text", "")
+                return response_text.strip()
+            else:
+                # OpenAI format
+                choices = response_body.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "").strip()
+                return ""
             
         except Exception as e:
-            logger.error(f"Error explaining logs: {str(e)}")
-            return f"Error analyzing logs: {str(e)}"
+            logger.error(f"Error generating text: {str(e)}")
+            raise Exception(f"Text generation failed: {str(e)}")
 
 
 ai_service = AIService()
