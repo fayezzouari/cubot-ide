@@ -40,11 +40,12 @@ export const blockCategories: BlockCategory[] = [
     ],
   },
   {
-    id: 'gpio',
-    name: 'GPIO',
+    id: 'robotics',
+    name: 'ROBOTICS',
     blocks: [
-      { type: 'gpio_write', label: 'GPIO WRITE', color: 'bg-violet-100 dark:bg-violet-900/50 border-violet-600 dark:border-violet-400 text-violet-800 dark:text-violet-200' },
-      { type: 'gpio_read', label: 'GPIO READ', color: 'bg-violet-100 dark:bg-violet-900/50 border-violet-600 dark:border-violet-400 text-violet-800 dark:text-violet-200' },
+      { type: 'move_position', label: 'MOVE POSITION', color: 'bg-violet-100 dark:bg-violet-900/50 border-violet-600 dark:border-violet-400 text-violet-800 dark:text-violet-200' },
+      { type: 'move_joint', label: 'MOVE JOINT', color: 'bg-violet-100 dark:bg-violet-900/50 border-violet-600 dark:border-violet-400 text-violet-800 dark:text-violet-200' },
+      { type: 'get_position', label: 'GET POSITION', color: 'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-600 dark:border-indigo-400 text-indigo-800 dark:text-indigo-200' },
     ],
   },
   {
@@ -73,20 +74,20 @@ export const initialNodes: Node[] = [
   },
   {
     id: '3',
-    type: 'gpio_write',
+    type: 'move_position',
     position: { x: 225, y: 280 },
-    data: { label: 'GPIO WRITE' },
+    data: { label: 'MOVE POSITION' },
   },
   {
     id: '4',
     type: 'delay',
-    position: { x: 225, y: 420 },
+    position: { x: 225, y: 450 },
     data: { label: 'DELAY' },
   },
   {
     id: '5',
     type: 'end',
-    position: { x: 250, y: 550 },
+    position: { x: 250, y: 580 },
     data: { label: 'END' },
   },
 ];

@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Space_Grotesk, IBM_Plex_Serif, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ProjectProvider } from '@/contexts/project-context'
+import { Toaster } from 'sonner'
 import './globals.css'
 
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: '--font-sans' });
@@ -43,6 +44,7 @@ export default function RootLayout({
         <ProjectProvider>
           {children}
         </ProjectProvider>
+        <Toaster position="top-right" />
         <Analytics />
       </body>
     </html>

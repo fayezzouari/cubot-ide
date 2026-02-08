@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   ReactFlow,
   Controls,
@@ -10,7 +11,6 @@ import {
   useEdgesState,
   addEdge,
   Connection,
-  Edge,
   Node,
   Handle,
   Position,
@@ -25,6 +25,9 @@ import {
   Trash2,
   RotateCcw,
   GripVertical,
+  ChevronLeft,
+  ChevronRight,
+  Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -33,6 +36,14 @@ import {
   initialNodes as defaultNodes,
   initialEdges as defaultEdges,
 } from '@/lib/mock-data';
+import { blocksApi, type ArmState } from '@/lib/api/blocks';
+import { toast } from 'sonner';
+
+// Dynamic import for 3D component (client-side only)
+const ArmVisualization = dynamic(
+  () => import('@/components/blocks/ArmVisualization'),
+  { ssr: false }
+);
 
 // Custom node components
 function StartNode({ data }: NodeProps) {
@@ -163,9 +174,9 @@ function IfNode({ data }: NodeProps) {
   );
 }
 
-function GpioWriteNode({ data }: NodeProps) {
+function MovePositionNode({ data }: NodeProps) {
   return (
-    <div className="bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[150px] shadow-md">
+    <div className="bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[180px] shadow-md">
       <Handle
         type="target"
         position={Position.Top}
@@ -176,24 +187,34 @@ function GpioWriteNode({ data }: NodeProps) {
       </div>
       <div className="px-4 py-2 text-xs font-medium space-y-1.5">
         <div className="flex items-center gap-2">
-          <span>PIN:</span>
+          <span className="w-6">X:</span>
           <input
             type="number"
-            defaultValue={13}
-            className="w-12 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
+            defaultValue={0}
+            step="0.01"
+            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
         <div className="flex items-center gap-2">
-          <span>VALUE:</span>
-          <select
-            defaultValue="HIGH"
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 focus:outline-none focus:ring-1 focus:ring-violet-500"
+          <span className="w-6">Y:</span>
+          <input
+            type="number"
+            defaultValue={0}
+            step="0.01"
+            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
             onClick={(e) => e.stopPropagation()}
-          >
-            <option value="HIGH">HIGH</option>
-            <option value="LOW">LOW</option>
-          </select>
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-6">Z:</span>
+          <input
+            type="number"
+            defaultValue={0}
+            step="0.01"
+            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       </div>
       <Handle
@@ -205,9 +226,9 @@ function GpioWriteNode({ data }: NodeProps) {
   );
 }
 
-function GpioReadNode({ data }: NodeProps) {
+function MoveJointNode({ data }: NodeProps) {
   return (
-    <div className="bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[150px] shadow-md">
+    <div className="bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[180px] shadow-md">
       <Handle
         type="target"
         position={Position.Top}
@@ -216,21 +237,63 @@ function GpioReadNode({ data }: NodeProps) {
       <div className="px-4 py-2 border-b border-violet-300 dark:border-violet-600 font-bold text-sm bg-violet-200/50 dark:bg-violet-800/50">
         {data.label as string}
       </div>
-      <div className="px-4 py-2 text-xs font-medium">
+      <div className="px-4 py-2 text-xs font-medium space-y-1.5">
         <div className="flex items-center gap-2">
-          <span>PIN:</span>
+          <span>JOINT:</span>
+          <select
+            defaultValue="1"
+            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 focus:outline-none focus:ring-1 focus:ring-violet-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <option value="1">Joint 1</option>
+            <option value="2">Joint 2</option>
+            <option value="3">Joint 3</option>
+            <option value="4">Joint 4</option>
+            <option value="5">Joint 5</option>
+            <option value="6">Joint 6</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span>ANGLE:</span>
           <input
             type="number"
-            defaultValue={2}
-            className="w-12 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
+            defaultValue={0}
+            step="1"
+            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
             onClick={(e) => e.stopPropagation()}
           />
+          <span className="text-[10px]">°</span>
         </div>
       </div>
       <Handle
         type="source"
         position={Position.Bottom}
         className="w-3 h-3 bg-violet-600 dark:bg-violet-400 border-2 border-background"
+      />
+    </div>
+  );
+}
+
+function GetPositionNode({ data }: NodeProps) {
+  return (
+    <div className="bg-indigo-100 dark:bg-indigo-900/50 border-2 border-indigo-600 dark:border-indigo-400 text-indigo-900 dark:text-indigo-100 min-w-[180px] shadow-md">
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="w-3 h-3 bg-indigo-600 dark:bg-indigo-400 border-2 border-background"
+      />
+      <div className="px-4 py-2 border-b border-indigo-300 dark:border-indigo-600 font-bold text-sm bg-indigo-200/50 dark:bg-indigo-800/50">
+        {data.label as string}
+      </div>
+      <div className="px-4 py-2 text-xs font-medium">
+        <div className="flex items-center gap-2">
+          <span>Returns current X, Y, Z position</span>
+        </div>
+      </div>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="w-3 h-3 bg-indigo-600 dark:bg-indigo-400 border-2 border-background"
       />
     </div>
   );
@@ -292,8 +355,9 @@ const nodeTypes = {
   while: WhileNode,
   if: IfNode,
   ifelse: IfNode,
-  gpio_write: GpioWriteNode,
-  gpio_read: GpioReadNode,
+  move_position: MovePositionNode,
+  move_joint: MoveJointNode,
+  get_position: GetPositionNode,
   delay: DelayNode,
   millis: DefaultNode,
 };
@@ -301,7 +365,75 @@ const nodeTypes = {
 export default function BlocksPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState(defaultNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(defaultEdges);
-  const [expandedCategories, setExpandedCategories] = useState<string[]>(['control', 'loops', 'logic']);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['control', 'loops', 'logic', 'robotics']);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [armState, setArmState] = useState<ArmState>({
+    position: { x: 0, y: 0, z: 0 },
+    joints: [0, 0, 0, 0, 0, 0],
+    is_moving: false,
+  });
+  const [currentProgramId, setCurrentProgramId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Load arm state
+  useEffect(() => {
+    const loadArmState = async () => {
+      try {
+        const state = await blocksApi.getArmState();
+        setArmState(state);
+      } catch (error) {
+        console.error('Failed to load arm state:', error);
+      }
+    };
+    loadArmState();
+
+    // Poll arm state every 500ms
+    const interval = setInterval(loadArmState, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-save on changes
+  useEffect(() => {
+    const saveProgram = async () => {
+      if (nodes.length === 0) return;
+      
+      setIsSaving(true);
+      try {
+        const programData = {
+          project_id: 'default', // You can make this dynamic
+          name: 'Block Program',
+          nodes: nodes.map(node => ({
+            id: node.id,
+            type: node.type || 'default',
+            position: node.position,
+            data: node.data,
+          })),
+          edges: edges.map(edge => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle || undefined,
+            targetHandle: edge.targetHandle || undefined,
+            style: edge.style,
+          })),
+        };
+
+        if (currentProgramId) {
+          await blocksApi.updateProgram(currentProgramId, programData);
+        } else {
+          const newProgram = await blocksApi.createProgram(programData);
+          setCurrentProgramId(newProgram.id!);
+        }
+      } catch (error) {
+        console.error('Failed to save program:', error);
+      } finally {
+        setIsSaving(false);
+      }
+    };
+
+    const debounceTimer = setTimeout(saveProgram, 1000);
+    return () => clearTimeout(debounceTimer);
+  }, [nodes, edges, currentProgramId]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({ ...params, style: { strokeWidth: 2 } }, eds)),
@@ -357,11 +489,30 @@ export default function BlocksPage() {
   const clearCanvas = () => {
     setNodes([]);
     setEdges([]);
+    setCurrentProgramId(null);
   };
 
   const resetCanvas = () => {
     setNodes(defaultNodes);
     setEdges(defaultEdges);
+    setCurrentProgramId(null);
+  };
+
+  const runProgram = async () => {
+    toast.info('Running program...');
+    // Simulate running through blocks and updating arm
+    try {
+      await blocksApi.resetArm();
+      const state = await blocksApi.getArmState();
+      setArmState(state);
+      toast.success('Program executed successfully');
+    } catch (error) {
+      toast.error('Failed to run program');
+    }
+  };
+
+  const stopProgram = () => {
+    toast.info('Program stopped');
   };
 
   return (
@@ -377,11 +528,11 @@ export default function BlocksPage() {
           </Link>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="border-2 border-foreground font-black">
+          <Button variant="outline" size="sm" className="border-2 border-foreground font-black" onClick={runProgram}>
             <Play size={14} />
             RUN
           </Button>
-          <Button variant="outline" size="sm" className="border-2 border-foreground font-black">
+          <Button variant="outline" size="sm" className="border-2 border-foreground font-black" onClick={stopProgram}>
             <Square size={14} />
             STOP
           </Button>
@@ -393,6 +544,12 @@ export default function BlocksPage() {
             <Trash2 size={14} />
             CLEAR
           </Button>
+          {isSaving && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Save size={12} className="animate-pulse" />
+              Saving...
+            </span>
+          )}
           <Button variant="ghost" size="icon">
             <Settings size={18} />
           </Button>
@@ -446,7 +603,7 @@ export default function BlocksPage() {
         </aside>
 
         {/* React Flow Canvas */}
-        <main className="flex-1">
+        <main className="flex-1 relative">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -468,6 +625,49 @@ export default function BlocksPage() {
             <Background gap={20} size={1} color="var(--muted-foreground)" style={{ opacity: 0.3 }} />
           </ReactFlow>
         </main>
+
+        {/* Arm Visualization Sidebar */}
+        <aside
+          className={`relative border-l-4 border-foreground transition-all duration-300 ${
+            sidebarOpen ? 'w-96' : 'w-0'
+          }`}
+        >
+          {sidebarOpen && (
+            <div className="h-full flex flex-col">
+              <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
+                <span className="font-black text-sm">ARM VISUALIZATION</span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-1 rounded ${armState.is_moving ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                    {armState.is_moving ? 'MOVING' : 'READY'}
+                  </span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <ArmVisualization position={armState.position} joints={armState.joints} />
+              </div>
+              <div className="p-3 border-t-2 border-foreground bg-muted/50">
+                <div className="text-xs space-y-1 font-mono">
+                  <div className="font-bold mb-2">POSITION:</div>
+                  <div>X: {armState.position.x.toFixed(2)}</div>
+                  <div>Y: {armState.position.y.toFixed(2)}</div>
+                  <div>Z: {armState.position.z.toFixed(2)}</div>
+                  <div className="font-bold mt-2 mb-1">JOINTS:</div>
+                  {armState.joints.map((angle, i) => (
+                    <div key={i}>J{i + 1}: {angle.toFixed(1)}°</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Toggle Button */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full bg-background border-2 border-r-0 border-foreground p-2 hover:bg-muted transition-colors"
+          >
+            {sidebarOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
+        </aside>
       </div>
     </div>
   );
