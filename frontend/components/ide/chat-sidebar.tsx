@@ -30,17 +30,22 @@ export default function ChatSidebar({
       </div>
       <ScrollArea className="flex-1 p-3">
         <div className="space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
-            >
+          {messages.map((message) => {
+            const isUser = message.role === 'user';
+            const isAssistant = message.role === 'assistant';
+            const isThinking = message.content === '...';
+            
+            return (
+              <div
+                key={message.id}
+                className={`flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`}
+              >
               <div
                 className={`w-8 h-8 flex items-center justify-center border-2 border-foreground ${
-                  message.role === 'assistant' ? 'bg-primary' : 'bg-muted'
+                  isAssistant ? 'bg-primary' : 'bg-muted'
                 }`}
               >
-                {message.role === 'assistant' ? (
+                {isAssistant ? (
                   <Bot size={14} className="text-primary-foreground" />
                 ) : (
                   <User size={14} />
@@ -48,11 +53,11 @@ export default function ChatSidebar({
               </div>
               <div
                 className={`flex-1 p-3 border-2 border-foreground text-sm ${
-                  message.role === 'user' ? 'bg-muted' : 'bg-background'
+                  isUser ? 'bg-muted' : 'bg-background'
                 }`}
               >
-                {message.role === 'assistant' ? (
-                  message.content === '...' ? (
+                {isAssistant ? (
+                  isThinking ? (
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Loader2 size={16} className="animate-spin" />
                       <span>Thinking...</span>
@@ -65,7 +70,8 @@ export default function ChatSidebar({
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </ScrollArea>
       <div className="p-3 border-t-2 border-foreground">
