@@ -406,20 +406,28 @@ export default function SimulatorPage() {
   const handleStop = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'stop' }));
+      // Don't set isRunning here - wait for server confirmation via WebSocket message
     }
-    setIsRunning(false);
   }, []);
 
   const handleReset = useCallback(() => {
-    handleStop();
+    // Send stop command if connected
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'stop' }));
+    }
+    
+    // Close WebSocket connection
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
+    
+    // Reset UI state
+    setIsRunning(false);
     setSerialOutput('');
     setLedStates({ 13: false });
     setSimState('idle');
-  }, [handleStop]);
+  }, []);
 
   if (projectLoading) {
     return (
