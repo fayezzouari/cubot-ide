@@ -637,7 +637,7 @@ export default function IDEPage() {
         <ResizablePanelGroup direction="horizontal">
           {/* File Sidebar */}
           <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
-            <aside className="h-full border-r-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
+            <aside className="w-full h-full border-r-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
               <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
                 <span className="font-black text-sm">
                   {currentProject ? 'PROJECT FILES' : 'EXPLORER'}

@@ -22,7 +22,7 @@ export default function ChatSidebar({
   isLoading = false,
 }: ChatSidebarProps) {
   return (
-    <aside className="h-full border-l-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
+    <aside className="w-full h-full border-l-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
       <div className="p-3 border-b-2 border-foreground flex items-center gap-2">
         <Bot size={18} />
         <span className="font-black text-sm">AI ASSISTANT</span>
@@ -38,38 +38,41 @@ export default function ChatSidebar({
             return (
               <div
                 key={message.id}
-                className={`flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`}
+                className={`flex gap-2 items-start ${isUser ? 'flex-row-reverse' : ''}`}
               >
-              <div
-                className={`w-8 h-8 flex items-center justify-center border-2 border-foreground ${
-                  isAssistant ? 'bg-primary' : 'bg-muted'
-                }`}
-              >
-                {isAssistant ? (
-                  <Bot size={14} className="text-primary-foreground" />
-                ) : (
-                  <User size={14} />
-                )}
-              </div>
-              <div
-                className={`flex-1 p-3 border-2 border-foreground text-sm ${
-                  isUser ? 'bg-muted' : 'bg-background'
-                }`}
-              >
-                {isAssistant ? (
-                  isThinking ? (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Loader2 size={16} className="animate-spin" />
-                      <span>Thinking...</span>
-                    </div>
+                <div
+                  className={`w-8 h-8 flex-shrink-0 flex items-center justify-center border-2 border-foreground ${
+                    isAssistant ? 'bg-primary' : 'bg-muted'
+                  }`}
+                >
+                  {isAssistant ? (
+                    <Bot size={14} className="text-primary-foreground" />
                   ) : (
-                    <MarkdownRenderer content={message.content} />
-                  )
-                ) : (
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                )}
+                    <User size={14} />
+                  )}
+                </div>
+                <div
+                  className={`flex-1 min-w-0 p-3 border-2 border-foreground text-sm ${
+                    isUser ? 'bg-muted' : 'bg-background'
+                  }`}
+                  style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
+                >
+                  {isAssistant ? (
+                    isThinking ? (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Thinking...</span>
+                      </div>
+                    ) : (
+                      <div className="prose prose-sm max-w-none break-words [&>*]:break-words [&_pre]:whitespace-pre-wrap [&_code]:break-words [&_p]:break-words">
+                        <MarkdownRenderer content={message.content} />
+                      </div>
+                    )
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word' }}>{message.content}</p>
+                  )}
+                </div>
               </div>
-            </div>
             );
           })}
         </div>
