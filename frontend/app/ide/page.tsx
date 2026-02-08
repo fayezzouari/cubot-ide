@@ -5,7 +5,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
-import { compileService } from '@/lib/api';
+import { compileService, chatService } from '@/lib/api';
 import type { CompilerType } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
 import { mockMessages as initialMessages, type FileNode, type ChatMessage } from '@/lib/mock-data';
@@ -23,6 +23,7 @@ export default function IDEPage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [isChatLoading, setIsChatLoading] = useState(false);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [editedContent, setEditedContent] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -103,30 +104,87 @@ export default function IDEPage() {
     return [];
   }, [currentProject?.files, projectFileTree]);
 
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || !currentProject) return;
     
-    setMessages([
-      ...messages,
-      {
-        id: Date.now().toString(),
-        role: 'user',
-        content: chatInput,
-      },
-    ]);
+    setIsChatLoading(true);
+    const userMessage = chatInput.trim();
+    const newUserMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: userMessage,
+    };
+    
+    setMessages([...messages, newUserMessage]);
     setChatInput('');
     
-    // Simulate AI response
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: 'I\'m processing your request. This is a mock response for demonstration purposes.',
-        },
-      ]);
-    }, 1000);
+    // Add loading message
+    const loadingMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: '...',
+    };
+    setMessages((prev) => [...prev, loadingMessage]);
+    
+    try {
+      // Prepare file context (current file if open)
+      const fileContext = selectedFile && currentFileContent
+        ? [{
+            path: currentProject.files.find(f => f.id === selectedFile)?.path || '',
+            content: editedContent || currentFileContent,
+          }]
+        : undefined;
+      
+      // Prepare conversation history
+      const conversationHistory = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+      
+      // Call chat API
+      const response = await chatService.sendMessage(currentProject.id, {
+        message: userMessage,
+        file_context: fileContext,
+        compiler: currentProject.target_compiler,
+        conversation_history: conversationHistory,
+      });
+      
+      // Remove loading message and add real response
+      setMessages((prev) => {
+        const withoutLoading = prev.filter(m => m.id !== loadingMessage.id);
+        return [
+          ...withoutLoading,
+          {
+            id: (Date.now() + 2).toString(),
+            role: 'assistant',
+            content: response.message,
+          },
+        ];
+      });
+      
+      // If there are file operations, reload the project
+      if (response.file_operations && response.file_operations.length > 0) {
+        console.log('File operations performed:', response.file_operations);
+        // Reload project to get updated files
+        await loadProject(currentProject.id);
+      }
+      
+    } catch (error) {
+      console.error('Chat error:', error);
+      setMessages((prev) => {
+        const withoutLoading = prev.filter(m => m.id !== loadingMessage.id);
+        return [
+          ...withoutLoading,
+          {
+            id: (Date.now() + 2).toString(),
+            role: 'assistant',
+            content: 'Sorry, I encountered an error. Please try again.',
+          },
+        ];
+      });
+    } finally {
+      setIsChatLoading(false);
+    }
   };
 
   const handleFileSelect = (fileId: string) => {
@@ -448,10 +506,28 @@ export default function IDEPage() {
         setEditedContent(contents[fileToSelect] || '');
       }
       
+      // Load chat history
+      loadChatHistory(currentProject.id);
+      
       setIsInitialized(true);
       console.log('Loaded project files from MongoDB:', currentProject.files.length, 'files');
     }
   }, [currentProject, isInitialized]);
+  
+  const loadChatHistory = async (projectId: string) => {
+    try {
+      const history = await chatService.getHistory(projectId, 50);
+      const formattedMessages = history.map(msg => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+      }));
+      setMessages(formattedMessages);
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+      // Keep initial messages if loading fails
+    }
+  };
 
   // Update editedContent when selectedFile changes
   useEffect(() => {
@@ -664,6 +740,7 @@ export default function IDEPage() {
               chatInput={chatInput}
               onChatInputChange={setChatInput}
               onSendMessage={handleSendMessage}
+              isLoading={isChatLoading}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

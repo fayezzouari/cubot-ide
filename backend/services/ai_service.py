@@ -1,8 +1,10 @@
 import json
-from typing import List, Optional, AsyncGenerator
+import logging
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import boto3
 from botocore.config import Config as BotoConfig
+from botocore.exceptions import ClientError
 
 from core.config import settings
 from core.database import get_collection
@@ -13,16 +15,19 @@ from models.chat import (
     MessageRole,
     FileContext,
 )
-from services.file_service import file_service
+from services.tools_definitions import get_tool_config
+from services.tools_functions import handle_tool_use
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 class AIService:
-    """Service for AI-powered code generation using AWS Bedrock"""
+    """Service for AI-powered code generation using AWS Bedrock with Converse API"""
     
     COLLECTION_NAME = "chat_messages"
     
     def __init__(self):
-        self._bedrock_client = None
         self._bedrock_runtime = None
     
     def _get_bedrock_runtime(self):
@@ -44,35 +49,57 @@ class AIService:
         request: ChatRequest,
     ) -> ChatResponse:
         """
-        Process a chat request and generate AI response
+        Process a chat request using Bedrock Converse API with tools
         
         Args:
             project_id: The project ID for context
             request: The chat request with message and optional file context
         
         Returns:
-            ChatResponse with AI-generated content
+            ChatResponse with AI-generated content and file operations
         """
         try:
-            # Build the prompt with file context
+            # Build system prompt
             system_prompt = self._build_system_prompt(request.compiler)
-            user_prompt = await self._build_user_prompt(
-                request.message,
-                request.file_context,
-            )
             
-            # Get conversation history if provided
-            history = request.conversation_history or []
+            # Build messages array
+            messages = []
             
-            # Call Bedrock
-            response_text = await self._invoke_bedrock(
+            # Add conversation history if provided
+            if request.conversation_history:
+                for msg in request.conversation_history[-10:]:  # Last 10 messages
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if role and content:
+                        messages.append({
+                            "role": role,
+                            "content": [{"text": content}]
+                        })
+            
+            # Build current user message with file context
+            user_content = request.message
+            if request.file_context:
+                context_section = "\n\n--- FILE CONTEXT ---\n"
+                for fc in request.file_context:
+                    context_section += f"\n### {fc.path}\n```\n{fc.content}\n```\n"
+                context_section += "\n--- END FILE CONTEXT ---\n\n"
+                user_content = context_section + user_content
+            
+            messages.append({
+                "role": "user",
+                "content": [{"text": user_content}]
+            })
+            
+            # Get tool configuration
+            tool_config = get_tool_config()
+            
+            # Call Bedrock Converse API
+            response_text, file_operations = await self._converse_with_tools(
+                messages=messages,
                 system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                history=history,
+                tool_config=tool_config,
+                project_id=project_id
             )
-            
-            # Parse response for file operations
-            file_operations = self._parse_file_operations(response_text)
             
             # Save messages to database
             await self._save_message(
@@ -95,11 +122,332 @@ class AIService:
             )
             
         except Exception as e:
-            error_message = f"Error generating response: {str(e)}"
+            logger.error(f"Error in chat: {str(e)}")
+            error_message = f"I encountered an error: {str(e)}"
             return ChatResponse(
                 message=error_message,
                 file_operations=[],
             )
+    
+    async def _converse_with_tools(
+        self,
+        messages: List[Dict[str, Any]],
+        system_prompt: str,
+        tool_config: Dict[str, Any],
+        project_id: str,
+        max_iterations: int = 5
+    ) -> tuple[str, List[Dict[str, Any]]]:
+        """
+        Use Bedrock with tool support
+        Supports both Claude and OpenAI models
+        """
+        client = self._get_bedrock_runtime()
+        file_operations = []
+        
+        # Detect model type from model ID
+        model_id = settings.BEDROCK_MODEL_ID.lower()
+        is_claude = "claude" in model_id or "anthropic" in model_id
+        is_openai = "gpt" in model_id or "openai" in model_id
+        
+        logger.info(f"Using model: {settings.BEDROCK_MODEL_ID}, Claude: {is_claude}, OpenAI: {is_openai}")
+        
+        if is_claude:
+            return await self._converse_claude(messages, system_prompt, tool_config, project_id, max_iterations)
+        elif is_openai:
+            return await self._converse_openai(messages, system_prompt, tool_config, project_id, max_iterations)
+        else:
+            # Default to OpenAI format
+            return await self._converse_openai(messages, system_prompt, tool_config, project_id, max_iterations)
+    
+    async def _converse_openai(
+        self,
+        messages: List[Dict[str, Any]],
+        system_prompt: str,
+        tool_config: Dict[str, Any],
+        project_id: str,
+        max_iterations: int = 5
+    ) -> tuple[str, List[Dict[str, Any]]]:
+        """
+        Use Bedrock with OpenAI models (GPT-4, etc.)
+        """
+        client = self._get_bedrock_runtime()
+        file_operations = []
+        
+        # Convert messages to OpenAI format
+        openai_messages = []
+        
+        # Add system message
+        openai_messages.append({
+            "role": "system",
+            "content": system_prompt
+        })
+        
+        # Convert existing messages
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", [])
+            
+            # Extract text from content blocks
+            if isinstance(content, list):
+                text_content = ""
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text_content += block.get("text", "")
+                    elif isinstance(block, dict) and block.get("text"):
+                        text_content += block["text"]
+                openai_messages.append({
+                    "role": role,
+                    "content": text_content
+                })
+            else:
+                openai_messages.append({
+                    "role": role,
+                    "content": str(content)
+                })
+        
+        # Convert tools to OpenAI format
+        openai_tools = []
+        for tool in tool_config.get("tools", []):
+            tool_spec = tool.get("toolSpec", {})
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool_spec.get("name"),
+                    "description": tool_spec.get("description"),
+                    "parameters": tool_spec.get("inputSchema", {}).get("json", {})
+                }
+            })
+        
+        for iteration in range(max_iterations):
+            logger.info(f"OpenAI iteration {iteration + 1}")
+            
+            try:
+                # Prepare request body for OpenAI
+                request_body = {
+                    "model": settings.BEDROCK_MODEL_ID,
+                    "messages": openai_messages,
+                    "tools": openai_tools,
+                    "temperature": 0.7,
+                    "max_tokens": 4096
+                }
+                
+                # Call Bedrock
+                response = client.invoke_model(
+                    modelId=settings.BEDROCK_MODEL_ID,
+                    body=json.dumps(request_body),
+                    contentType="application/json",
+                    accept="application/json",
+                )
+                
+                response_body = json.loads(response["body"].read())
+                logger.info(f"Response keys: {response_body.keys()}")
+                
+                # Extract response
+                choices = response_body.get("choices", [])
+                if not choices:
+                    return "No response from model", file_operations
+                
+                choice = choices[0]
+                message = choice.get("message", {})
+                finish_reason = choice.get("finish_reason")
+                
+                logger.info(f"Finish reason: {finish_reason}")
+                
+                # Add assistant message to history
+                openai_messages.append(message)
+                
+                if finish_reason == "tool_calls":
+                    # Tool use requested
+                    tool_calls = message.get("tool_calls", [])
+                    
+                    for tool_call in tool_calls:
+                        function = tool_call.get("function", {})
+                        tool_name = function.get("name")
+                        tool_args = json.loads(function.get("arguments", "{}"))
+                        tool_call_id = tool_call.get("id")
+                        
+                        logger.info(f"Tool requested: {tool_name}, ID: {tool_call_id}")
+                        
+                        # Execute the tool
+                        tool_result = await handle_tool_use(
+                            tool_name=tool_name,
+                            tool_input=tool_args,
+                            project_id=project_id
+                        )
+                        
+                        # Track file operations
+                        if tool_name in ["create_file", "update_file"] and tool_result.get("success"):
+                            file_operations.append({
+                                "operation": tool_name,
+                                "path": tool_result.get("path"),
+                                "file_id": tool_result.get("file_id"),
+                                "success": True
+                            })
+                        
+                        # Add tool result to messages
+                        openai_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": json.dumps(tool_result)
+                        })
+                    
+                    # Continue loop to get final response
+                    continue
+                
+                else:
+                    # Model finished
+                    response_text = message.get("content", "")
+                    return response_text.strip(), file_operations
+                    
+            except ClientError as e:
+                error_msg = e.response['Error']['Message']
+                logger.error(f"Bedrock API error: {error_msg}")
+                raise Exception(f"Bedrock API error: {error_msg}")
+            except Exception as e:
+                logger.error(f"Unexpected error: {str(e)}")
+                raise
+        
+        return "Completed operations", file_operations
+    
+    async def _converse_claude(
+        self,
+        messages: List[Dict[str, Any]],
+        system_prompt: str,
+        tool_config: Dict[str, Any],
+        project_id: str,
+        max_iterations: int = 5
+    ) -> tuple[str, List[Dict[str, Any]]]:
+        """
+        Use Bedrock with Claude models
+        """
+        client = self._get_bedrock_runtime()
+        file_operations = []
+        
+        # Prepare system message
+        system = [{"text": system_prompt}]
+        
+        for iteration in range(max_iterations):
+            logger.info(f"Converse iteration {iteration + 1}")
+            
+            try:
+                # Prepare request body for invoke_model
+                request_body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 4096,
+                    "system": system_prompt,
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "tools": tool_config["tools"]
+                }
+                
+                # Call Bedrock using invoke_model
+                response = client.invoke_model(
+                    modelId=settings.BEDROCK_MODEL_ID,
+                    body=json.dumps(request_body),
+                    contentType="application/json",
+                    accept="application/json",
+                )
+                
+                response_body = json.loads(response["body"].read())
+                logger.info(f"Response body keys: {response_body.keys()}")
+                
+                # Extract stop reason and content
+                stop_reason = response_body.get("stop_reason")
+                content = response_body.get("content", [])
+                
+                logger.info(f"Stop reason: {stop_reason}")
+                
+                # Build output message
+                output_message = {
+                    "role": "assistant",
+                    "content": content
+                }
+                messages.append(output_message)
+                
+                if stop_reason == 'tool_use':
+                    # Tool use requested - handle it
+                    tool_results = []
+                    
+                    for content_block in content:
+                        if content_block.get("type") == "tool_use":
+                            tool_use_id = content_block.get("id")
+                            tool_name = content_block.get("name")
+                            tool_input = content_block.get("input", {})
+                            
+                            logger.info(f"Tool requested: {tool_name}, ID: {tool_use_id}")
+                            
+                            # Execute the tool
+                            tool_result_content = await handle_tool_use(
+                                tool_name=tool_name,
+                                tool_input=tool_input,
+                                project_id=project_id
+                            )
+                            
+                            # Track file operations
+                            if tool_name in ["create_file", "update_file"] and tool_result_content.get("success"):
+                                file_operations.append({
+                                    "operation": tool_name,
+                                    "path": tool_result_content.get("path"),
+                                    "file_id": tool_result_content.get("file_id"),
+                                    "success": True
+                                })
+                            
+                            # Prepare tool result for model - must be a string or list of content blocks
+                            if tool_result_content.get("success"):
+                                # Success - return as JSON string in content
+                                tool_results.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_use_id,
+                                    "content": [{"type": "text", "text": json.dumps(tool_result_content)}]
+                                })
+                            else:
+                                # Error - return error message
+                                tool_results.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_use_id,
+                                    "content": [{"type": "text", "text": tool_result_content.get("error", "Unknown error")}],
+                                    "is_error": True
+                                })
+                    
+                    # Send tool results back to model
+                    if tool_results:
+                        tool_result_message = {
+                            "role": "user",
+                            "content": tool_results
+                        }
+                        messages.append(tool_result_message)
+                    
+                    # Continue the loop to get final response
+                    continue
+                    
+                elif stop_reason == 'end_turn':
+                    # Model finished - extract text response
+                    response_text = ""
+                    for content_block in content:
+                        if content_block.get("type") == "text":
+                            response_text += content_block.get("text", "")
+                    
+                    return response_text.strip(), file_operations
+                
+                else:
+                    # Other stop reasons (max_tokens, etc.)
+                    response_text = ""
+                    for content_block in content:
+                        if content_block.get("type") == "text":
+                            response_text += content_block.get("text", "")
+                    
+                    return response_text.strip(), file_operations
+                    
+            except ClientError as e:
+                error_msg = e.response['Error']['Message']
+                logger.error(f"Bedrock API error: {error_msg}")
+                raise Exception(f"Bedrock API error: {error_msg}")
+            except Exception as e:
+                logger.error(f"Unexpected error: {str(e)}")
+                raise
+        
+        # Max iterations reached
+        return "I've completed the requested operations. Please let me know if you need anything else!", file_operations
     
     def _build_system_prompt(self, compiler: Optional[str] = None) -> str:
         """Build the system prompt for the AI"""
@@ -118,185 +466,29 @@ You help users write code for microcontrollers including Arduino, TI ARM process
 {compiler_info}
 
 Your capabilities:
-1. Write and modify code files
-2. Explain code and concepts
-3. Debug issues
-4. Suggest optimizations
-5. Help with hardware configurations
-
-When you need to create or modify files, use this format:
-```file:path/to/file.extension
-<file content here>
-```
-
-For example:
-```file:src/main.cpp
-#include <Arduino.h>
-void setup() {{
-    // setup code
-}}
-void loop() {{
-    // loop code
-}}
-```
+1. Create new code files using the create_file tool
+2. Update existing files using the update_file tool
+3. Read file contents using the read_file tool
+4. List project files using the list_files tool
+5. Explain code and concepts
+6. Debug issues and suggest optimizations
 
 Important guidelines:
-- Always provide complete, working code
+- Always use the provided tools to create or modify files
+- Provide complete, working code
 - Include necessary imports/includes
 - Add helpful comments
 - Follow best practices for embedded development
 - Consider memory constraints
 - Be mindful of timing and interrupts
+- When creating files, use appropriate paths (e.g., 'src/main.cpp', 'include/config.h')
+
+When the user asks you to create or modify code:
+1. Use list_files to see existing files if needed
+2. Use read_file to check current content if modifying
+3. Use create_file for new files or update_file for existing ones
+4. Explain what you did in your response
 """
-
-    def _build_short_system_prompt(self, compiler: Optional[str] = None) -> str:
-        """Build a short system prompt for concise explanations"""
-        compiler_info = f" (compiler: {compiler})" if compiler else ""
-        return (
-            "You are CuBot, an embedded systems assistant."
-            f" Explain compile logs concisely{compiler_info}."
-            " Provide a 1-sentence summary and list only the top 2 fixes."
-            " Use minimal words. Be extremely brief."
-        )
-    
-    async def _build_user_prompt(
-        self,
-        message: str,
-        file_context: Optional[List[FileContext]] = None,
-    ) -> str:
-        """Build the user prompt with file context"""
-        context_section = ""
-        
-        if file_context:
-            context_section = "\n\n--- FILE CONTEXT ---\n"
-            for fc in file_context:
-                context_section += f"\n### {fc.path}\n```\n{fc.content}\n```\n"
-            context_section += "\n--- END FILE CONTEXT ---\n\n"
-        
-        return f"{context_section}{message}"
-    
-    async def _invoke_bedrock(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        history: List[dict] = None,
-        max_tokens: int = 4096,
-    ) -> str:
-        """Invoke Bedrock model to generate response"""
-        client = self._get_bedrock_runtime()
-        
-        # Build messages array
-        messages = []
-        
-        # Add history if provided
-        if history:
-            for msg in history[-10:]:  # Limit to last 10 messages
-                messages.append({
-                    "role": msg.get("role", "user"),
-                    "content": msg.get("content", ""),
-                })
-        
-        # Add current user message
-        messages.append({
-            "role": "user",
-            "content": user_prompt,
-        })
-        
-        # Prepare request body based on model
-        # Using Converse API format for better compatibility
-        request_body = {
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": max_tokens,
-            "system": system_prompt,
-            "messages": messages,
-            "temperature": 0.7,
-        }
-        
-        try:
-            response = client.invoke_model(
-                modelId=settings.BEDROCK_MODEL_ID,
-                body=json.dumps(request_body),
-                contentType="application/json",
-                accept="application/json",
-            )
-            
-            response_body = json.loads(response["body"].read())
-
-            # Extract text from response (handle different model response formats)
-            content_text = ""
-            if "choices" in response_body:
-                # OpenAI-style format
-                choices = response_body.get("choices", [])
-                if choices:
-                    message = choices[0].get("message", {})
-                    content_text = message.get("content", "")
-            elif "content" in response_body:
-                # Anthropic format
-                content = response_body["content"]
-                if isinstance(content, list) and len(content) > 0:
-                    content_text = content[0].get("text", "")
-                else:
-                    content_text = str(content)
-            elif "completion" in response_body:
-                # Legacy format
-                content_text = response_body["completion"]
-            elif "generation" in response_body:
-                # Amazon Titan format
-                content_text = response_body["generation"]
-            else:
-                content_text = str(response_body)
-
-            # Strip reasoning tags if present
-            import re
-            content_text = re.sub(r"<reasoning>.*?</reasoning>", "", content_text, flags=re.DOTALL)
-            content_text = re.sub(r"<thinking>.*?</thinking>", "", content_text, flags=re.DOTALL)
-            return content_text.strip()
-                
-        except Exception as e:
-            raise Exception(f"Bedrock invocation failed: {str(e)}")
-
-    async def explain_compile_logs(
-        self,
-        project_id: str,
-        logs: str,
-        errors: Optional[List[str]] = None,
-        compiler: Optional[str] = None,
-    ) -> str:
-        """Generate a concise explanation for compile logs."""
-        system_prompt = self._build_short_system_prompt(compiler)
-        error_section = "\n".join(errors or [])
-        user_prompt = (
-            "Summarize errors in 1 sentence. List only top 2 fixes."
-            f"\n\nLogs:\n{logs}\n\nErrors:\n{error_section}"
-        )
-        # add logs for the user prompt
-        return await self._invoke_bedrock(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            history=[],
-            max_tokens=256,
-        )
-    
-    def _parse_file_operations(self, response_text: str) -> List[dict]:
-        """Parse file operations from AI response"""
-        operations = []
-        
-        # Look for ```file:path/to/file patterns
-        import re
-        pattern = r"```file:([^\n]+)\n(.*?)```"
-        matches = re.findall(pattern, response_text, re.DOTALL)
-        
-        for match in matches:
-            file_path = match[0].strip()
-            content = match[1].strip()
-            
-            operations.append({
-                "operation": "create_or_update",
-                "path": file_path,
-                "content": content,
-            })
-        
-        return operations
     
     async def _save_message(
         self,
@@ -351,78 +543,25 @@ Important guidelines:
         project_id: str,
         operations: List[dict],
     ) -> List[dict]:
-        """Apply file operations from AI response"""
+        """Apply file operations (legacy method for backward compatibility)"""
         results = []
         
         for op in operations:
             try:
                 operation_type = op.get("operation")
-                file_path = op.get("path")
-                content = op.get("content", "")
                 
-                if operation_type == "create_or_update":
-                    # Check if file exists
-                    existing = await file_service.get_file_by_path(
-                        project_id=project_id,
-                        path=file_path,
-                    )
-                    
-                    if existing:
-                        # Update existing file
-                        from models.file import FileUpdate
-                        await file_service.update_file(
-                            file_id=existing.id,
-                            file_update=FileUpdate(content=content),
-                        )
-                        results.append({
-                            "path": file_path,
-                            "operation": "updated",
-                            "success": True,
-                        })
-                    else:
-                        # Create new file
-                        from models.file import FileCreate, FileType
-                        
-                        # Determine file type from extension
-                        ext = file_path.split(".")[-1].lower() if "." in file_path else ""
-                        file_type = FileType.SOURCE
-                        if ext == "h" or ext == "hpp":
-                            file_type = FileType.HEADER
-                        elif ext in ["json", "yaml", "yml", "ini", "cfg"]:
-                            file_type = FileType.CONFIG
-                        
-                        await file_service.create_file(FileCreate(
-                            project_id=project_id,
-                            name=file_path.split("/")[-1],
-                            path=file_path,
-                            content=content,
-                            file_type=file_type,
-                        ))
-                        results.append({
-                            "path": file_path,
-                            "operation": "created",
-                            "success": True,
-                        })
-                        
-                elif operation_type == "delete":
-                    existing = await file_service.get_file_by_path(
-                        project_id=project_id,
-                        path=file_path,
-                    )
-                    if existing:
-                        await file_service.delete_file(existing.id)
-                        results.append({
-                            "path": file_path,
-                            "operation": "deleted",
-                            "success": True,
-                        })
-                    else:
-                        results.append({
-                            "path": file_path,
-                            "operation": "delete",
-                            "success": False,
-                            "error": "File not found",
-                        })
+                if operation_type == "create_file":
+                    result = await handle_tool_use("create_file", op, project_id)
+                    results.append(result)
+                elif operation_type == "update_file":
+                    result = await handle_tool_use("update_file", op, project_id)
+                    results.append(result)
+                else:
+                    results.append({
+                        "path": op.get("path", "unknown"),
+                        "success": False,
+                        "error": f"Unknown operation: {operation_type}"
+                    })
                         
             except Exception as e:
                 results.append({
@@ -433,6 +572,56 @@ Important guidelines:
                 })
         
         return results
+    
+    async def explain_compile_logs(
+        self,
+        project_id: str,
+        logs: str,
+        errors: Optional[List[str]] = None,
+        compiler: Optional[str] = None,
+    ) -> str:
+        """Generate a concise explanation for compile logs (without tools)"""
+        client = self._get_bedrock_runtime()
+        
+        system_prompt = f"You are CuBot, an embedded systems assistant. Explain compile logs concisely{' for ' + compiler if compiler else ''}. Provide a 1-sentence summary and list only the top 2 fixes. Be brief."
+        
+        error_section = "\n".join(errors or [])
+        user_prompt = f"Summarize errors in 1 sentence. List only top 2 fixes.\n\nLogs:\n{logs}\n\nErrors:\n{error_section}"
+        
+        messages = [{
+            "role": "user",
+            "content": [{"text": user_prompt}]
+        }]
+        
+        try:
+            request_body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 256,
+                "system": system_prompt,
+                "messages": messages,
+                "temperature": 0.7
+            }
+            
+            response = client.invoke_model(
+                modelId=settings.BEDROCK_MODEL_ID,
+                body=json.dumps(request_body),
+                contentType="application/json",
+                accept="application/json",
+            )
+            
+            response_body = json.loads(response["body"].read())
+            content = response_body.get("content", [])
+            
+            response_text = ""
+            for content_block in content:
+                if content_block.get("type") == "text":
+                    response_text += content_block.get("text", "")
+            
+            return response_text.strip()
+            
+        except Exception as e:
+            logger.error(f"Error explaining logs: {str(e)}")
+            return f"Error analyzing logs: {str(e)}"
 
 
 ai_service = AIService()
