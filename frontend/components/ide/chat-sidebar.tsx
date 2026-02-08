@@ -20,7 +20,7 @@ export default function ChatSidebar({
   onSendMessage,
 }: ChatSidebarProps) {
   return (
-    <aside className="w-80 border-l-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
+    <aside className="h-full border-l-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
       <div className="p-3 border-b-2 border-foreground flex items-center gap-2">
         <Bot size={18} />
         <span className="font-black text-sm">AI ASSISTANT</span>

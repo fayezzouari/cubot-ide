@@ -30,7 +30,7 @@ export default function EditorPanel({
   getLanguageFromFileName,
 }: EditorPanelProps) {
   return (
-    <main className="flex-1 flex flex-col overflow-hidden bg-background/90">
+    <main className="h-full flex flex-col overflow-hidden bg-background/90">
       {currentFileName && (
         <div className="h-10 border-b-2 border-foreground flex items-center justify-between px-2">
           <div className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-primary/10 to-muted border-2 border-foreground shadow-sm">
@@ -84,7 +84,7 @@ export default function EditorPanel({
             />
           </div>
         ) : (
-          <div className="h-full flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center">
             <div className="text-center max-w-md">
               <div className="w-32 h-32 mx-auto mb-6 bg-primary border-4 border-foreground flex items-center justify-center">
                 <span className="text-primary-foreground font-black text-6xl">⚙</span>

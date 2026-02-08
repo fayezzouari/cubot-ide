@@ -16,6 +16,7 @@ import ChatSidebar from '@/components/ide/chat-sidebar';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
 import CreateFileDialog from '@/components/ide/create-file-dialog';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 export default function IDEPage() {
   const { currentProject, updateFile, deleteFile, loadProject, createFile, compileProject, isLoading, error } = useProject();
@@ -557,103 +558,115 @@ export default function IDEPage() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden relative z-10">
-        {/* File Sidebar */}
-        <aside className="w-64 border-r-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
-          <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
-            <span className="font-black text-sm">
-              {currentProject ? 'PROJECT FILES' : 'EXPLORER'}
-            </span>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-6 w-6"
-              onClick={handleCreateNewFile}
-              disabled={isCreatingFile}
-            >
-              {isCreatingFile ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-            </Button>
-          </div>
-          {isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="animate-spin" size={24} />
-            </div>
-          ) : (
-            <ScrollArea className="flex-1">
-              <div className="py-2">
-                {displayFileTree.length > 0 ? (
-                  displayFileTree.map((node) => (
-                    <FileTreeItem 
-                      key={node.id} 
-                      node={node}
-                      selectedFile={selectedFile}
-                      onSelectFile={handleFileSelect}
-                      onRenameFile={handleRenameFile}
-                      onDeleteFile={handleDeleteFile}
-                    />
-                  ))
-                ) : (
-                  <div className="p-4 text-center text-muted-foreground text-sm font-bold">
-                    Empty directory.
+        <ResizablePanelGroup direction="horizontal">
+          {/* File Sidebar */}
+          <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
+            <aside className="h-full border-r-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
+              <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
+                <span className="font-black text-sm">
+                  {currentProject ? 'PROJECT FILES' : 'EXPLORER'}
+                </span>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6"
+                  onClick={handleCreateNewFile}
+                  disabled={isCreatingFile}
+                >
+                  {isCreatingFile ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                </Button>
+              </div>
+              {isLoading ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <Loader2 className="animate-spin" size={24} />
+                </div>
+              ) : (
+                <ScrollArea className="flex-1">
+                  <div className="py-2">
+                    {displayFileTree.length > 0 ? (
+                      displayFileTree.map((node) => (
+                        <FileTreeItem 
+                          key={node.id} 
+                          node={node}
+                          selectedFile={selectedFile}
+                          onSelectFile={handleFileSelect}
+                          onRenameFile={handleRenameFile}
+                          onDeleteFile={handleDeleteFile}
+                        />
+                      ))
+                    ) : (
+                      <div className="p-4 text-center text-muted-foreground text-sm font-bold">
+                        Empty directory.
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </ScrollArea>
-          )}
-          {isRenamingFile && (
-            <div className="p-2 border-t border-border">
-              <div className="flex items-center gap-2">
-                <Input
-                  value={newFileNameInput}
-                  onChange={(e) => setNewFileNameInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleRenameFileSubmit();
-                    } else if (e.key === 'Escape') {
-                      handleRenameFileCancel();
-                    }
-                  }}
-                  placeholder="New file name"
-                  className="flex-1 h-8 text-sm"
-                  autoFocus
-                />
-                <Button
-                  size="sm"
-                  onClick={handleRenameFileSubmit}
-                  className="h-8 px-2"
-                >
-                  Rename
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleRenameFileCancel}
-                  className="h-8 px-2"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </aside>
+                </ScrollArea>
+              )}
+              {isRenamingFile && (
+                <div className="p-2 border-t border-border">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newFileNameInput}
+                      onChange={(e) => setNewFileNameInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleRenameFileSubmit();
+                        } else if (e.key === 'Escape') {
+                          handleRenameFileCancel();
+                        }
+                      }}
+                      placeholder="New file name"
+                      className="flex-1 h-8 text-sm"
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleRenameFileSubmit}
+                      className="h-8 px-2"
+                    >
+                      Rename
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRenameFileCancel}
+                      className="h-8 px-2"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </aside>
+          </ResizablePanel>
 
-        <EditorPanel
-          currentFileName={currentFileName}
-          currentProjectName={currentProject?.name ?? null}
-          hasUnsavedChanges={hasUnsavedChanges}
-          isSaving={isSaving}
-          onSave={handleSaveFile}
-          currentFileContent={currentFileContent}
-          editedContent={editedContent}
-          onChange={handleContentChange}
-          getLanguageFromFileName={getLanguageFromFileName}
-        />
+          <ResizableHandle withHandle className="w-1 bg-foreground hover:bg-primary transition-colors" />
 
-        <ChatSidebar
-          messages={messages}
-          chatInput={chatInput}
-          onChatInputChange={setChatInput}
-          onSendMessage={handleSendMessage}
-        />
+          <ResizablePanel defaultSize={55} minSize={30}>
+            <EditorPanel
+              currentFileName={currentFileName}
+              currentProjectName={currentProject?.name ?? null}
+              hasUnsavedChanges={hasUnsavedChanges}
+              isSaving={isSaving}
+              onSave={handleSaveFile}
+              currentFileContent={currentFileContent}
+              editedContent={editedContent}
+              onChange={handleContentChange}
+              getLanguageFromFileName={getLanguageFromFileName}
+            />
+          </ResizablePanel>
+
+          <ResizableHandle withHandle className="w-1 bg-foreground hover:bg-primary transition-colors" />
+
+          <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
+            <ChatSidebar
+              messages={messages}
+              chatInput={chatInput}
+              onChatInputChange={setChatInput}
+              onSendMessage={handleSendMessage}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );
