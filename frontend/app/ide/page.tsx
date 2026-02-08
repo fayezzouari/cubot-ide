@@ -43,6 +43,7 @@ export default function IDEPage() {
   const [isSerialConnected, setIsSerialConnected] = useState(false);
   const [serialError, setSerialError] = useState<string | null>(null);
   const serialSocketRef = useRef<WebSocket | null>(null);
+  const hasLoadedProjectRef = useRef(false);
   const [isCreateFileModalOpen, setIsCreateFileModalOpen] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   const [newFilePath, setNewFilePath] = useState('');
@@ -461,7 +462,8 @@ export default function IDEPage() {
   // Load project from URL or localStorage
   useEffect(() => {
     const initializeProject = async () => {
-      if (isInitialized || isLoading) return;
+      if (isInitialized || hasLoadedProjectRef.current) return;
+      hasLoadedProjectRef.current = true;
       
       // Try to get project ID from URL or localStorage
       const urlParams = new URLSearchParams(window.location.search);
@@ -490,7 +492,7 @@ export default function IDEPage() {
     };
     
     initializeProject();
-  }, [isInitialized, isLoading, loadProject]);
+  }, [isInitialized, loadProject]);
 
   useEffect(() => {
     return () => {
@@ -590,9 +592,8 @@ export default function IDEPage() {
                     />
                   ))
                 ) : (
-                  <div className="p-4 text-center text-muted-foreground text-sm">
-                    <p>No files yet.</p>
-                    <p className="mt-1">Click + to create one.</p>
+                  <div className="p-4 text-center text-muted-foreground text-sm font-bold">
+                    Empty directory.
                   </div>
                 )}
               </div>
