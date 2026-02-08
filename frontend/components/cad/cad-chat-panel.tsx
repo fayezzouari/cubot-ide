@@ -4,6 +4,7 @@ import { useRef, useEffect } from 'react';
 import { Bot, User, Send, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import MarkdownRenderer from '@/components/ui/markdown-renderer';
 
 export interface CadChatMessage {
   id: string;
@@ -100,7 +101,11 @@ export default function CadChatPanel({
                 message.role === 'user' ? 'bg-muted' : 'bg-background'
               }`}
             >
-              <p className="whitespace-pre-wrap font-bold">{message.content}</p>
+              {message.role === 'assistant' ? (
+                <MarkdownRenderer content={message.content} />
+              ) : (
+                <p className="whitespace-pre-wrap font-bold">{message.content}</p>
+              )}
               {message.cadquery_code && (
                 <details className="mt-2">
                   <summary className="text-xs font-black text-muted-foreground cursor-pointer hover:text-foreground">

@@ -3,6 +3,7 @@
 import { Bot, User, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import MarkdownRenderer from '@/components/ui/markdown-renderer';
 import type { ChatMessage } from '@/lib/mock-data';
 
 interface ChatSidebarProps {
@@ -47,7 +48,11 @@ export default function ChatSidebar({
                   message.role === 'user' ? 'bg-muted' : 'bg-background'
                 }`}
               >
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                {message.role === 'assistant' ? (
+                  <MarkdownRenderer content={message.content} />
+                ) : (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                )}
               </div>
             </div>
           ))}
