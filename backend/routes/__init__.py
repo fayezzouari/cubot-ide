@@ -6,6 +6,7 @@ from routes.serial import router as serial_router
 from routes.simulator import router as simulator_router
 from routes.wiring import router as wiring_router
 from routes.cad import router as cad_router
+from routes.blocks import router as blocks_router
 
 __all__ = [
     "files_router",
@@ -16,4 +17,5 @@ __all__ = [
     "simulator_router",
     "wiring_router",
     "cad_router",
+    "blocks_router",
 ]
