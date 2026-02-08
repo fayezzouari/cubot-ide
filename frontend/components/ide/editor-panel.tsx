@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { File } from 'lucide-react';
+import { File, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
@@ -60,9 +60,7 @@ export default function EditorPanel({
         </div>
       )}
 
-      <div className="flex-1 overflow-hidden relative bg-slate-950/90">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_55%)] animate-pulse" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,_rgba(148,163,184,0.06)_1px,_transparent_1px),linear-gradient(to_bottom,_rgba(148,163,184,0.06)_1px,_transparent_1px)] bg-[size:24px_24px]" />
+      <div className="flex-1 overflow-hidden relative">
         {currentFileContent ? (
           <div className="w-full h-full relative z-10">
             <MonacoEditor
@@ -87,12 +85,20 @@ export default function EditorPanel({
           </div>
         ) : (
           <div className="h-full flex items-center justify-center">
-            <div className="text-center">
+            <div className="text-center max-w-md">
               <div className="w-32 h-32 mx-auto mb-6 bg-primary border-4 border-foreground flex items-center justify-center">
                 <span className="text-primary-foreground font-black text-6xl">⚙</span>
               </div>
-              <h2 className="text-2xl font-black mb-2">CUBOT IDE</h2>
-              <p className="text-muted-foreground font-bold">Select a file to start editing</p>
+              <h2 className="text-2xl font-black mb-2">
+                {currentProjectName || 'CUBOT IDE'}
+              </h2>
+              <div className="flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest text-foreground/70">
+                <Sparkles size={16} />
+                Build with purpose
+              </div>
+              <p className="text-muted-foreground font-bold mt-3">
+                “Great projects start with a single file.”
+              </p>
             </div>
           </div>
         )}

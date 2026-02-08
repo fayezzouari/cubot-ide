@@ -1,11 +1,12 @@
 'use client';
 
-import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft } from 'lucide-react';
+import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft, Cpu } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/contexts/project-context';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { compileService } from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -47,15 +48,42 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
   const router = useRouter();
   const { createProject, createFile, loadProject } = useProject();
   const [isCreating, setIsCreating] = useState(false);
-  const [step, setStep] = useState<'select' | 'name'>('select');
+  const [step, setStep] = useState<'select' | 'name' | 'compiler'>('select');
   const [selectedType, setSelectedType] = useState<'ide' | 'blocks' | 'cad' | null>(null);
   const [projectName, setProjectName] = useState('');
+  const [compilers, setCompilers] = useState<Array<{ id: string; name: string; description: string }>>([]);
+  const [selectedCompiler, setSelectedCompiler] = useState('arduino');
 
   const resetModal = () => {
     setStep('select');
     setSelectedType(null);
     setProjectName('');
+    setSelectedCompiler('arduino');
   };
+
+  useEffect(() => {
+    const loadCompilers = async () => {
+      try {
+        const data = await compileService.listCompilers();
+        if (data?.compilers?.length) {
+          setCompilers(data.compilers.map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+          })));
+          if (!selectedCompiler) {
+            setSelectedCompiler(data.compilers[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load compilers:', err);
+      }
+    };
+
+    if (open) {
+      loadCompilers();
+    }
+  }, [open, selectedCompiler]);
 
   const handleSelectWorkspace = (type: 'ide' | 'blocks' | 'cad') => {
     setSelectedType(type);
@@ -72,7 +100,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       const project = await createProject(
         projectName.trim() || `My ${selectedType === 'ide' ? 'Code' : selectedType === 'blocks' ? 'Block' : 'CAD'} Project`,
         `Created on ${new Date().toLocaleDateString()}`,
-        'arduino' // Default to Arduino
+        selectedType === 'ide' ? selectedCompiler : 'arduino'
       );
       
       // Save project ID and workspace type to localStorage
@@ -134,12 +162,18 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       <DialogContent className="max-w-4xl border-4 border-foreground bg-background p-0 gap-0">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle className="text-2xl font-black text-foreground">
-            {step === 'select' ? 'CHOOSE YOUR WORKSPACE' : 'NAME YOUR PROJECT'}
+            {step === 'select'
+              ? 'CHOOSE YOUR WORKSPACE'
+              : step === 'name'
+              ? 'NAME YOUR PROJECT'
+              : 'CHOOSE COMPILER'}
           </DialogTitle>
           <DialogDescription className="text-foreground/70 font-bold">
             {step === 'select'
               ? 'Select how you want to build your embedded project'
-              : 'Give your project a descriptive name'}
+              : step === 'name'
+              ? 'Give your project a descriptive name'
+              : 'Pick the compiler target for your IDE project'}
           </DialogDescription>
         </DialogHeader>
 
@@ -208,7 +242,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
             </div>
           </button>
           </div>
-        ) : (
+        ) : step === 'name' ? (
           <div className="p-6">
             <div className="space-y-4">
               <label className="text-sm font-black uppercase tracking-widest text-foreground/70">
@@ -236,9 +270,81 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                   <ArrowLeft size={16} className="mr-2" />
                   BACK
                 </Button>
+                {selectedType === 'ide' ? (
+                  <Button
+                    onClick={() => setStep('compiler')}
+                    disabled={isCreating || !projectName.trim()}
+                    className="border-2 border-foreground font-black"
+                  >
+                    <ArrowRight size={16} className="mr-2" />
+                    NEXT
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleCreateProject}
+                    disabled={isCreating || !projectName.trim()}
+                    className="border-2 border-foreground font-black"
+                  >
+                    {isCreating ? (
+                      <Loader2 size={16} className="mr-2 animate-spin" />
+                    ) : (
+                      <ArrowRight size={16} className="mr-2" />
+                    )}
+                    CREATE PROJECT
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-6">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-foreground/70">
+                <Cpu size={16} />
+                Compiler target
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                {(compilers.length ? compilers : [
+                  { id: 'arduino', name: 'Arduino', description: 'AVR-based boards' },
+                  { id: 'ti_arm', name: 'TI ARM', description: 'TI ARM toolchain' },
+                  { id: 'esp32', name: 'ESP32', description: 'Espressif ESP32' },
+                ]).map((compiler) => (
+                  <button
+                    key={compiler.id}
+                    onClick={() => setSelectedCompiler(compiler.id)}
+                    className={`border-2 border-foreground p-4 text-left font-bold transition-all ${
+                      selectedCompiler === compiler.id
+                        ? 'bg-foreground text-background'
+                        : 'hover:bg-muted'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-black">{compiler.name}</div>
+                        <div className={`text-xs ${selectedCompiler === compiler.id ? 'text-background/80' : 'text-muted-foreground'}`}>
+                          {compiler.description}
+                        </div>
+                      </div>
+                      {selectedCompiler === compiler.id && (
+                        <span className="text-xs font-black">SELECTED</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center justify-between pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep('name')}
+                  disabled={isCreating}
+                  className="border-2 border-foreground font-black"
+                >
+                  <ArrowLeft size={16} className="mr-2" />
+                  BACK
+                </Button>
                 <Button
                   onClick={handleCreateProject}
-                  disabled={isCreating || !projectName.trim()}
+                  disabled={isCreating}
                   className="border-2 border-foreground font-black"
                 >
                   {isCreating ? (
