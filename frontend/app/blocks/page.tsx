@@ -32,6 +32,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '@/components/ui/resizable';
+import {
   blockCategories,
   initialNodes as defaultNodes,
   initialEdges as defaultEdges,
@@ -602,72 +607,77 @@ export default function BlocksPage() {
           </ScrollArea>
         </aside>
 
-        {/* React Flow Canvas */}
-        <main className="flex-1 relative">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            nodeTypes={nodeTypes}
-            fitView
-            snapToGrid
-            snapGrid={[15, 15]}
-            defaultEdgeOptions={{
-              style: { strokeWidth: 2, stroke: 'var(--muted-foreground)' },
-              type: 'smoothstep',
-            }}
-          >
-            <Controls className="border border-border bg-background shadow-sm" />
-            <Background gap={20} size={1} color="var(--muted-foreground)" style={{ opacity: 0.3 }} />
-          </ReactFlow>
-        </main>
-
-        {/* Arm Visualization Sidebar */}
-        <aside
-          className={`relative border-l-4 border-foreground transition-all duration-300 ${
-            sidebarOpen ? 'w-96' : 'w-0'
-          }`}
-        >
-          {sidebarOpen && (
-            <div className="h-full flex flex-col">
-              <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
-                <span className="font-black text-sm">ARM VISUALIZATION</span>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs px-2 py-1 rounded ${armState.is_moving ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'}`}>
-                    {armState.is_moving ? 'MOVING' : 'READY'}
-                  </span>
-                </div>
-              </div>
-              <div className="flex-1">
-                <ArmVisualization position={armState.position} joints={armState.joints} />
-              </div>
-              <div className="p-3 border-t-2 border-foreground bg-muted/50">
-                <div className="text-xs space-y-1 font-mono">
-                  <div className="font-bold mb-2">POSITION:</div>
-                  <div>X: {armState.position.x.toFixed(2)}</div>
-                  <div>Y: {armState.position.y.toFixed(2)}</div>
-                  <div>Z: {armState.position.z.toFixed(2)}</div>
-                  <div className="font-bold mt-2 mb-1">JOINTS:</div>
-                  {armState.joints.map((angle, i) => (
-                    <div key={i}>J{i + 1}: {angle.toFixed(1)}°</div>
-                  ))}
-                </div>
-              </div>
+        {/* Resizable Canvas and Arm Visualization */}
+        <ResizablePanelGroup direction="horizontal" className="flex-1">
+          {/* React Flow Canvas */}
+          <ResizablePanel defaultSize={sidebarOpen ? 65 : 100} minSize={30}>
+            <div className="h-full">
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
+                nodeTypes={nodeTypes}
+                fitView
+                snapToGrid
+                snapGrid={[15, 15]}
+                defaultEdgeOptions={{
+                  style: { strokeWidth: 2, stroke: 'var(--muted-foreground)' },
+                  type: 'smoothstep',
+                }}
+              >
+                <Controls className="border border-border bg-background shadow-sm" />
+                <Background gap={20} size={1} color="var(--muted-foreground)" style={{ opacity: 0.3 }} />
+              </ReactFlow>
             </div>
+          </ResizablePanel>
+
+          {/* Arm Visualization Sidebar */}
+          {sidebarOpen && (
+            <>
+              <ResizableHandle withHandle className="border-l-4 border-foreground" />
+              <ResizablePanel defaultSize={35} minSize={20} maxSize={60}>
+                <div className="h-full flex flex-col relative">
+                  <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
+                    <span className="font-black text-sm">ARM VISUALIZATION</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded ${armState.is_moving ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                        {armState.is_moving ? 'MOVING' : 'READY'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <ArmVisualization position={armState.position} joints={armState.joints} />
+                  </div>
+                  <div className="p-3 border-t-2 border-foreground bg-muted/50">
+                    <div className="text-xs space-y-1 font-mono">
+                      <div className="font-bold mb-2">POSITION:</div>
+                      <div>X: {armState.position.x.toFixed(2)}</div>
+                      <div>Y: {armState.position.y.toFixed(2)}</div>
+                      <div>Z: {armState.position.z.toFixed(2)}</div>
+                      <div className="font-bold mt-2 mb-1">JOINTS:</div>
+                      {armState.joints.map((angle, i) => (
+                        <div key={i}>J{i + 1}: {angle.toFixed(1)}°</div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </ResizablePanel>
+            </>
           )}
-          
-          {/* Toggle Button */}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full bg-background border-2 border-r-0 border-foreground p-2 hover:bg-muted transition-colors"
-          >
-            {sidebarOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
-        </aside>
+        </ResizablePanelGroup>
+
+        {/* Toggle Button */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-background border-2 border-foreground p-2 hover:bg-muted transition-colors shadow-lg"
+          style={{ right: sidebarOpen ? 'auto' : '0' }}
+        >
+          {sidebarOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
       </div>
     </div>
   );
