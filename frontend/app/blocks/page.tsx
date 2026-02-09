@@ -26,6 +26,7 @@ import {
   RotateCcw,
   GripVertical,
   Save,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -49,9 +50,31 @@ const ArmVisualization = dynamic(
 );
 
 // Custom node components
-function StartNode({ data }: NodeProps) {
+interface NodeDeleteButtonProps {
+  nodeId: string;
+  onDelete: (nodeId: string) => void;
+}
+
+function NodeDeleteButton({ nodeId, onDelete }: NodeDeleteButtonProps) {
   return (
-    <div className="px-6 py-3 bg-emerald-100 dark:bg-emerald-900/50 border-2 border-emerald-600 dark:border-emerald-400 text-emerald-800 dark:text-emerald-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onDelete(nodeId);
+      }}
+      className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-10"
+      title="Delete block"
+    >
+      <X size={12} />
+    </button>
+  );
+}
+
+function StartNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
+  return (
+    <div className="relative px-6 py-3 bg-emerald-100 dark:bg-emerald-900/50 border-2 border-emerald-600 dark:border-emerald-400 text-emerald-800 dark:text-emerald-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <div>{data.label as string}</div>
       <Handle
         type="source"
@@ -62,9 +85,11 @@ function StartNode({ data }: NodeProps) {
   );
 }
 
-function EndNode({ data }: NodeProps) {
+function EndNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="px-6 py-3 bg-rose-100 dark:bg-rose-900/50 border-2 border-rose-600 dark:border-rose-400 text-rose-800 dark:text-rose-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+    <div className="relative px-6 py-3 bg-rose-100 dark:bg-rose-900/50 border-2 border-rose-600 dark:border-rose-400 text-rose-800 dark:text-rose-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -75,9 +100,11 @@ function EndNode({ data }: NodeProps) {
   );
 }
 
-function ForNode({ data }: NodeProps) {
+function ForNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-600 dark:border-amber-400 text-amber-900 dark:text-amber-100 min-w-[150px] shadow-md">
+    <div className="relative bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-600 dark:border-amber-400 text-amber-900 dark:text-amber-100 min-w-[150px] shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -106,9 +133,11 @@ function ForNode({ data }: NodeProps) {
   );
 }
 
-function WhileNode({ data }: NodeProps) {
+function WhileNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-600 dark:border-amber-400 text-amber-900 dark:text-amber-100 min-w-[150px] shadow-md">
+    <div className="relative bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-600 dark:border-amber-400 text-amber-900 dark:text-amber-100 min-w-[150px] shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -137,9 +166,11 @@ function WhileNode({ data }: NodeProps) {
   );
 }
 
-function IfNode({ data }: NodeProps) {
+function IfNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="bg-sky-100 dark:bg-sky-900/50 border-2 border-sky-600 dark:border-sky-400 text-sky-900 dark:text-sky-100 min-w-[150px] shadow-md">
+    <div className="relative bg-sky-100 dark:bg-sky-900/50 border-2 border-sky-600 dark:border-sky-400 text-sky-900 dark:text-sky-100 min-w-[150px] shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -177,9 +208,11 @@ function IfNode({ data }: NodeProps) {
   );
 }
 
-function MovePositionNode({ data }: NodeProps) {
+function MovePositionNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[180px] shadow-md">
+    <div className="relative bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[180px] shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -238,9 +271,11 @@ function MovePositionNode({ data }: NodeProps) {
   );
 }
 
-function MoveJointNode({ data }: NodeProps) {
+function MoveJointNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[180px] shadow-md">
+    <div className="relative bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[180px] shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -291,9 +326,11 @@ function MoveJointNode({ data }: NodeProps) {
   );
 }
 
-function GetPositionNode({ data }: NodeProps) {
+function GetPositionNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="bg-indigo-100 dark:bg-indigo-900/50 border-2 border-indigo-600 dark:border-indigo-400 text-indigo-900 dark:text-indigo-100 min-w-[180px] shadow-md">
+    <div className="relative bg-indigo-100 dark:bg-indigo-900/50 border-2 border-indigo-600 dark:border-indigo-400 text-indigo-900 dark:text-indigo-100 min-w-[180px] shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -316,9 +353,11 @@ function GetPositionNode({ data }: NodeProps) {
   );
 }
 
-function DelayNode({ data }: NodeProps) {
+function DelayNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="bg-lime-100 dark:bg-lime-900/50 border-2 border-lime-600 dark:border-lime-400 text-lime-900 dark:text-lime-100 min-w-[150px] shadow-md">
+    <div className="relative bg-lime-100 dark:bg-lime-900/50 border-2 border-lime-600 dark:border-lime-400 text-lime-900 dark:text-lime-100 min-w-[150px] shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -347,9 +386,11 @@ function DelayNode({ data }: NodeProps) {
   );
 }
 
-function DefaultNode({ data }: NodeProps) {
+function DefaultNode({ data, id }: NodeProps) {
+  const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="px-6 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-500 text-slate-800 dark:text-slate-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+    <div className="relative px-6 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-500 text-slate-800 dark:text-slate-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
@@ -391,12 +432,25 @@ export default function BlocksPage() {
   const [currentProgramId, setCurrentProgramId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Delete node handler
+  const deleteNode = useCallback((nodeId: string) => {
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    toast.success('Block deleted');
+  }, [setNodes, setEdges]);
+
   // Load arm state
   useEffect(() => {
     const loadArmState = async () => {
       try {
         const state = await blocksApi.getArmState();
-        setArmState(state);
+        console.log('Loaded arm state:', state);
+        // Force a new object to trigger re-render
+        setArmState({
+          position: { ...state.position },
+          joints: [...state.joints],
+          is_moving: state.is_moving
+        });
       } catch (error) {
         console.error('Failed to load arm state:', error);
       }
@@ -407,6 +461,11 @@ export default function BlocksPage() {
     const interval = setInterval(loadArmState, 500);
     return () => clearInterval(interval);
   }, []);
+
+  // Log when arm state changes
+  useEffect(() => {
+    console.log('Arm state updated:', armState);
+  }, [armState]);
 
   // Auto-save on changes
   useEffect(() => {
@@ -481,12 +540,12 @@ export default function BlocksPage() {
         id: `${Date.now()}`,
         type,
         position,
-        data: { label },
+        data: { label, onDelete: deleteNode },
       };
 
       setNodes((nds) => [...nds, newNode]);
     },
-    [setNodes]
+    [setNodes, deleteNode]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -516,14 +575,142 @@ export default function BlocksPage() {
 
   const runProgram = async () => {
     toast.info('Running program...');
-    // Simulate running through blocks and updating arm
+    
     try {
+      // Reset arm to starting position
       await blocksApi.resetArm();
-      const state = await blocksApi.getArmState();
-      setArmState(state);
+      
+      // Find the start node
+      const startNode = nodes.find(node => node.type === 'start');
+      if (!startNode) {
+        toast.error('No START block found');
+        return;
+      }
+      
+      // Execute blocks in sequence
+      await executeNode(startNode.id);
+      
       toast.success('Program executed successfully');
     } catch (error) {
+      console.error('Program execution error:', error);
       toast.error('Failed to run program');
+    }
+  };
+
+  const executeNode = async (nodeId: string): Promise<void> => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    // Execute the current node
+    switch (node.type) {
+      case 'move_position': {
+        // Get X, Y, Z values from the node's DOM inputs
+        const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
+        if (nodeElement) {
+          const inputs = nodeElement.querySelectorAll('input[type="number"]');
+          const x = parseFloat((inputs[0] as HTMLInputElement)?.value || '0');
+          const y = parseFloat((inputs[1] as HTMLInputElement)?.value || '0');
+          const z = parseFloat((inputs[2] as HTMLInputElement)?.value || '0');
+          
+          toast.info(`Moving to position (${x}, ${y}, ${z})`);
+          
+          // Start the movement
+          await blocksApi.moveArmPosition(x, y, z);
+          
+          // Poll arm state until movement is complete
+          let isMoving = true;
+          while (isMoving) {
+            await new Promise(resolve => setTimeout(resolve, 100)); // Poll every 100ms
+            const state = await blocksApi.getArmState();
+            // Force new object references to trigger re-render
+            setArmState({
+              position: { ...state.position },
+              joints: [...state.joints],
+              is_moving: state.is_moving
+            });
+            isMoving = state.is_moving;
+          }
+          
+          toast.success(`Reached position (${x}, ${y}, ${z})`);
+        }
+        break;
+      }
+      
+      case 'move_joint': {
+        // Get joint and angle values from the node's DOM inputs
+        const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
+        if (nodeElement) {
+          const select = nodeElement.querySelector('select') as HTMLSelectElement;
+          const input = nodeElement.querySelector('input[type="number"]') as HTMLInputElement;
+          const joint = parseInt(select?.value || '1');
+          const angle = parseFloat(input?.value || '0');
+          
+          toast.info(`Moving joint ${joint} to ${angle}°`);
+          
+          // Start the movement
+          await blocksApi.moveArmJoint(joint, angle);
+          
+          // Poll arm state until movement is complete
+          let isMoving = true;
+          while (isMoving) {
+            await new Promise(resolve => setTimeout(resolve, 100)); // Poll every 100ms
+            const state = await blocksApi.getArmState();
+            // Force new object references to trigger re-render
+            setArmState({
+              position: { ...state.position },
+              joints: [...state.joints],
+              is_moving: state.is_moving
+            });
+            isMoving = state.is_moving;
+          }
+          
+          toast.success(`Joint ${joint} reached ${angle}°`);
+        }
+        break;
+      }
+      
+      case 'delay': {
+        // Get delay value from the node's DOM input
+        const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
+        if (nodeElement) {
+          const input = nodeElement.querySelector('input[type="number"]') as HTMLInputElement;
+          const ms = parseInt(input?.value || '1000');
+          
+          toast.info(`Waiting ${ms}ms...`);
+          await new Promise(resolve => setTimeout(resolve, ms));
+        }
+        break;
+      }
+      
+      case 'for': {
+        // Get loop count from the node's DOM input
+        const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
+        if (nodeElement) {
+          const input = nodeElement.querySelector('input[type="number"]') as HTMLInputElement;
+          const count = parseInt(input?.value || '10');
+          
+          // Find the next node in the loop
+          const nextEdge = edges.find(e => e.source === nodeId);
+          if (nextEdge) {
+            for (let i = 0; i < count; i++) {
+              toast.info(`Loop iteration ${i + 1}/${count}`);
+              await executeNode(nextEdge.target);
+            }
+            return; // Don't continue after loop
+          }
+        }
+        break;
+      }
+      
+      case 'end':
+        toast.success('Reached END block');
+        return;
+    }
+
+    // Find and execute the next connected node
+    const nextEdge = edges.find(e => e.source === nodeId);
+    if (nextEdge) {
+      await executeNode(nextEdge.target);
     }
   };
 
@@ -673,6 +860,86 @@ export default function BlocksPage() {
                     {armState.joints.map((angle, i) => (
                       <div key={i}>J{i + 1}: {angle.toFixed(1)}°</div>
                     ))}
+                    
+                    <div className="font-bold mt-3 mb-1">QUICK TEST:</div>
+                    <div className="flex gap-1 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-[10px] h-6 px-2"
+                        onClick={async () => {
+                          try {
+                            console.log('Moving J1 to 45°...');
+                            const result = await blocksApi.moveArmJoint(1, 45);
+                            console.log('Move result:', result);
+                            const state = await blocksApi.getArmState();
+                            console.log('New arm state:', state);
+                            // Force new object references
+                            setArmState({
+                              position: { ...state.position },
+                              joints: [...state.joints],
+                              is_moving: state.is_moving
+                            });
+                            toast.success('J1 → 45°');
+                          } catch (error) {
+                            console.error('Failed to move joint:', error);
+                            toast.error('Failed to move joint');
+                          }
+                        }}
+                      >
+                        J1:45°
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-[10px] h-6 px-2"
+                        onClick={async () => {
+                          try {
+                            console.log('Moving J2 to 30°...');
+                            await blocksApi.moveArmJoint(2, 30);
+                            const state = await blocksApi.getArmState();
+                            console.log('New arm state:', state);
+                            // Force new object references
+                            setArmState({
+                              position: { ...state.position },
+                              joints: [...state.joints],
+                              is_moving: state.is_moving
+                            });
+                            toast.success('J2 → 30°');
+                          } catch (error) {
+                            console.error('Failed to move joint:', error);
+                            toast.error('Failed to move joint');
+                          }
+                        }}
+                      >
+                        J2:30°
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-[10px] h-6 px-2"
+                        onClick={async () => {
+                          try {
+                            console.log('Resetting arm...');
+                            await blocksApi.resetArm();
+                            const state = await blocksApi.getArmState();
+                            console.log('New arm state:', state);
+                            // Force new object references
+                            setArmState({
+                              position: { ...state.position },
+                              joints: [...state.joints],
+                              is_moving: state.is_moving
+                            });
+                            toast.success('Arm reset');
+                          } catch (error) {
+                            console.error('Failed to reset:', error);
+                            toast.error('Failed to reset');
+                          }
+                        }}
+                      >
+                        Reset
+                      </Button>
+                    </div>
                     
                     <div className="font-bold mt-3 mb-1 text-amber-600 dark:text-amber-400">LIMITATIONS:</div>
                     <div className="text-[10px] leading-relaxed space-y-1 text-muted-foreground">

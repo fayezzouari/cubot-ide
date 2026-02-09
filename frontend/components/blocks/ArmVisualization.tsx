@@ -1,7 +1,9 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
-import { Canvas, extend } from '@react-three/fiber';
+// Note: TypeScript may show errors for @react-three/fiber imports
+// but the code works correctly at runtime
+import { useRef } from 'react';
+import { Canvas, extend, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -21,14 +23,53 @@ function RobotArm({ position, joints }: ArmVisualizationProps) {
   const joint4Ref = useRef<THREE.Group>(null);
   const joint5Ref = useRef<THREE.Group>(null);
 
-  useEffect(() => {
-    // Update joint rotations based on angles
-    if (joint1Ref.current) joint1Ref.current.rotation.y = THREE.MathUtils.degToRad(joints[0] || 0);
-    if (joint2Ref.current) joint2Ref.current.rotation.z = THREE.MathUtils.degToRad(joints[1] || 0);
-    if (joint3Ref.current) joint3Ref.current.rotation.z = THREE.MathUtils.degToRad(joints[2] || 0);
-    if (joint4Ref.current) joint4Ref.current.rotation.x = THREE.MathUtils.degToRad(joints[3] || 0);
-    if (joint5Ref.current) joint5Ref.current.rotation.z = THREE.MathUtils.degToRad(joints[4] || 0);
-  }, [joints]);
+  // Log when props change
+  console.log('RobotArm render - joints:', joints, 'position:', position);
+
+  // Use useFrame to continuously update rotations
+  useFrame(() => {
+    if (joint1Ref.current) {
+      const targetRotation = THREE.MathUtils.degToRad(joints[0] || 0);
+      // Smooth interpolation
+      joint1Ref.current.rotation.y = THREE.MathUtils.lerp(
+        joint1Ref.current.rotation.y,
+        targetRotation,
+        0.1
+      );
+    }
+    if (joint2Ref.current) {
+      const targetRotation = THREE.MathUtils.degToRad(joints[1] || 0);
+      joint2Ref.current.rotation.z = THREE.MathUtils.lerp(
+        joint2Ref.current.rotation.z,
+        targetRotation,
+        0.1
+      );
+    }
+    if (joint3Ref.current) {
+      const targetRotation = THREE.MathUtils.degToRad(joints[2] || 0);
+      joint3Ref.current.rotation.z = THREE.MathUtils.lerp(
+        joint3Ref.current.rotation.z,
+        targetRotation,
+        0.1
+      );
+    }
+    if (joint4Ref.current) {
+      const targetRotation = THREE.MathUtils.degToRad(joints[3] || 0);
+      joint4Ref.current.rotation.x = THREE.MathUtils.lerp(
+        joint4Ref.current.rotation.x,
+        targetRotation,
+        0.1
+      );
+    }
+    if (joint5Ref.current) {
+      const targetRotation = THREE.MathUtils.degToRad(joints[4] || 0);
+      joint5Ref.current.rotation.z = THREE.MathUtils.lerp(
+        joint5Ref.current.rotation.z,
+        targetRotation,
+        0.1
+      );
+    }
+  });
 
   return (
     <group ref={baseRef} position={[0, 0, 0]}>
