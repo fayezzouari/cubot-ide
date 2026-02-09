@@ -135,13 +135,31 @@ async def move_arm_position(x: float, y: float, z: float):
     """Move arm to a specific position"""
     global arm_state
     
+    # Calculate distance for movement time simulation
+    current_pos = arm_state["position"]
+    distance = (
+        (x - current_pos["x"]) ** 2 +
+        (y - current_pos["y"]) ** 2 +
+        (z - current_pos["z"]) ** 2
+    ) ** 0.5
+    
+    # Simulate movement time (0.5 seconds per unit of distance, minimum 0.5s)
+    movement_time = max(0.5, distance * 0.5)
+    
     arm_state["is_moving"] = True
     arm_state["position"] = {"x": x, "y": y, "z": z}
     
-    # Simulate movement completion (in real scenario, this would be async)
+    # Simulate gradual movement
+    import asyncio
+    await asyncio.sleep(movement_time)
+    
     arm_state["is_moving"] = False
     
-    return {"status": "success", "position": arm_state["position"]}
+    return {
+        "status": "success",
+        "position": arm_state["position"],
+        "movement_time": movement_time
+    }
 
 
 @router.post("/blocks/arm/move-joint")
@@ -152,13 +170,28 @@ async def move_arm_joint(joint: int, angle: float):
     if joint < 1 or joint > 6:
         raise HTTPException(status_code=400, detail="Joint must be between 1 and 6")
     
+    # Calculate angle difference for movement time simulation
+    current_angle = arm_state["joints"][joint - 1]
+    angle_diff = abs(angle - current_angle)
+    
+    # Simulate movement time (0.01 seconds per degree, minimum 0.3s)
+    movement_time = max(0.3, angle_diff * 0.01)
+    
     arm_state["is_moving"] = True
     arm_state["joints"][joint - 1] = angle
     
-    # Simulate movement completion
+    # Simulate gradual movement
+    import asyncio
+    await asyncio.sleep(movement_time)
+    
     arm_state["is_moving"] = False
     
-    return {"status": "success", "joint": joint, "angle": angle}
+    return {
+        "status": "success",
+        "joint": joint,
+        "angle": angle,
+        "movement_time": movement_time
+    }
 
 
 @router.post("/blocks/arm/reset")
