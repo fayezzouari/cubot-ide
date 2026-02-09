@@ -259,7 +259,7 @@ function MovePositionNode({ data, id }: NodeProps) {
           />
         </div>
         <div className="text-[9px] text-violet-600 dark:text-violet-300 mt-1 opacity-70">
-          Range: ±5 units
+          Uses IK to move arm
         </div>
       </div>
       <Handle
@@ -862,7 +862,7 @@ export default function BlocksPage() {
                     ))}
                     
                     <div className="font-bold mt-3 mb-1">QUICK TEST:</div>
-                    <div className="flex gap-1 flex-wrap">
+                    <div className="flex gap-1 flex-wrap mb-2">
                       <Button
                         size="sm"
                         variant="outline"
@@ -941,12 +941,85 @@ export default function BlocksPage() {
                       </Button>
                     </div>
                     
+                    <div className="text-[9px] font-bold mb-1 text-emerald-600 dark:text-emerald-400">IK POSITIONS:</div>
+                    <div className="flex gap-1 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-[10px] h-6 px-2"
+                        onClick={async () => {
+                          try {
+                            console.log('Moving to forward position...');
+                            await blocksApi.moveArmPosition(0, 2, 1.5);
+                            const state = await blocksApi.getArmState();
+                            setArmState({
+                              position: { ...state.position },
+                              joints: [...state.joints],
+                              is_moving: state.is_moving
+                            });
+                            toast.success('Forward');
+                          } catch (error: any) {
+                            console.error('Failed:', error);
+                            toast.error(error.message || 'Unreachable');
+                          }
+                        }}
+                      >
+                        Forward
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-[10px] h-6 px-2"
+                        onClick={async () => {
+                          try {
+                            console.log('Moving to up position...');
+                            await blocksApi.moveArmPosition(0, 3, 0);
+                            const state = await blocksApi.getArmState();
+                            setArmState({
+                              position: { ...state.position },
+                              joints: [...state.joints],
+                              is_moving: state.is_moving
+                            });
+                            toast.success('Up');
+                          } catch (error: any) {
+                            console.error('Failed:', error);
+                            toast.error(error.message || 'Unreachable');
+                          }
+                        }}
+                      >
+                        Up
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-[10px] h-6 px-2"
+                        onClick={async () => {
+                          try {
+                            console.log('Moving to side position...');
+                            await blocksApi.moveArmPosition(1.5, 1.5, 0);
+                            const state = await blocksApi.getArmState();
+                            setArmState({
+                              position: { ...state.position },
+                              joints: [...state.joints],
+                              is_moving: state.is_moving
+                            });
+                            toast.success('Side');
+                          } catch (error: any) {
+                            console.error('Failed:', error);
+                            toast.error(error.message || 'Unreachable');
+                          }
+                        }}
+                      >
+                        Side
+                      </Button>
+                    </div>
+                    
                     <div className="font-bold mt-3 mb-1 text-amber-600 dark:text-amber-400">LIMITATIONS:</div>
                     <div className="text-[10px] leading-relaxed space-y-1 text-muted-foreground">
                       <div>• Joint Range: -180° to +180°</div>
                       <div>• Position Range: ±5 units</div>
-                      <div>• Max Reach: ~4 units</div>
-                      <div>• 6-DOF arm simulation</div>
+                      <div>• Max Reach: ~3.2 units</div>
+                      <div>• 6-DOF arm with IK</div>
                       <div>• No collision detection</div>
                       <div>• Simplified kinematics</div>
                     </div>
