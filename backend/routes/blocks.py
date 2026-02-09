@@ -10,6 +10,7 @@ from schemas.blocks import (
     BlockProgramResponse,
     ArmStateResponse,
 )
+from services.inverse_kinematics import ArmKinematics
 
 router = APIRouter(tags=["blocks"])
 
@@ -132,8 +133,24 @@ async def get_arm_state():
 
 @router.post("/blocks/arm/move-position")
 async def move_arm_position(x: float, y: float, z: float):
-    """Move arm to a specific position"""
+    """Move arm to a specific position using inverse kinematics"""
     global arm_state
+    
+    # Check if position is reachable
+    if not ArmKinematics.is_reachable(x, y, z):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Position ({x}, {y}, {z}) is unreachable. Max reach: ~3.2 units"
+        )
+    
+    # Solve inverse kinematics
+    joint_angles = ArmKinematics.solve_ik(x, y, z)
+    
+    if joint_angles is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to solve IK for position ({x}, {y}, {z})"
+        )
     
     # Calculate distance for movement time simulation
     current_pos = arm_state["position"]
@@ -148,6 +165,7 @@ async def move_arm_position(x: float, y: float, z: float):
     
     arm_state["is_moving"] = True
     arm_state["position"] = {"x": x, "y": y, "z": z}
+    arm_state["joints"] = joint_angles
     
     # Simulate gradual movement
     import asyncio
@@ -158,6 +176,7 @@ async def move_arm_position(x: float, y: float, z: float):
     return {
         "status": "success",
         "position": arm_state["position"],
+        "joints": joint_angles,
         "movement_time": movement_time
     }
 
