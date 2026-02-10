@@ -13,6 +13,7 @@ import TopBar from '@/components/ide/top-bar';
 import FileTreeItem from '@/components/ide/file-tree-item';
 import EditorPanel from '@/components/ide/editor-panel';
 import ChatSidebar from '@/components/ide/chat-sidebar';
+import RightSidebar from '@/components/ide/right-sidebar';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
 import CreateFileDialog from '@/components/ide/create-file-dialog';
@@ -110,7 +111,7 @@ export default function IDEPage() {
     setIsChatLoading(true);
     const userMessage = chatInput.trim();
     const newUserMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role: 'user',
       content: userMessage,
     };
@@ -120,7 +121,7 @@ export default function IDEPage() {
     
     // Add loading message
     const loadingMessage: ChatMessage = {
-      id: (Date.now() + 1).toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role: 'assistant',
       content: '...',
     };
@@ -155,7 +156,7 @@ export default function IDEPage() {
         return [
           ...withoutLoading,
           {
-            id: (Date.now() + 2).toString(),
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             role: 'assistant',
             content: response.message,
           },
@@ -759,7 +760,7 @@ export default function IDEPage() {
           <ResizableHandle withHandle className="w-1 bg-foreground hover:bg-primary transition-colors" />
 
           <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
-            <ChatSidebar
+            <RightSidebar
               messages={messages}
               chatInput={chatInput}
               onChatInputChange={setChatInput}

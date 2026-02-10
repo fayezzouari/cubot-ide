@@ -22,6 +22,12 @@ docker==7.0.0
 # HTTP client
 httpx==0.26.0
 
+# Async support
+aiofiles==23.2.1
+
+# Daytona SDK
+daytona-sdk>=0.1.0
+
 # Utilities
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
