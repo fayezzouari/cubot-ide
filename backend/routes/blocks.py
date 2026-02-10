@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status
 from typing import List
 from datetime import datetime
 from bson import ObjectId
+import math
 
 from core.database import get_collection
 from schemas.blocks import (
@@ -138,9 +139,26 @@ async def move_arm_position(x: float, y: float, z: float):
     
     # Check if position is reachable
     if not ArmKinematics.is_reachable(x, y, z):
+        # Calculate some helpful info
+        horizontal_dist = math.sqrt(x**2 + z**2)
+        shoulder_height = 0.8
+        max_reach = 3.5
+        
+        reasons = []
+        if y < 0.5:
+            reasons.append("position is too low (minimum Y: 0.5)")
+        if horizontal_dist < 0.5 and y < shoulder_height:
+            reasons.append("position is inside the base")
+        
+        reach_dist = math.sqrt(horizontal_dist**2 + (y - shoulder_height)**2)
+        if reach_dist > max_reach:
+            reasons.append(f"position is too far (distance: {reach_dist:.2f}, max: {max_reach:.2f})")
+        
+        reason_str = "; ".join(reasons) if reasons else "position is unreachable"
+        
         raise HTTPException(
             status_code=400, 
-            detail=f"Position ({x}, {y}, {z}) is unreachable. Max reach: ~3.2 units"
+            detail=f"Position ({x}, {y}, {z}) is unreachable: {reason_str}"
         )
     
     # Solve inverse kinematics
@@ -150,6 +168,23 @@ async def move_arm_position(x: float, y: float, z: float):
         raise HTTPException(
             status_code=400,
             detail=f"Failed to solve IK for position ({x}, {y}, {z})"
+        )
+    
+    # Verify the solution using forward kinematics
+    actual_x, actual_y, actual_z = ArmKinematics.forward_kinematics(joint_angles)
+    position_error = (
+        (actual_x - x) ** 2 +
+        (actual_y - y) ** 2 +
+        (actual_z - z) ** 2
+    ) ** 0.5
+    
+    # If error is too large, reject the solution
+    if position_error > 0.15:  # 15cm tolerance (improved IK should be < 0.1)
+        raise HTTPException(
+            status_code=500,
+            detail=f"IK solution verification failed. Target: ({x}, {y}, {z}), "
+                   f"Actual: ({actual_x:.3f}, {actual_y:.3f}, {actual_z:.3f}), "
+                   f"Error: {position_error:.3f} units"
         )
     
     # Calculate distance for movement time simulation
@@ -164,7 +199,8 @@ async def move_arm_position(x: float, y: float, z: float):
     movement_time = max(0.5, distance * 0.5)
     
     arm_state["is_moving"] = True
-    arm_state["position"] = {"x": x, "y": y, "z": z}
+    # Store the actual achieved position (from FK) instead of assuming target
+    arm_state["position"] = {"x": actual_x, "y": actual_y, "z": actual_z}
     arm_state["joints"] = joint_angles
     
     # Simulate gradual movement
@@ -177,7 +213,8 @@ async def move_arm_position(x: float, y: float, z: float):
         "status": "success",
         "position": arm_state["position"],
         "joints": joint_angles,
-        "movement_time": movement_time
+        "movement_time": movement_time,
+        "position_error": position_error
     }
 
 

@@ -148,7 +148,7 @@ function RobotArm({ position, joints }: ArmVisualizationProps) {
       </group>
 
       {/* Target position indicator */}
-      <mesh position={[position.x, position.y + 2, position.z]}>
+      <mesh position={[position.x, position.y, position.z]}>
         <sphereGeometry args={[0.1, 16, 16]} />
         <meshStandardMaterial color="#48bb78" emissive="#48bb78" emissiveIntensity={0.5} />
       </mesh>

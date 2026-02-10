@@ -32,3 +32,4 @@ pyserial==3.5
 # CAD
 numpy<2
 cadquery==2.4.0
+ikpy==3.3.3 
