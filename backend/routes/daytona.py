@@ -103,4 +103,7 @@ async def execute_code(request: CodeExecutionRequest):
         result = await daytona_service.execute_code(request)
         return result
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Code execution failed for workspace {request.workspace_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

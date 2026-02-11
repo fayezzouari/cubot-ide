@@ -32,7 +32,11 @@ class Settings(BaseSettings):
     # Compilation settings
     COMPILE_TIMEOUT: int = 60  # seconds
     MAX_OUTPUT_SIZE: int = 1024 * 1024  # 1MB
-    
+
+    # Daytona
+    DAYTONA_API_URL: Optional[str] = None
+    DAYTONA_API_KEY: Optional[str] = None
+
     class Config:
         env_file = ".env"
         extra = "allow"
