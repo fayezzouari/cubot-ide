@@ -1,12 +1,13 @@
 'use client';
 
-import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft, Cpu } from 'lucide-react';
+import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft, Cpu, CheckCircle2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/contexts/project-context';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { compileService } from '@/lib/api';
+import type { ProjectType } from '@/lib/api/types';
 import {
   Dialog,
   DialogContent,
@@ -48,8 +49,9 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
   const router = useRouter();
   const { createProject, createFile, loadProject } = useProject();
   const [isCreating, setIsCreating] = useState(false);
-  const [step, setStep] = useState<'select' | 'name' | 'compiler'>('select');
+  const [step, setStep] = useState<'select' | 'projectType' | 'name' | 'compiler'>('select');
   const [selectedType, setSelectedType] = useState<'ide' | 'blocks' | 'cad' | null>(null);
+  const [selectedProjectType, setSelectedProjectType] = useState<'embedded' | 'ros'>('embedded');
   const [projectName, setProjectName] = useState('');
   const [compilers, setCompilers] = useState<Array<{ id: string; name: string; description: string }>>([]);
   const [selectedCompiler, setSelectedCompiler] = useState('arduino');
@@ -57,6 +59,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
   const resetModal = () => {
     setStep('select');
     setSelectedType(null);
+    setSelectedProjectType('embedded');
     setProjectName('');
     setSelectedCompiler('arduino');
   };
@@ -89,7 +92,12 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
     setSelectedType(type);
     const defaultName = `My ${type === 'ide' ? 'Code' : type === 'blocks' ? 'Block' : 'CAD'} Project`;
     setProjectName(defaultName);
-    setStep('name');
+    // For IDE projects, show project type selection; otherwise go to name
+    if (type === 'ide') {
+      setStep('projectType');
+    } else {
+      setStep('name');
+    }
   };
 
   const handleCreateProject = async () => {
@@ -100,7 +108,8 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       const project = await createProject(
         projectName.trim() || `My ${selectedType === 'ide' ? 'Code' : selectedType === 'blocks' ? 'Block' : 'CAD'} Project`,
         `Created on ${new Date().toLocaleDateString()}`,
-        selectedType === 'ide' ? selectedCompiler : 'arduino'
+        selectedType === 'ide' ? selectedCompiler : 'arduino',
+        selectedType === 'ide' ? (selectedProjectType as ProjectType) : undefined
       );
       
       // Save project ID and workspace type to localStorage
@@ -164,13 +173,17 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
           <DialogTitle className="text-2xl font-black text-foreground">
             {step === 'select'
               ? 'CHOOSE YOUR WORKSPACE'
+              : step === 'projectType'
+              ? 'CHOOSE PROJECT TYPE'
               : step === 'name'
               ? 'NAME YOUR PROJECT'
               : 'CHOOSE COMPILER'}
           </DialogTitle>
           <DialogDescription className="text-foreground/70 font-bold">
             {step === 'select'
-              ? 'Select how you want to build your embedded project'
+              ? 'Select how you want to build your project'
+              : step === 'projectType'
+              ? 'Choose between embedded systems or robotics (ROS) development'
               : step === 'name'
               ? 'Give your project a descriptive name'
               : 'Pick the compiler target for your IDE project'}
@@ -242,6 +255,72 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
             </div>
           </button>
           </div>
+        ) : step === 'projectType' ? (
+          <div className="p-6">
+            <div className="space-y-4">
+              <div className="text-sm font-black uppercase tracking-widest text-foreground/70 mb-6">
+                Select project category
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Embedded Project */}
+                <button
+                  onClick={() => {
+                    setSelectedProjectType('embedded');
+                    setStep('name');
+                  }}
+                  disabled={isCreating}
+                  className={`border-4 p-6 text-left transition-all ${
+                    selectedProjectType === 'embedded'
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-foreground/30 hover:border-foreground'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="font-black text-lg">EMBEDDED</h3>
+                    {selectedProjectType === 'embedded' && <CheckCircle2 size={20} />}
+                  </div>
+                  <p className="text-sm font-bold opacity-80 mb-4">
+                    Arduino, ESP32, TI ARM projects. Traditional embedded systems programming.
+                  </p>
+                  <div className="text-xs font-black opacity-60">Code Editor Only</div>
+                </button>
+
+                {/* ROS Project */}
+                <button
+                  onClick={() => {
+                    setSelectedProjectType('ros');
+                    setStep('name');
+                  }}
+                  disabled={isCreating}
+                  className={`border-4 p-6 text-left transition-all ${
+                    selectedProjectType === 'ros'
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-foreground/30 hover:border-foreground'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="font-black text-lg">ROS/ROS2</h3>
+                    {selectedProjectType === 'ros' && <CheckCircle2 size={20} />}
+                  </div>
+                  <p className="text-sm font-bold opacity-80 mb-4">
+                    Robotics projects with ROS support. Full Daytona terminal access for running nodes.
+                  </p>
+                  <div className="text-xs font-black opacity-60">✨ With Sandbox Terminal</div>
+                </button>
+              </div>
+              <div className="flex items-center justify-between pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep('select')}
+                  disabled={isCreating}
+                  className="border-2 border-foreground font-black"
+                >
+                  <ArrowLeft size={16} className="mr-2" />
+                  BACK
+                </Button>
+              </div>
+            </div>
+          </div>
         ) : step === 'name' ? (
           <div className="p-6">
             <div className="space-y-4">
@@ -263,7 +342,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
               <div className="flex items-center justify-between pt-4">
                 <Button
                   variant="outline"
-                  onClick={() => setStep('select')}
+                  onClick={() => setStep(selectedType === 'ide' ? 'projectType' : 'select')}
                   disabled={isCreating}
                   className="border-2 border-foreground font-black"
                 >

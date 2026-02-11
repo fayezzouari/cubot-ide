@@ -32,7 +32,7 @@ async def create_workspace(request: DaytonaWorkspaceCreate):
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        if project.get("project_type") != ProjectType.ROS.value:
+        if project.project_type != ProjectType.ROS.value:
             raise HTTPException(
                 status_code=403,
                 detail="Daytona sandboxes are only available for ROS projects"
@@ -74,7 +74,7 @@ async def sync_files(workspace_id: str, request: SyncFilesRequest):
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        if project.get("project_type") != ProjectType.ROS.value:
+        if project.project_type != ProjectType.ROS.value:
             raise HTTPException(
                 status_code=403,
                 detail="Daytona sandboxes are only available for ROS projects"

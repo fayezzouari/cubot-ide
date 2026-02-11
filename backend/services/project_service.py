@@ -21,6 +21,7 @@ class ProjectService:
             "name": project_data.name,
             "description": project_data.description or "",
             "target_compiler": project_data.target_compiler.value,
+            "project_type": project_data.project_type.value,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -33,6 +34,7 @@ class ProjectService:
             name=doc["name"],
             description=doc["description"],
             target_compiler=doc["target_compiler"],
+            project_type=doc["project_type"],
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             file_count=0,
@@ -55,6 +57,7 @@ class ProjectService:
             name=doc["name"],
             description=doc.get("description", ""),
             target_compiler=doc["target_compiler"],
+            project_type=doc.get("project_type", "embedded"),
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             file_count=len(files),
@@ -76,6 +79,7 @@ class ProjectService:
             name=doc["name"],
             description=doc.get("description", ""),
             target_compiler=doc["target_compiler"],
+            project_type=doc.get("project_type", "embedded"),
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             file_count=len(files),
@@ -99,6 +103,7 @@ class ProjectService:
                 name=doc["name"],
                 description=doc.get("description", ""),
                 target_compiler=doc["target_compiler"],
+                project_type=doc.get("project_type", "embedded"),
                 created_at=doc["created_at"],
                 updated_at=doc["updated_at"],
                 file_count=len(files),
@@ -121,6 +126,9 @@ class ProjectService:
         
         if "target_compiler" in update_data:
             update_data["target_compiler"] = update_data["target_compiler"].value
+
+        if "project_type" in update_data:
+            update_data["project_type"] = update_data["project_type"].value
         
         update_data["updated_at"] = datetime.utcnow()
         

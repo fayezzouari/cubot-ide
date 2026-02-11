@@ -12,6 +12,7 @@ import type {
   ChatRequest,
   ChatResponse,
   ChatMessageInDB,
+  ProjectType,
 } from '@/lib/api';
 
 interface ProjectContextType {
@@ -21,7 +22,7 @@ interface ProjectContextType {
   
   // Project operations
   loadProject: (projectId: string) => Promise<void>;
-  createProject: (name: string, description: string, compiler: string) => Promise<ProjectResponse>;
+  createProject: (name: string, description: string, compiler: string, projectType?: ProjectType) => Promise<ProjectResponse>;
   
   // File operations
   createFile: (name: string, path: string, content: string, fileType: string) => Promise<FileResponse>;
@@ -62,7 +63,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const createProject = useCallback(async (name: string, description: string, compiler: string) => {
+  const createProject = useCallback(async (name: string, description: string, compiler: string, projectType?: ProjectType) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -70,6 +71,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         name,
         description,
         target_compiler: compiler as any,
+        project_type: projectType,
       });
       return project;
     } catch (err: any) {

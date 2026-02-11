@@ -29,16 +29,7 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
   // Only show terminal for ROS projects
   const isRosProject = currentProject?.project_type === 'ros';
 
-  const [lines, setLines] = useState<TerminalLine[]>([
-    {
-      id: '0',
-      type: 'system',
-      content: isRosProject
-        ? 'ROS Sandbox Terminal - Full machine access with project files synced to /home/daytona/project'
-        : 'Sandbox Terminal - Available only for ROS projects',
-      timestamp: new Date(),
-    },
-  ]);
+  const [lines, setLines] = useState<TerminalLine[]>([]);
   const [input, setInput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState(workspaceId);
@@ -47,6 +38,22 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
   const [historyIndex, setHistoryIndex] = useState(-1);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Initialize terminal message based on project type
+  useEffect(() => {
+    if (currentProject) {
+      setLines([
+        {
+          id: '0',
+          type: 'system',
+          content: isRosProject
+            ? 'ROS Sandbox Terminal - Full machine access with project files synced to /home/daytona/project'
+            : 'Sandbox Terminal - Available only for ROS projects',
+          timestamp: new Date(),
+        },
+      ]);
+    }
+  }, [isRosProject, currentProject?.id]);
 
   useEffect(() => {
     if (scrollRef.current) {
