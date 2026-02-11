@@ -19,6 +19,15 @@ export interface DaytonaWorkspace {
   ssh_url?: string;
   created_at: string;
   metadata: Record<string, any>;
+  files_synced: number;
+  sync_status: string; // "none" | "syncing" | "synced" | "partial" | "failed"
+}
+
+export interface SyncFilesResponse {
+  sandbox_id: string;
+  files_synced: number;
+  sync_status: string;
+  errors: string[];
 }
 
 export interface CodeExecutionRequest {
@@ -65,6 +74,16 @@ export const daytonaApi = {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Failed to stop workspace');
+  },
+
+  async syncFiles(workspaceId: string, projectId: string): Promise<SyncFilesResponse> {
+    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId }),
+    });
+    if (!response.ok) throw new Error('Failed to sync files');
+    return response.json();
   },
 
   async executeCode(request: CodeExecutionRequest): Promise<CodeExecutionResponse> {

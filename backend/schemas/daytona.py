@@ -1,5 +1,6 @@
 """
 Schemas for Daytona workspace integration
+Daytona sandboxes are only available for ROS projects.
 """
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
@@ -31,6 +32,21 @@ class DaytonaWorkspaceResponse(BaseModel):
     ssh_url: Optional[str] = None
     created_at: str
     metadata: Dict[str, Any] = {}
+    files_synced: int = 0
+    sync_status: str = "none"  # none, syncing, synced, partial, failed
+
+
+class SyncFilesRequest(BaseModel):
+    """Request to sync project files to sandbox"""
+    project_id: str
+
+
+class SyncFilesResponse(BaseModel):
+    """Result of file sync operation"""
+    sandbox_id: str
+    files_synced: int
+    sync_status: str  # synced, partial, failed
+    errors: List[str] = []
 
 
 class CodeExecutionRequest(BaseModel):

@@ -42,6 +42,11 @@ class CompilerType(str, Enum):
     ESP32 = "esp32"
 
 
+class ProjectType(str, Enum):
+    EMBEDDED = "embedded"  # Arduino, ESP32, etc.
+    ROS = "ros"  # ROS/ROS2 projects with Daytona sandbox access
+
+
 class FileBase(BaseModel):
     """Base file model"""
     name: str = Field(..., min_length=1, max_length=255)
