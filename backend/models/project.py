@@ -3,7 +3,7 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
-from .file import CompilerType
+from .file import CompilerType, ProjectType
 
 
 class ProjectBase(BaseModel):
@@ -11,6 +11,7 @@ class ProjectBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(default="")
     target_compiler: CompilerType = Field(default=CompilerType.ARDUINO)
+    project_type: ProjectType = Field(default=ProjectType.EMBEDDED)
 
 
 class ProjectCreate(ProjectBase):
@@ -23,6 +24,7 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     target_compiler: Optional[CompilerType] = None
+    project_type: Optional[ProjectType] = None
 
 
 class ProjectInDB(ProjectBase):

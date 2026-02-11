@@ -12,15 +12,15 @@ import { mockMessages as initialMessages, type FileNode, type ChatMessage } from
 import TopBar from '@/components/ide/top-bar';
 import FileTreeItem from '@/components/ide/file-tree-item';
 import EditorPanel from '@/components/ide/editor-panel';
-import ChatSidebar from '@/components/ide/chat-sidebar';
 import RightSidebar from '@/components/ide/right-sidebar';
+import SandboxTerminal from '@/components/ide/sandbox-terminal';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
 import CreateFileDialog from '@/components/ide/create-file-dialog';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 
 export default function IDEPage() {
-  const { currentProject, updateFile, deleteFile, loadProject, createFile, compileProject, isLoading, error } = useProject();
+  const { currentProject, updateFile, deleteFile, loadProject, createFile, compileProject, isLoading } = useProject();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -744,17 +744,44 @@ export default function IDEPage() {
           <ResizableHandle withHandle className="w-1 bg-foreground hover:bg-primary transition-colors" />
 
           <ResizablePanel defaultSize={55} minSize={30}>
-            <EditorPanel
-              currentFileName={currentFileName}
-              currentProjectName={currentProject?.name ?? null}
-              hasUnsavedChanges={hasUnsavedChanges}
-              isSaving={isSaving}
-              onSave={handleSaveFile}
-              currentFileContent={currentFileContent}
-              editedContent={editedContent}
-              onChange={handleContentChange}
-              getLanguageFromFileName={getLanguageFromFileName}
-            />
+            {currentProject?.project_type === 'ros' ? (
+              <ResizablePanelGroup direction="vertical">
+                {/* Editor */}
+                <ResizablePanel defaultSize={65} minSize={30}>
+                  <EditorPanel
+                    currentFileName={currentFileName}
+                    currentProjectName={currentProject?.name ?? null}
+                    hasUnsavedChanges={hasUnsavedChanges}
+                    isSaving={isSaving}
+                    onSave={handleSaveFile}
+                    currentFileContent={currentFileContent}
+                    editedContent={editedContent}
+                    onChange={handleContentChange}
+                    getLanguageFromFileName={getLanguageFromFileName}
+                  />
+                </ResizablePanel>
+
+                <ResizableHandle withHandle className="h-1 bg-foreground hover:bg-primary transition-colors" />
+
+                {/* Sandbox Terminal - ROS Projects Only */}
+                <ResizablePanel defaultSize={35} minSize={20}>
+                  <SandboxTerminal />
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            ) : (
+              /* Non-ROS Projects - Editor Only */
+              <EditorPanel
+                currentFileName={currentFileName}
+                currentProjectName={currentProject?.name ?? null}
+                hasUnsavedChanges={hasUnsavedChanges}
+                isSaving={isSaving}
+                onSave={handleSaveFile}
+                currentFileContent={currentFileContent}
+                editedContent={editedContent}
+                onChange={handleContentChange}
+                getLanguageFromFileName={getLanguageFromFileName}
+              />
+            )}
           </ResizablePanel>
 
           <ResizableHandle withHandle className="w-1 bg-foreground hover:bg-primary transition-colors" />

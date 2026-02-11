@@ -20,6 +20,11 @@ export enum CompilerType {
   ESP32 = 'esp32',
 }
 
+export enum ProjectType {
+  EMBEDDED = 'embedded',
+  ROS = 'ros',
+}
+
 export enum CompilationStatus {
   SUCCESS = 'success',
   ERROR = 'error',
@@ -62,6 +67,7 @@ export interface ProjectResponse {
   name: string;
   description: string;
   target_compiler: string;
+  project_type: ProjectType;
   created_at: string;
   updated_at: string;
   file_count: number;
@@ -71,12 +77,14 @@ export interface ProjectCreate {
   name: string;
   description?: string;
   target_compiler: CompilerType;
+  project_type?: ProjectType;
 }
 
 export interface ProjectUpdate {
   name?: string;
   description?: string;
   target_compiler?: CompilerType;
+  project_type?: ProjectType;
 }
 
 export interface ProjectWithFiles extends ProjectResponse {
