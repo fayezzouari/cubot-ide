@@ -513,31 +513,38 @@ export default function IDEPage() {
 
   // Load project files from backend on mount or when project changes
   useEffect(() => {
-    if (currentProject?.files && currentProject.files.length > 0 && !isInitialized) {
+    if (currentProject?.files && currentProject.files.length > 0) {
       const contents: Record<string, string> = {};
       currentProject.files.forEach(file => {
         contents[file.id] = file.content;
       });
       setFileContents(contents);
-      
-      // Restore last selected file from localStorage or select first file
-      const savedFileId = localStorage.getItem(`cubot-ide-selected-file-${currentProject.id}`);
-      const fileToSelect = savedFileId && currentProject.files.some(f => f.id === savedFileId)
-        ? savedFileId
-        : currentProject.files[0]?.id;
-      
-      if (fileToSelect) {
-        setSelectedFile(fileToSelect);
-        setEditedContent(contents[fileToSelect] || '');
+
+      // On initial load, select first file or restore from localStorage
+      if (!isInitialized) {
+        // Restore last selected file from localStorage or select first file
+        const savedFileId = localStorage.getItem(`cubot-ide-selected-file-${currentProject.id}`);
+        const fileToSelect = savedFileId && currentProject.files.some(f => f.id === savedFileId)
+          ? savedFileId
+          : currentProject.files[0]?.id;
+
+        if (fileToSelect) {
+          setSelectedFile(fileToSelect);
+          setEditedContent(contents[fileToSelect] || '');
+        }
+
+        // Load chat history
+        loadChatHistory(currentProject.id);
+
+        setIsInitialized(true);
+        console.log('Loaded project files from MongoDB:', currentProject.files.length, 'files');
+      } else if (!selectedFile && currentProject.files.length > 0) {
+        // If no file is selected but files exist (e.g., after creating a new file), select the last file
+        setSelectedFile(currentProject.files[currentProject.files.length - 1].id);
+        setEditedContent(contents[currentProject.files[currentProject.files.length - 1].id] || '');
       }
-      
-      // Load chat history
-      loadChatHistory(currentProject.id);
-      
-      setIsInitialized(true);
-      console.log('Loaded project files from MongoDB:', currentProject.files.length, 'files');
     }
-  }, [currentProject, isInitialized]);
+  }, [currentProject?.id, currentProject?.files]);
   
   const loadChatHistory = async (projectId: string) => {
     try {
