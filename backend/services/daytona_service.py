@@ -114,7 +114,27 @@ class DaytonaService:
             # Create Daytona sandbox using SDK
             logger.info(f"Creating Daytona sandbox: {workspace_id}")
             sandbox = await asyncio.to_thread(self.daytona.create)
-            logger.info(f"Sandbox created successfully: {sandbox.id}")
+            logger.info(f"Sandbox created: {sandbox.id}, waiting for it to start...")
+
+            # Wait for sandbox to be fully ready
+            max_retries = 10
+            for i in range(max_retries):
+                try:
+                    # Try a simple command to check if sandbox is ready
+                    await asyncio.to_thread(
+                        sandbox.process.exec,
+                        "echo 'ready'",
+                        timeout=5
+                    )
+                    logger.info(f"Sandbox {sandbox.id} is ready!")
+                    break
+                except Exception as e:
+                    if i < max_retries - 1:
+                        logger.info(f"Sandbox not ready yet, waiting... ({i+1}/{max_retries})")
+                        await asyncio.sleep(2)
+                    else:
+                        logger.warning(f"Sandbox may not be fully ready: {e}")
+                        # Continue anyway, it might work
 
             self._sandboxes[workspace_id] = sandbox
 

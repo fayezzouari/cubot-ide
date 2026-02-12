@@ -42,16 +42,36 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
   // Initialize terminal message based on project type
   useEffect(() => {
     if (currentProject) {
-      setLines([
-        {
-          id: '0',
-          type: 'system',
-          content: isRosProject
-            ? 'ROS Sandbox Terminal - Full machine access with project files synced to /home/daytona/project'
-            : 'Sandbox Terminal - Available only for ROS projects',
-          timestamp: new Date(),
-        },
-      ]);
+      const welcomeMessages = isRosProject
+        ? [
+            {
+              id: '0',
+              type: 'system',
+              content: '🤖 ROS Sandbox Terminal - Ready for ROS development',
+              timestamp: new Date(),
+            },
+            {
+              id: '1',
+              type: 'system',
+              content: '📁 Project files: /home/daytona/project | Auto-sync enabled',
+              timestamp: new Date(),
+            },
+            {
+              id: '2',
+              type: 'system',
+              content: '💡 Quick start: roscore | rosrun | rostopic list | rosmsg show',
+              timestamp: new Date(),
+            },
+          ]
+        : [
+            {
+              id: '0',
+              type: 'system',
+              content: 'Sandbox Terminal - Available only for ROS projects',
+              timestamp: new Date(),
+            },
+          ];
+      setLines(welcomeMessages);
     }
   }, [isRosProject, currentProject?.id]);
 
@@ -151,6 +171,23 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
       if (!wsId) {
         setIsExecuting(false);
         return;
+      }
+
+      // Auto-sync files before executing command
+      if (currentProject?.id) {
+        addLine('system', 'Syncing latest files...');
+        try {
+          const syncResult = await daytonaApi.syncFiles(wsId, currentProject.id);
+          if (syncResult.files_synced > 0) {
+            addLine('system', `✓ Synced ${syncResult.files_synced} file${syncResult.files_synced !== 1 ? 's' : ''}`);
+          }
+          if (syncResult.errors.length > 0) {
+            syncResult.errors.slice(0, 3).forEach(err => addLine('error', err));
+          }
+        } catch (syncError) {
+          addLine('error', `Sync warning: ${syncError}`);
+          // Continue anyway - files might still be there from initial sync
+        }
       }
 
       const result = await daytonaApi.executeCode({
@@ -267,15 +304,15 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
   const getLineColor = (type: TerminalLine['type']) => {
     switch (type) {
       case 'input':
-        return 'text-blue-400';
+        return 'text-cyan-400 font-semibold';
       case 'output':
-        return 'text-foreground';
+        return 'text-gray-100 font-medium';
       case 'error':
-        return 'text-red-400';
+        return 'text-red-400 font-medium';
       case 'system':
-        return 'text-yellow-400';
+        return 'text-emerald-400 font-medium';
       default:
-        return 'text-foreground';
+        return 'text-gray-100';
     }
   };
 
@@ -315,7 +352,12 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
           <Terminal size={16} className="text-green-400" />
           <span className="font-bold text-xs">SANDBOX TERMINAL</span>
           {currentWorkspaceId && (
-            <span className="text-xs text-gray-400">({currentWorkspaceId.slice(0, 12)}...)</span>
+            <>
+              <span className="text-xs text-gray-400">({currentWorkspaceId.slice(0, 12)}...)</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-green-600/20 text-green-400 border border-green-600/40 rounded" title="Files auto-sync before each command">
+                AUTO-SYNC
+              </span>
+            </>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -362,17 +404,17 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
       </div>
 
       {/* Terminal Output */}
-      <ScrollArea className="flex-1 p-3" ref={scrollRef}>
-        <div className="space-y-0">
+      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+        <div className="space-y-1">
           {lines.map((line) => (
-            <div key={line.id} className="flex items-start gap-0 font-mono text-xs">
+            <div key={line.id} className="flex items-start gap-0 font-mono text-sm leading-relaxed">
               {line.isPrompt ? (
                 <pre className={`flex-1 whitespace-pre-wrap break-words ${getLineColor(line.type)}`}>
                   {line.content}
                 </pre>
               ) : (
                 <>
-                  <span className="flex-shrink-0 mt-0.5 mr-2">{getLineIcon(line.type)}</span>
+                  <span className="flex-shrink-0 mt-1 mr-2">{getLineIcon(line.type)}</span>
                   <pre className={`flex-1 whitespace-pre-wrap break-words ${getLineColor(line.type)}`}>
                     {line.content}
                   </pre>
@@ -390,17 +432,17 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
       </ScrollArea>
 
       {/* Input Area */}
-      <div className="border-t border-gray-700 bg-gray-900 p-2">
+      <div className="border-t border-gray-700 bg-gray-900 p-3">
         <div className="flex items-start gap-2">
-          <span className="text-green-400 font-bold mt-1">$</span>
+          <span className="text-green-400 font-bold text-sm mt-1">$</span>
           <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isRosProject ? 'Enter shell command...' : 'Only available for ROS projects'}
+            placeholder={isRosProject ? 'Enter ROS command (roscore, rosrun, rostopic...)' : 'Only available for ROS projects'}
             disabled={isExecuting || isInitializing || !isRosProject}
-            className="flex-1 bg-transparent border-none outline-none text-white placeholder:text-gray-500 font-mono text-xs disabled:opacity-50 resize-none min-h-[24px] max-h-[120px]"
+            className="flex-1 bg-transparent border-none outline-none text-white placeholder:text-gray-500 font-mono text-sm disabled:opacity-50 resize-none min-h-[28px] max-h-[120px]"
             rows={1}
             autoFocus
           />
@@ -420,8 +462,10 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
             )}
           </Button>
         </div>
-        <div className="mt-1 text-[10px] text-gray-500">
-          Press Enter to execute • Shift+Enter for new line • Up/Down for history
+        <div className="mt-2 text-xs text-gray-400 flex items-center gap-3">
+          <span>⏎ Execute</span>
+          <span>⇧⏎ New line</span>
+          <span>↑↓ History</span>
         </div>
       </div>
     </div>
