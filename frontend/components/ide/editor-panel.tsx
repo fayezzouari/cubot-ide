@@ -61,7 +61,7 @@ export default function EditorPanel({
       )}
 
       <div className="flex-1 overflow-hidden relative">
-        {currentFileContent ? (
+        {currentFileContent !== null ? (
           <div className="w-full h-full relative z-10">
             <MonacoEditor
               value={editedContent}
