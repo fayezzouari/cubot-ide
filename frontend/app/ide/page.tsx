@@ -610,8 +610,7 @@ export default function IDEPage() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_45%)]" />
+    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       <TopBar
         projectId={currentProject?.id ?? null}
         isArduinoProject={currentProject?.target_compiler === 'arduino'}
@@ -665,19 +664,19 @@ export default function IDEPage() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden relative z-10">
+      <div className="flex-1 flex overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
           {/* File Sidebar */}
           <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
-            <aside className="w-full h-full border-r-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
-              <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
-                <span className="font-black text-sm">
-                  {currentProject ? 'PROJECT FILES' : 'EXPLORER'}
+            <aside className="w-full h-full border-r border-border flex flex-col bg-sidebar">
+              <div className="px-4 py-2 border-b border-border flex items-center justify-between">
+                <span className="font-semibold text-xs uppercase tracking-wide text-sidebar-foreground">
+                  {currentProject ? 'Explorer' : 'Files'}
                 </span>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6"
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 hover:bg-sidebar-accent"
                   onClick={handleCreateNewFile}
                   disabled={isCreatingFile}
                 >
@@ -703,15 +702,15 @@ export default function IDEPage() {
                         />
                       ))
                     ) : (
-                      <div className="p-4 text-center text-muted-foreground text-sm font-bold">
-                        Empty directory.
+                      <div className="p-4 text-center text-muted-foreground text-sm">
+                        No files in project
                       </div>
                     )}
                   </div>
                 </ScrollArea>
               )}
               {isRenamingFile && (
-                <div className="p-2 border-t border-border">
+                <div className="p-3 border-t border-border bg-card">
                   <div className="flex items-center gap-2">
                     <Input
                       value={newFileNameInput}
@@ -730,15 +729,15 @@ export default function IDEPage() {
                     <Button
                       size="sm"
                       onClick={handleRenameFileSubmit}
-                      className="h-8 px-2"
+                      className="h-8 px-3"
                     >
-                      Rename
+                      Save
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={handleRenameFileCancel}
-                      className="h-8 px-2"
+                      className="h-8 px-3"
                     >
                       Cancel
                     </Button>
@@ -748,7 +747,7 @@ export default function IDEPage() {
             </aside>
           </ResizablePanel>
 
-          <ResizableHandle withHandle className="w-1 bg-foreground hover:bg-primary transition-colors" />
+          <ResizableHandle withHandle className="w-px bg-border hover:bg-primary/50 transition-colors" />
 
           <ResizablePanel defaultSize={55} minSize={30}>
             {currentProject?.project_type === 'ros' ? (
