@@ -12,71 +12,73 @@ export default function AboutSection() {
   ];
 
   return (
-    <section id="about" className="py-24 px-6 bg-background border-t-8 border-foreground">
+    <section id="about" className="py-24 px-6 bg-background">
       <div className="max-w-6xl mx-auto">
-        <h2 className="text-6xl md:text-7xl font-black text-foreground mb-4 font-sans">
-          TWO PATHS
-        </h2>
-        <p className="text-lg font-bold text-foreground mb-16 border-l-8 border-foreground pl-6">
-          CHOOSE YOUR LEARNING STYLE
-        </p>
+        <div className="mb-12">
+          <h2 className="text-4xl md:text-5xl font-bold text-foreground mb-3">
+            Two Paths
+          </h2>
+          <p className="text-lg text-muted-foreground">
+            Choose your learning style
+          </p>
+        </div>
 
-        <div className="grid md:grid-cols-2 gap-8 mb-20">
+        <div className="grid md:grid-cols-2 gap-6 mb-20">
           {/* Code-Based Editor */}
-          <div className="p-8 border-4 border-foreground bg-background">
-            <div className="flex items-start gap-4 mb-8 pb-8 border-b-4 border-foreground">
-              <div className="w-16 h-16 bg-foreground border-4 border-foreground flex items-center justify-center flex-shrink-0">
-                <Code2 size={32} className="text-background" />
+          <div className="p-6 border border-border bg-card rounded-lg">
+            <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Code2 size={24} className="text-primary" />
               </div>
               <div>
-                <h3 className="text-3xl font-black text-foreground font-sans">CODE EDITOR</h3>
-                <p className="text-sm font-bold text-foreground mt-2">Professional Development</p>
+                <h3 className="text-xl font-semibold text-foreground">Code Editor</h3>
+                <p className="text-sm text-muted-foreground mt-1">Professional Development</p>
               </div>
             </div>
-            <p className="text-foreground leading-relaxed mb-6 font-bold">
+            <p className="text-foreground/90 leading-relaxed mb-6">
               Write embedded C/C++ with full IDE features, AI autocompletion, and cross-platform compilation for multiple microcontrollers.
             </p>
-            <ul className="space-y-3 text-sm font-bold text-foreground">
-              <li className="flex items-center gap-3">
-                <span className="w-3 h-3 bg-foreground" />
+            <ul className="space-y-2.5 text-sm text-foreground">
+              <li className="flex items-center gap-2.5">
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
                 Full IDE with debugging
               </li>
-              <li className="flex items-center gap-3">
-                <span className="w-3 h-3 bg-foreground" />
+              <li className="flex items-center gap-2.5">
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
                 Cross-compiler support
               </li>
-              <li className="flex items-center gap-3">
-                <span className="w-3 h-3 bg-foreground" />
+              <li className="flex items-center gap-2.5">
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
                 Real hardware deployment
               </li>
             </ul>
           </div>
 
           {/* No-Code Solution */}
-          <div className="p-8 border-4 border-foreground bg-background">
-            <div className="flex items-start gap-4 mb-8 pb-8 border-b-4 border-foreground">
-              <div className="w-16 h-16 bg-foreground border-4 border-foreground flex items-center justify-center flex-shrink-0">
-                <Boxes size={32} className="text-background" />
+          <div className="p-6 border border-border bg-card rounded-lg">
+            <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Boxes size={24} className="text-primary" />
               </div>
               <div>
-                <h3 className="text-3xl font-black text-foreground font-sans">BLOCK BUILDER</h3>
-                <p className="text-sm font-bold text-foreground mt-2">Visual Programming</p>
+                <h3 className="text-xl font-semibold text-foreground">Block Builder</h3>
+                <p className="text-sm text-muted-foreground mt-1">Visual Programming</p>
               </div>
             </div>
-            <p className="text-foreground leading-relaxed mb-6 font-bold">
+            <p className="text-foreground/90 leading-relaxed mb-6">
               Drag-and-drop blocks to control motors, sensors, and actuators. Perfect for beginners and robotics competitions.
             </p>
-            <ul className="space-y-3 text-sm font-bold text-foreground">
-              <li className="flex items-center gap-3">
-                <span className="w-3 h-3 bg-foreground" />
+            <ul className="space-y-2.5 text-sm text-foreground">
+              <li className="flex items-center gap-2.5">
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
                 Drag-and-drop interface
               </li>
-              <li className="flex items-center gap-3">
-                <span className="w-3 h-3 bg-foreground" />
+              <li className="flex items-center gap-2.5">
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
                 Live sensor feedback
               </li>
-              <li className="flex items-center gap-3">
-                <span className="w-3 h-3 bg-foreground" />
+              <li className="flex items-center gap-2.5">
+                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
                 Instant compilation
               </li>
             </ul>
@@ -84,9 +86,9 @@ export default function AboutSection() {
         </div>
 
         {/* Supported Robotics Features */}
-        <div className="border-t-8 border-foreground pt-12 mb-20">
-          <h3 className="text-5xl font-black text-foreground mb-12 font-sans">
-            EMBEDDED FEATURES
+        <div className="mb-20">
+          <h3 className="text-3xl font-semibold text-foreground mb-8">
+            Embedded Features
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {roboticFeatures.map((feature, i) => {
@@ -94,11 +96,13 @@ export default function AboutSection() {
               return (
                 <div
                   key={i}
-                  className="p-6 bg-background border-4 border-foreground text-center"
+                  className="p-5 bg-card border border-border rounded-lg text-center hover:border-primary/50 transition-colors"
                 >
-                  <Icon size={36} className="text-foreground mx-auto mb-4" />
-                  <p className="font-black text-foreground text-sm mb-2">{feature.label}</p>
-                  <p className="text-xs font-bold text-foreground">{feature.desc}</p>
+                  <div className="w-10 h-10 bg-primary/10 rounded-lg mx-auto mb-3 flex items-center justify-center">
+                    <Icon size={20} className="text-primary" />
+                  </div>
+                  <p className="font-semibold text-foreground text-sm mb-1">{feature.label}</p>
+                  <p className="text-xs text-muted-foreground">{feature.desc}</p>
                 </div>
               );
             })}
@@ -106,24 +110,26 @@ export default function AboutSection() {
         </div>
 
         {/* Virtual Hardware Grid */}
-        <div className="border-t-8 border-foreground pt-12">
-          <h3 className="text-5xl font-black text-foreground mb-12 font-sans">
-            SUPPORTED MICROCONTROLLERS
+        <div>
+          <h3 className="text-3xl font-semibold text-foreground mb-8">
+            Supported Microcontrollers
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { name: 'ARM CORTEX-M4', chip: 'STM32F4' },
+              { name: 'ARM Cortex-M4', chip: 'STM32F4' },
               { name: 'ESP32', chip: 'Xtensa' },
               { name: 'STM32L476', chip: 'Cortex-M4' },
-              { name: 'ARDUINO NANO', chip: 'ATmega328P' },
+              { name: 'Arduino Nano', chip: 'ATmega328P' },
             ].map((mcu, i) => (
               <div
                 key={i}
-                className="p-6 bg-background border-4 border-foreground text-center"
+                className="p-5 bg-card border border-border rounded-lg text-center hover:border-primary/50 transition-colors"
               >
-                <Cpu size={36} className="text-foreground mx-auto mb-4" />
-                <p className="font-black text-foreground text-sm mb-1">{mcu.name}</p>
-                <p className="text-xs font-bold text-foreground">{mcu.chip}</p>
+                <div className="w-10 h-10 bg-primary/10 rounded-lg mx-auto mb-3 flex items-center justify-center">
+                  <Cpu size={20} className="text-primary" />
+                </div>
+                <p className="font-semibold text-foreground text-sm mb-1">{mcu.name}</p>
+                <p className="text-xs text-muted-foreground">{mcu.chip}</p>
               </div>
             ))}
           </div>

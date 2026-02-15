@@ -48,14 +48,16 @@ const features = [
 
 export default function FeaturesSection() {
   return (
-    <section id="features" className="py-24 px-6 bg-background border-t-8 border-foreground">
+    <section id="features" className="py-24 px-6 bg-muted/30">
       <div className="max-w-6xl mx-auto">
-        <h2 className="text-6xl md:text-7xl font-black text-foreground mb-4 font-sans">
-          CAPABILITIES
-        </h2>
-        <p className="text-lg font-bold text-foreground mb-16 border-l-8 border-foreground pl-6">
-          EVERYTHING YOU NEED TO CODE ROBOTS
-        </p>
+        <div className="mb-12">
+          <h2 className="text-4xl md:text-5xl font-bold text-foreground mb-3">
+            Capabilities
+          </h2>
+          <p className="text-lg text-muted-foreground">
+            Everything you need to code robots
+          </p>
+        </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20">
           {features.map((feature, index) => {
@@ -63,34 +65,36 @@ export default function FeaturesSection() {
             return (
               <div
                 key={index}
-                className="p-8 border-4 border-foreground bg-background"
+                className="p-6 border border-border bg-card rounded-lg hover:border-primary/50 transition-colors"
               >
-                <div className="w-16 h-16 bg-foreground border-4 border-foreground mb-6 flex items-center justify-center">
-                  <Icon size={32} className="text-background" />
+                <div className="w-12 h-12 bg-primary/10 rounded-lg mb-4 flex items-center justify-center">
+                  <Icon size={24} className="text-primary" />
                 </div>
-                <h3 className="text-xl font-black text-foreground mb-3 font-sans">{feature.title}</h3>
-                <p className="text-foreground leading-relaxed font-bold">{feature.description}</p>
+                <h3 className="text-lg font-semibold text-foreground mb-2">{feature.title}</h3>
+                <p className="text-muted-foreground leading-relaxed text-sm">{feature.description}</p>
               </div>
             );
           })}
         </div>
 
         {/* Robotics Platforms */}
-        <div className="border-t-8 border-foreground pt-12">
-          <h3 className="text-5xl font-black text-foreground mb-12 font-sans">
-            SUPPORTED PLATFORMS
+        <div className="pt-12">
+          <h3 className="text-3xl font-semibold text-foreground mb-8">
+            Supported Platforms
           </h3>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { name: 'LEGO MINDSTORMS', type: 'EV3/Spike' },
-              { name: 'ROSBOT', type: 'ROS2' },
-              { name: 'ARDUINO', type: 'All Models' },
-              { name: 'CUSTOM DRONES', type: 'Multi-rotor' },
+              { name: 'LEGO Mindstorms', type: 'EV3/Spike' },
+              { name: 'ROSbot', type: 'ROS2' },
+              { name: 'Arduino', type: 'All Models' },
+              { name: 'Custom Drones', type: 'Multi-rotor' },
             ].map((platform, i) => (
-              <div key={i} className="p-8 bg-background border-4 border-foreground text-center">
-                <Smartphone size={36} className="text-foreground mx-auto mb-4" />
-                <p className="font-black text-foreground text-sm mb-1">{platform.name}</p>
-                <p className="text-xs font-bold text-foreground">{platform.type}</p>
+              <div key={i} className="p-5 bg-card border border-border rounded-lg text-center hover:border-primary/50 transition-colors">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg mx-auto mb-3 flex items-center justify-center">
+                  <Smartphone size={20} className="text-primary" />
+                </div>
+                <p className="font-semibold text-foreground text-sm mb-1">{platform.name}</p>
+                <p className="text-xs text-muted-foreground">{platform.type}</p>
               </div>
             ))}
           </div>

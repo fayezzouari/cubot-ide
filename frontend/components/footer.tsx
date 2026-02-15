@@ -3,44 +3,44 @@ import { Github, Mail, Cpu, Twitter } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="bg-background border-t-8 border-foreground py-16 px-6">
+    <footer className="bg-muted/30 border-t border-border py-12 px-6">
       <div className="max-w-6xl mx-auto">
-        <div className="grid md:grid-cols-3 gap-16 mb-16">
+        <div className="grid md:grid-cols-3 gap-12 mb-12">
           {/* Brand */}
           <div>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-foreground border-4 border-foreground flex items-center justify-center">
-                <Cpu size={20} className="text-background" />
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
+                <Cpu size={16} className="text-primary-foreground" />
               </div>
-              <span className="font-sans text-2xl font-black text-foreground">CUBOT</span>
+              <span className="text-xl font-semibold text-foreground">Cubot</span>
             </div>
-            <p className="text-foreground font-bold leading-relaxed">
+            <p className="text-muted-foreground leading-relaxed text-sm">
               Learn embedded systems and robotics with AI assistance. Code on virtual hardware, then deploy to real microcontrollers.
             </p>
           </div>
 
           {/* Quick Links */}
           <div>
-            <h3 className="font-sans font-black text-foreground mb-6 text-lg">RESOURCES</h3>
-            <ul className="space-y-3">
+            <h3 className="font-semibold text-foreground mb-4 text-sm">Resources</h3>
+            <ul className="space-y-2">
               <li>
-                <a href="#about" className="text-foreground hover:border-b-4 hover:border-foreground transition-all font-bold text-sm">
-                  ABOUT PLATFORM
+                <a href="#about" className="text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer">
+                  About Platform
                 </a>
               </li>
               <li>
-                <a href="#features" className="text-foreground hover:border-b-4 hover:border-foreground transition-all font-bold text-sm">
-                  FEATURES
+                <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer">
+                  Features
                 </a>
               </li>
               <li>
-                <a href="#github" className="text-foreground hover:border-b-4 hover:border-foreground transition-all font-bold text-sm">
-                  GET STARTED
+                <a href="#github" className="text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer">
+                  Get Started
                 </a>
               </li>
               <li>
-                <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-foreground hover:border-b-4 hover:border-foreground transition-all font-bold text-sm">
-                  DOCS
+                <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer">
+                  Documentation
                 </a>
               </li>
             </ul>
@@ -48,37 +48,37 @@ export default function Footer() {
 
           {/* Social Links */}
           <div>
-            <h3 className="font-sans font-black text-foreground mb-6 text-lg">COMMUNITY</h3>
-            <div className="flex gap-4">
+            <h3 className="font-semibold text-foreground mb-4 text-sm">Community</h3>
+            <div className="flex gap-3">
               <a
                 href="https://github.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-12 h-12 bg-foreground text-background hover:opacity-80 transition-opacity flex items-center justify-center border-2 border-foreground"
+                className="w-10 h-10 bg-background border border-border rounded hover:bg-muted hover:border-primary/50 transition-colors flex items-center justify-center cursor-pointer"
               >
-                <Github size={20} />
+                <Github size={18} />
               </a>
               <a
                 href="https://twitter.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-12 h-12 bg-foreground text-background hover:opacity-80 transition-opacity flex items-center justify-center border-2 border-foreground"
+                className="w-10 h-10 bg-background border border-border rounded hover:bg-muted hover:border-primary/50 transition-colors flex items-center justify-center cursor-pointer"
               >
-                <Twitter size={20} />
+                <Twitter size={18} />
               </a>
               <a
                 href="mailto:hello@cubot.dev"
-                className="w-12 h-12 bg-foreground text-background hover:opacity-80 transition-opacity flex items-center justify-center border-2 border-foreground"
+                className="w-10 h-10 bg-background border border-border rounded hover:bg-muted hover:border-primary/50 transition-colors flex items-center justify-center cursor-pointer"
               >
-                <Mail size={20} />
+                <Mail size={18} />
               </a>
             </div>
           </div>
         </div>
 
         {/* Bottom */}
-        <div className="border-t-8 border-foreground pt-8 text-center text-foreground font-bold">
-          <p>© 2024 CUBOT. MAKING EMBEDDED SYSTEMS EDUCATION ACCESSIBLE.</p>
+        <div className="border-t border-border pt-6 text-center text-muted-foreground text-sm">
+          <p>© 2024 Cubot. Making embedded systems education accessible.</p>
         </div>
       </div>
     </footer>
