@@ -22,38 +22,40 @@ export default function ChatSidebar({
   isLoading = false,
 }: ChatSidebarProps) {
   return (
-    <aside className="w-full h-full border-l-4 border-foreground flex flex-col bg-background/80 backdrop-blur-sm">
-      <div className="p-3 border-b-2 border-foreground flex items-center gap-2">
-        <Bot size={18} />
-        <span className="font-black text-sm">AI ASSISTANT</span>
-        {isLoading && <Loader2 size={14} className="animate-spin ml-auto" />}
+    <aside className="w-full h-full border-l border-border flex flex-col bg-card">
+      <div className="px-4 py-2 border-b border-border flex items-center gap-2">
+        <div className="p-1 bg-primary/10 rounded">
+          <Bot size={16} className="text-primary" />
+        </div>
+        <span className="font-semibold text-sm">AI Assistant</span>
+        {isLoading && <Loader2 size={14} className="animate-spin ml-auto text-muted-foreground" />}
       </div>
-      <ScrollArea className="flex-1 p-3">
+      <ScrollArea className="flex-1 p-4">
         <div className="space-y-4">
           {messages.map((message) => {
             const isUser = message.role === 'user';
             const isAssistant = message.role === 'assistant';
             const isThinking = message.content === '...';
-            
+
             return (
               <div
                 key={message.id}
                 className={`flex gap-2 items-start ${isUser ? 'flex-row-reverse' : ''}`}
               >
                 <div
-                  className={`w-8 h-8 flex-shrink-0 flex items-center justify-center border-2 border-foreground ${
-                    isAssistant ? 'bg-primary' : 'bg-muted'
+                  className={`w-7 h-7 flex-shrink-0 flex items-center justify-center rounded ${
+                    isAssistant ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {isAssistant ? (
-                    <Bot size={14} className="text-primary-foreground" />
+                    <Bot size={14} />
                   ) : (
                     <User size={14} />
                   )}
                 </div>
                 <div
-                  className={`flex-1 min-w-0 p-3 border-2 border-foreground text-sm ${
-                    isUser ? 'bg-muted' : 'bg-background'
+                  className={`flex-1 min-w-0 p-3 rounded-lg border text-sm ${
+                    isUser ? 'bg-muted/50 border-border' : 'bg-background border-border'
                   }`}
                   style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
                 >
@@ -77,7 +79,7 @@ export default function ChatSidebar({
           })}
         </div>
       </ScrollArea>
-      <div className="p-3 border-t-2 border-foreground">
+      <div className="p-3 border-t border-border">
         <div className="flex gap-2">
           <input
             type="text"
@@ -86,12 +88,12 @@ export default function ChatSidebar({
             onKeyDown={(e) => e.key === 'Enter' && !isLoading && onSendMessage()}
             placeholder="Ask AI for help..."
             disabled={isLoading}
-            className="flex-1 px-3 py-2 border-2 border-foreground bg-background text-sm font-bold placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-foreground disabled:opacity-50"
+            className="flex-1 px-3 py-2 border border-input bg-background text-sm rounded placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
           />
-          <Button 
-            onClick={onSendMessage} 
-            size="icon" 
-            className="border-2 border-foreground"
+          <Button
+            onClick={onSendMessage}
+            size="icon"
+            className="h-9 w-9"
             disabled={isLoading || !chatInput.trim()}
           >
             {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}

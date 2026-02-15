@@ -18,52 +18,53 @@ export default function TopBar({
   onOpenSerial,
 }: TopBarProps) {
   return (
-    <header className="h-14 border-b-4 border-foreground flex items-center justify-between px-4 bg-gradient-to-r from-primary/15 via-background to-primary/10 shadow-sm relative z-10">
+    <header className="h-12 border-b border-border flex items-center justify-between px-4 bg-card">
       <div className="flex items-center gap-4">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-primary border-2 border-foreground flex items-center justify-center">
-            <span className="text-primary-foreground font-black text-sm">⚙</span>
+        <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <div className="w-7 h-7 bg-primary rounded flex items-center justify-center">
+            <span className="text-primary-foreground font-semibold text-sm">⚙</span>
           </div>
-          <span className="font-serif text-xl font-black">CUBOT IDE</span>
+          <span className="font-semibold text-base">Cubot IDE</span>
         </Link>
       </div>
       <div className="flex items-center gap-2">
         <Button
-          variant="outline"
+          variant="default"
           size="sm"
-          className="border-2 border-foreground font-black"
+          className="h-8 px-3 font-medium"
           onClick={onOpenCompile}
         >
-          <Play size={14} />
-          COMPILE
+          <Play size={14} className="mr-1.5" />
+          Compile
         </Button>
         {isArduinoProject && (
           <>
             <Button
               variant="outline"
               size="sm"
-              className="border-2 border-foreground font-black"
+              className="h-8 px-3 font-medium"
               onClick={onOpenSerial}
             >
-              <TerminalSquare size={14} />
-              SERIAL MONITOR
+              <TerminalSquare size={14} className="mr-1.5" />
+              Serial Monitor
             </Button>
             {projectId && (
               <Link href={`/simulator?project=${projectId}`}>
-                <Button variant="outline" size="sm" className="border-2 border-foreground font-black">
-                  <Cpu size={14} />
-                  SIMULATE
+                <Button variant="outline" size="sm" className="h-8 px-3 font-medium">
+                  <Cpu size={14} className="mr-1.5" />
+                  Simulate
                 </Button>
               </Link>
             )}
           </>
         )}
-        <Button variant="ghost" size="icon">
-          <Settings size={18} />
+        <div className="w-px h-6 bg-border mx-1" />
+        <Button variant="ghost" size="icon" className="h-8 w-8">
+          <Settings size={16} />
         </Button>
         <Link href="/">
-          <Button variant="ghost" size="icon">
-            <Home size={18} />
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Home size={16} />
           </Button>
         </Link>
       </div>

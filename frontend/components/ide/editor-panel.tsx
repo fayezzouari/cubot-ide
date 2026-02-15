@@ -30,31 +30,31 @@ export default function EditorPanel({
   getLanguageFromFileName,
 }: EditorPanelProps) {
   return (
-    <main className="h-full flex flex-col overflow-hidden bg-background/90">
+    <main className="h-full flex flex-col overflow-hidden bg-background">
       {currentFileName && (
-        <div className="h-10 border-b-2 border-foreground flex items-center justify-between px-2">
-          <div className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-primary/10 to-muted border-2 border-foreground shadow-sm">
-            <File size={12} />
-            <span className="text-sm font-bold">
+        <div className="h-10 border-b border-border flex items-center justify-between px-4 bg-card">
+          <div className="flex items-center gap-2">
+            <File size={14} className="text-muted-foreground" />
+            <span className="text-sm font-medium text-foreground">
               {currentFileName}
-              {hasUnsavedChanges && <span className="ml-1 text-amber-500">●</span>}
+              {hasUnsavedChanges && <span className="ml-1.5 text-accent">●</span>}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {currentProjectName && (
-              <span className="text-xs text-muted-foreground font-bold flex items-center gap-2">
-                <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs text-muted-foreground font-medium flex items-center gap-2">
+                <span className="inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
                 {currentProjectName}
               </span>
             )}
             <Button
               onClick={onSave}
               size="sm"
-              variant="outline"
-              className="border-2 border-foreground font-black h-7"
+              variant="default"
+              className="h-7 px-3 font-medium"
               disabled={!hasUnsavedChanges || isSaving}
             >
-              {isSaving ? 'SAVING...' : 'SAVE'}
+              {isSaving ? 'Saving...' : 'Save'}
             </Button>
           </div>
         </div>
@@ -84,20 +84,20 @@ export default function EditorPanel({
             />
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center bg-background">
             <div className="text-center max-w-md">
-              <div className="w-32 h-32 mx-auto mb-6 bg-primary border-4 border-foreground flex items-center justify-center">
-                <span className="text-primary-foreground font-black text-6xl">⚙</span>
+              <div className="w-24 h-24 mx-auto mb-6 bg-primary/10 border border-border rounded-lg flex items-center justify-center">
+                <span className="text-primary text-5xl">⚙</span>
               </div>
-              <h2 className="text-2xl font-black mb-2">
-                {currentProjectName || 'CUBOT IDE'}
+              <h2 className="text-xl font-semibold mb-2 text-foreground">
+                {currentProjectName || 'Cubot IDE'}
               </h2>
-              <div className="flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest text-foreground/70">
-                <Sparkles size={16} />
-                Build with purpose
+              <div className="flex items-center justify-center gap-2 text-sm font-medium text-muted-foreground">
+                <Sparkles size={14} />
+                Select a file to start editing
               </div>
-              <p className="text-muted-foreground font-bold mt-3">
-                “Great projects start with a single file.”
+              <p className="text-muted-foreground text-sm mt-4 italic">
+                Great projects start with a single file.
               </p>
             </div>
           </div>
