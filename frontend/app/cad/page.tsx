@@ -156,21 +156,21 @@ export default function CadPage() {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground font-sans">
       {/* Top bar */}
-      <div className="h-12 border-b-4 border-foreground flex items-center px-4 justify-between bg-background/90 backdrop-blur-sm">
+      <div className="h-12 border-b border-border flex items-center px-4 justify-between bg-card">
         <div className="flex items-center gap-3">
           <Link href="/dashboard">
             <Button
               variant="ghost"
               size="icon"
-              className="border-2 border-foreground w-8 h-8"
+              className="h-8 w-8"
               title="Back to dashboard"
             >
               <Home size={16} />
             </Button>
           </Link>
           <div className="flex items-center gap-2">
-            <Code2 size={18} />
-            <span className="font-black text-sm tracking-wide">CUBOT CAD ASSISTANT</span>
+            <Code2 size={18} className="text-primary" />
+            <span className="font-semibold text-sm">CAD Assistant</span>
           </div>
         </div>
 
@@ -178,14 +178,15 @@ export default function CadPage() {
           <Button
             onClick={handleExportSTL}
             disabled={!currentCode || isExporting}
-            className="px-4 py-2 bg-primary border-2 border-foreground text-primary-foreground font-black text-xs hover:bg-muted hover:text-black transition-all flex items-center gap-2 disabled:opacity-50"
+            size="sm"
+            className="h-8 px-4 font-medium text-xs flex items-center gap-2"
           >
             {isExporting ? (
               <Loader2 size={14} className="animate-spin" />
             ) : (
               <Download size={14} />
             )}
-            EXPORT STL
+            Export STL
           </Button>
         </div>
       </div>
