@@ -302,28 +302,28 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
   const getLineColor = (type: TerminalLine['type']) => {
     switch (type) {
       case 'input':
-        return 'text-cyan-400 font-semibold';
+        return 'text-primary font-bold';
       case 'output':
-        return 'text-gray-100 font-medium';
+        return 'text-foreground font-medium';
       case 'error':
-        return 'text-red-400 font-medium';
+        return 'text-destructive font-bold';
       case 'system':
-        return 'text-emerald-400 font-medium';
+        return 'text-accent-foreground font-bold';
       default:
-        return 'text-gray-100';
+        return 'text-foreground';
     }
   };
 
   const getLineIcon = (type: TerminalLine['type']) => {
     switch (type) {
       case 'input':
-        return <Play size={12} className="text-blue-400" />;
+        return <Play size={12} className="text-primary" />;
       case 'output':
-        return <CheckCircle size={12} className="text-green-400" />;
+        return <CheckCircle size={12} className="text-primary" />;
       case 'error':
-        return <XCircle size={12} className="text-red-400" />;
+        return <XCircle size={12} className="text-destructive" />;
       case 'system':
-        return <Terminal size={12} className="text-yellow-400" />;
+        return <Terminal size={12} className="text-accent-foreground" />;
       default:
         return null;
     }
@@ -343,16 +343,20 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
   const isInitializing = initStage !== 'idle' && initStage !== 'ready';
 
   return (
-    <div className="h-full flex flex-col bg-black/95 text-white font-mono text-sm">
+    <div className="h-full flex flex-col bg-background/95 font-mono text-sm border-2 border-foreground">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-900">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b-2 border-foreground bg-gradient-to-r from-primary/10 to-muted">
         <div className="flex items-center gap-2">
-          <Terminal size={16} className="text-green-400" />
-          <span className="font-bold text-xs">SANDBOX TERMINAL</span>
+          <div className="p-1 bg-primary border-2 border-foreground">
+            <Terminal size={14} className="text-primary-foreground" />
+          </div>
+          <span className="font-black text-xs tracking-wider">SANDBOX TERMINAL</span>
           {currentWorkspaceId && (
             <>
-              <span className="text-xs text-gray-400">({currentWorkspaceId.slice(0, 12)}...)</span>
-              <span className="text-[10px] px-1.5 py-0.5 bg-green-600/20 text-green-400 border border-green-600/40 rounded" title="Files auto-sync before each command">
+              <span className="text-[10px] text-muted-foreground font-bold px-1.5 py-0.5 bg-muted border border-foreground">
+                {currentWorkspaceId.slice(0, 12)}...
+              </span>
+              <span className="text-[10px] px-2 py-0.5 bg-primary border-2 border-foreground text-primary-foreground font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" title="Files auto-sync before each command">
                 AUTO-SYNC
               </span>
             </>
@@ -360,16 +364,16 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
         </div>
         <div className="flex items-center gap-1">
           {isInitializing && (
-            <span className="text-xs text-yellow-400 flex items-center gap-1">
+            <span className="text-xs text-accent-foreground font-bold flex items-center gap-1.5 px-2 py-1 bg-accent/20 border border-accent">
               <Loader2 size={12} className="animate-spin" />
               {getInitStageLabel()}
             </span>
           )}
           {currentWorkspaceId && currentProject?.id && (
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon"
-              className="h-6 w-6 text-gray-400 hover:text-white"
+              className="h-7 w-7 border-2 border-foreground hover:bg-primary hover:text-primary-foreground font-black"
               onClick={resyncFiles}
               disabled={isInitializing}
               title="Re-sync project files"
@@ -379,9 +383,9 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
           )}
           {currentWorkspaceId && (
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon"
-              className="h-6 w-6 text-gray-400 hover:text-white"
+              className="h-7 w-7 border-2 border-foreground hover:bg-primary hover:text-primary-foreground font-black"
               onClick={resetSandbox}
               disabled={isInitializing}
               title="Reset sandbox"
@@ -390,9 +394,9 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
             </Button>
           )}
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon"
-            className="h-6 w-6 text-gray-400 hover:text-white"
+            className="h-7 w-7 border-2 border-foreground hover:bg-destructive hover:text-destructive-foreground font-black"
             onClick={clearTerminal}
             title="Clear terminal"
           >
@@ -402,8 +406,8 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
       </div>
 
       {/* Terminal Output */}
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-        <div className="space-y-1">
+      <ScrollArea className="flex-1 p-4 bg-card" ref={scrollRef}>
+        <div className="space-y-1.5">
           {lines.map((line) => (
             <div key={line.id} className="flex items-start gap-0 font-mono text-sm leading-relaxed">
               {line.isPrompt ? (
@@ -412,7 +416,9 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
                 </pre>
               ) : (
                 <>
-                  <span className="flex-shrink-0 mt-1 mr-2">{getLineIcon(line.type)}</span>
+                  <span className="flex-shrink-0 mt-1 mr-2.5 p-0.5 bg-muted border border-foreground/20">
+                    {getLineIcon(line.type)}
+                  </span>
                   <pre className={`flex-1 whitespace-pre-wrap break-words ${getLineColor(line.type)}`}>
                     {line.content}
                   </pre>
@@ -421,18 +427,20 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
             </div>
           ))}
           {isExecuting && (
-            <div className="flex items-center gap-2 text-gray-400">
+            <div className="flex items-center gap-2 text-muted-foreground font-bold px-2 py-1 bg-muted border-l-2 border-accent">
               <Loader2 size={12} className="animate-spin" />
-              <span className="text-xs">Executing...</span>
+              <span className="text-xs">EXECUTING...</span>
             </div>
           )}
         </div>
       </ScrollArea>
 
       {/* Input Area */}
-      <div className="border-t border-gray-700 bg-gray-900 p-3">
-        <div className="flex items-start gap-2">
-          <span className="text-green-400 font-bold text-sm mt-1">$</span>
+      <div className="border-t-2 border-foreground bg-gradient-to-r from-muted/50 to-card p-3">
+        <div className="flex items-start gap-2 bg-background border-2 border-foreground p-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+          <div className="flex items-center justify-center w-6 h-6 bg-primary border-2 border-foreground flex-shrink-0 mt-0.5">
+            <span className="text-primary-foreground font-black text-xs">$</span>
+          </div>
           <textarea
             ref={inputRef}
             value={input}
@@ -440,7 +448,7 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
             onKeyDown={handleKeyDown}
             placeholder={isRosProject ? 'Enter ROS command (roscore, rosrun, rostopic...)' : 'Only available for ROS projects'}
             disabled={isExecuting || isInitializing || !isRosProject}
-            className="flex-1 bg-transparent border-none outline-none text-white placeholder:text-gray-500 font-mono text-sm disabled:opacity-50 resize-none min-h-[28px] max-h-[120px]"
+            className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground font-mono text-sm disabled:opacity-50 resize-none min-h-[24px] max-h-[120px] font-medium"
             rows={1}
             autoFocus
           />
@@ -448,22 +456,31 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
             onClick={executeCommand}
             size="sm"
             disabled={isExecuting || isInitializing || !input.trim() || !isRosProject}
-            className="h-7 px-2 bg-green-600 hover:bg-green-700 text-white border-none flex-shrink-0 mt-1"
+            className="h-8 px-3 bg-primary hover:bg-primary/90 text-primary-foreground border-2 border-foreground flex-shrink-0 font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all"
           >
             {isExecuting ? (
               <Loader2 size={14} className="animate-spin" />
             ) : (
               <>
                 <Play size={14} />
-                <span className="ml-1 text-xs">Run</span>
+                <span className="ml-1 text-xs">RUN</span>
               </>
             )}
           </Button>
         </div>
-        <div className="mt-2 text-xs text-gray-400 flex items-center gap-3">
-          <span>⏎ Execute</span>
-          <span>⇧⏎ New line</span>
-          <span>↑↓ History</span>
+        <div className="mt-2.5 text-[10px] text-muted-foreground font-bold flex items-center gap-4 px-1">
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-muted border border-foreground text-foreground font-black">⏎</kbd>
+            Execute
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-muted border border-foreground text-foreground font-black">⇧⏎</kbd>
+            New line
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-muted border border-foreground text-foreground font-black">↑↓</kbd>
+            History
+          </span>
         </div>
       </div>
     </div>
