@@ -42,7 +42,7 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
   // Initialize terminal message based on project type
   useEffect(() => {
     if (currentProject) {
-      const welcomeMessages = isRosProject
+      const welcomeMessages: TerminalLine[] = isRosProject
         ? [
             {
               id: '0',
