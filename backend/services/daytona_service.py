@@ -22,15 +22,7 @@ from services.file_service import FileService
 
 logger = logging.getLogger(__name__)
 
-# Try to import Daytona SDK
-try:
-    from daytona import Daytona, DaytonaConfig
-    DAYTONA_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"Daytona SDK not available: {e}")
-    DAYTONA_AVAILABLE = False
-    Daytona = None
-    DaytonaConfig = None
+from daytona import Daytona, DaytonaConfig
 
 PROJECT_BASE_DIR = "/home/daytona/project"
 
@@ -41,8 +33,6 @@ class DaytonaService:
 
     Uses Daytona REST API to create isolated sandbox environments
     for safe code execution and testing.
-
-    Falls back to local subprocess execution if API is not available.
     """
 
     def __init__(self):
@@ -50,26 +40,10 @@ class DaytonaService:
         self._sandboxes: Dict[str, Any] = {}  # workspace_id -> sandbox instance
         self._workspace_metadata: Dict[str, Dict[str, Any]] = {}
 
-        # Initialize Daytona client if SDK is available and API key is configured
-        self.available = DAYTONA_AVAILABLE and bool(self.api_key)
-
-        if self.available:
-            try:
-                config = DaytonaConfig(api_key=self.api_key)
-                self.daytona = Daytona(config)
-                logger.info("✓ Daytona SDK initialized with API key")
-            except Exception as e:
-                logger.warning(f"Daytona SDK initialization failed: {e}")
-                self.daytona = None
-                self.available = False
-        else:
-            self.daytona = None
-            if not DAYTONA_AVAILABLE:
-                logger.info("Daytona SDK not available. Using local execution mode.")
-            elif not self.api_key:
-                logger.info("Daytona API key not configured. Using local execution mode.")
-            else:
-                logger.info("Daytona not configured. Using local execution mode.")
+        # Initialize Daytona client
+        config = DaytonaConfig(api_key=self.api_key)
+        self.daytona = Daytona(config)
+        logger.info("✓ Daytona SDK initialized with API key")
     
     async def create_workspace(
         self,
@@ -96,19 +70,6 @@ class DaytonaService:
                 created_at=self._workspace_metadata[workspace_id]["created_at"],
                 metadata=self._workspace_metadata[workspace_id],
             )
-
-        if not self.available:
-            # Fallback to local execution
-            logger.info("Daytona not available, using local execution")
-            workspace = DaytonaWorkspaceResponse(
-                workspace_id=workspace_id,
-                project_id=request.project_id,
-                state=WorkspaceState.RUNNING,
-                created_at=datetime.utcnow().isoformat(),
-                metadata={"mode": "local"},
-            )
-            self._workspace_metadata[workspace_id] = workspace.model_dump()
-            return workspace
 
         try:
             # Create Daytona sandbox using SDK
@@ -165,17 +126,7 @@ class DaytonaService:
 
         except Exception as e:
             logger.error(f"Failed to create Daytona sandbox: {e}", exc_info=True)
-            # Fallback to local execution
-            workspace_id_fallback = f"local-{request.project_id}"
-            workspace = DaytonaWorkspaceResponse(
-                workspace_id=workspace_id_fallback,
-                project_id=request.project_id,
-                state=WorkspaceState.RUNNING,
-                created_at=datetime.utcnow().isoformat(),
-                metadata={"mode": "local", "error": str(e)},
-            )
-            self._workspace_metadata[workspace_id_fallback] = workspace.model_dump()
-            return workspace
+            raise
 
     async def sync_project_files(
         self,
@@ -281,22 +232,6 @@ class DaytonaService:
         Returns:
             Execution results including stdout, stderr, and exit code
         """
-        workspace_metadata = self._workspace_metadata.get(request.workspace_id)
-
-        if not workspace_metadata:
-            return CodeExecutionResponse(
-                success=False,
-                stdout="",
-                stderr="Workspace not found",
-                exit_code=1,
-                execution_time=0,
-                error="Workspace not found",
-            )
-
-        # If local mode, execute directly
-        if workspace_metadata.get("metadata", {}).get("mode") == "local":
-            return await self._execute_local(request)
-
         # Execute in Daytona sandbox using SDK
         sandbox = self._sandboxes.get(request.workspace_id)
         if not sandbox:
@@ -349,120 +284,8 @@ class DaytonaService:
                 execution_time=execution_time,
                 error=str(e),
             )
-    
-    async def _execute_local(
-        self,
-        request: CodeExecutionRequest
-    ) -> CodeExecutionResponse:
-        """Execute code locally in a sandboxed subprocess"""
-        import tempfile
-        import os
-        import subprocess
-
-        start_time = asyncio.get_event_loop().time()
-
-        try:
-            # Handle shell commands inline, others via temp file
-            if request.language in ("shell", "bash"):
-                # Execute shell command directly (use temp directory as cwd since /home/daytona/project doesn't exist locally)
-                process = await asyncio.create_subprocess_shell(
-                    request.code,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=os.path.expanduser("~"),
-                    env={**os.environ, **(request.env_vars or {})}
-                )
-            else:
-                # Create temporary file for other languages
-                with tempfile.NamedTemporaryFile(
-                    mode='w',
-                    suffix=f'.{request.language}',
-                    delete=False
-                ) as f:
-                    f.write(request.code)
-                    temp_file = f.name
-
-                cmd = self._get_local_execution_command(request.language, temp_file)
-
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env={**os.environ, **(request.env_vars or {})}
-                )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=request.timeout
-                )
-                execution_time = asyncio.get_event_loop().time() - start_time
-
-                return CodeExecutionResponse(
-                    success=process.returncode == 0,
-                    stdout=stdout.decode('utf-8', errors='replace'),
-                    stderr=stderr.decode('utf-8', errors='replace'),
-                    exit_code=process.returncode or 0,
-                    execution_time=execution_time,
-                )
-
-            except asyncio.TimeoutError:
-                process.kill()
-                return CodeExecutionResponse(
-                    success=False,
-                    stdout="",
-                    stderr=f"Execution timeout after {request.timeout}s",
-                    exit_code=124,
-                    execution_time=request.timeout,
-                    error="Timeout",
-                )
-
-        except Exception as e:
-            logger.error(f"Local execution failed: {e}", exc_info=True)
-            execution_time = asyncio.get_event_loop().time() - start_time
-            return CodeExecutionResponse(
-                success=False,
-                stdout="",
-                stderr=str(e),
-                exit_code=1,
-                execution_time=execution_time,
-                error=str(e),
-            )
-        finally:
-            # Clean up temp file if it was created
-            if request.language not in ("shell", "bash") and 'temp_file' in locals():
-                try:
-                    os.unlink(temp_file)
-                except Exception:
-                    pass
-
-    
-    def _get_local_execution_command(self, language: str, file_path: str) -> list:
-        """Get command to execute code locally"""
-        if language == "python":
-            return ["python3", file_path]
-        elif language == "javascript":
-            return ["node", file_path]
-        elif language == "shell" or language == "bash":
-            return ["bash", file_path]
-        else:
-            raise ValueError(f"Unsupported language: {language}")
-    
     async def stop_workspace(self, workspace_id: str) -> None:
         """Stop and remove a Daytona sandbox via HTTP API"""
-        workspace_metadata = self._workspace_metadata.get(workspace_id)
-
-        if not workspace_metadata:
-            return
-
-        # Skip for local workspaces
-        if workspace_metadata.get("metadata", {}).get("mode") == "local":
-            if workspace_id in self._workspace_metadata:
-                del self._workspace_metadata[workspace_id]
-            if workspace_id in self._sandboxes:
-                del self._sandboxes[workspace_id]
-            return
-
         # Stop Daytona sandbox using SDK
         sandbox = self._sandboxes.get(workspace_id)
         if sandbox:
