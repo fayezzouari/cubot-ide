@@ -175,11 +175,9 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
 
       // Auto-sync files before executing command
       if (currentProject?.id) {
-        addLine('system', 'Syncing latest files...');
         try {
           const syncResult = await daytonaApi.syncFiles(wsId, currentProject.id);
           if (syncResult.files_synced > 0) {
-            addLine('system', `✓ Synced ${syncResult.files_synced} file${syncResult.files_synced !== 1 ? 's' : ''}`);
           }
           if (syncResult.errors.length > 0) {
             syncResult.errors.slice(0, 3).forEach(err => addLine('error', err));
