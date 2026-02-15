@@ -308,5 +308,199 @@ class DaytonaService:
             return DaytonaWorkspaceResponse(**workspace_metadata)
         return None
 
+    def _get_workspace_by_project(self, project_id: str) -> Optional[str]:
+        """Find workspace ID by project ID"""
+        for workspace_id, metadata in self._workspace_metadata.items():
+            if metadata.get("project_id") == project_id:
+                return workspace_id
+        return None
+
+    async def sync_file_add(
+        self,
+        project_id: str,
+        file_path: str,
+        file_name: str,
+        content: str
+    ) -> Dict[str, Any]:
+        """
+        Sync a newly added file to the Daytona sandbox.
+
+        Args:
+            project_id: Project ID
+            file_path: Directory path for the file
+            file_name: Name of the file
+            content: File content
+
+        Returns:
+            Dict with success status and any error message
+        """
+        workspace_id = self._get_workspace_by_project(project_id)
+        if not workspace_id:
+            return {"success": False, "error": "No active workspace for project"}
+
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            return {"success": False, "error": "Sandbox not found"}
+
+        try:
+            # Build full path
+            if file_path and file_path != "/" and file_path != ".":
+                rel_dir = file_path.strip("/")
+                full_dir = f"{PROJECT_BASE_DIR}/{rel_dir}"
+            else:
+                full_dir = PROJECT_BASE_DIR
+
+            # Ensure directory exists
+            try:
+                await asyncio.to_thread(sandbox.fs.create_folder, full_dir)
+            except Exception:
+                pass  # Directory may already exist
+
+            # Upload file
+            full_file_path = f"{full_dir}/{file_name}"
+            content_bytes = content.encode('utf-8')
+            await asyncio.to_thread(
+                sandbox.fs.upload_file, content_bytes, full_file_path
+            )
+
+            logger.info(f"Synced new file to sandbox: {full_file_path}")
+            return {"success": True}
+
+        except Exception as e:
+            logger.error(f"Failed to sync file add: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    async def sync_file_update(
+        self,
+        project_id: str,
+        file_path: str,
+        file_name: str,
+        content: str
+    ) -> Dict[str, Any]:
+        """
+        Sync file content update to the Daytona sandbox.
+
+        Args:
+            project_id: Project ID
+            file_path: Directory path for the file
+            file_name: Name of the file
+            content: Updated file content
+
+        Returns:
+            Dict with success status and any error message
+        """
+        # For updates, we can reuse the add logic since upload_file overwrites
+        return await self.sync_file_add(project_id, file_path, file_name, content)
+
+    async def sync_file_delete(
+        self,
+        project_id: str,
+        file_path: str,
+        file_name: str
+    ) -> Dict[str, Any]:
+        """
+        Sync file deletion to the Daytona sandbox.
+
+        Args:
+            project_id: Project ID
+            file_path: Directory path for the file
+            file_name: Name of the file
+
+        Returns:
+            Dict with success status and any error message
+        """
+        workspace_id = self._get_workspace_by_project(project_id)
+        if not workspace_id:
+            return {"success": False, "error": "No active workspace for project"}
+
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            return {"success": False, "error": "Sandbox not found"}
+
+        try:
+            # Build full path
+            if file_path and file_path != "/" and file_path != ".":
+                rel_dir = file_path.strip("/")
+                full_file_path = f"{PROJECT_BASE_DIR}/{rel_dir}/{file_name}"
+            else:
+                full_file_path = f"{PROJECT_BASE_DIR}/{file_name}"
+
+            # Delete file using SDK
+            await asyncio.to_thread(sandbox.fs.delete_file, full_file_path)
+
+            logger.info(f"Deleted file from sandbox: {full_file_path}")
+            return {"success": True}
+
+        except Exception as e:
+            logger.error(f"Failed to sync file delete: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    async def sync_file_rename(
+        self,
+        project_id: str,
+        old_path: str,
+        old_name: str,
+        new_path: str,
+        new_name: str
+    ) -> Dict[str, Any]:
+        """
+        Sync file rename/move to the Daytona sandbox.
+
+        Args:
+            project_id: Project ID
+            old_path: Original directory path
+            old_name: Original file name
+            new_path: New directory path
+            new_name: New file name
+
+        Returns:
+            Dict with success status and any error message
+        """
+        workspace_id = self._get_workspace_by_project(project_id)
+        if not workspace_id:
+            return {"success": False, "error": "No active workspace for project"}
+
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            return {"success": False, "error": "Sandbox not found"}
+
+        try:
+            # Build old and new full paths
+            if old_path and old_path != "/" and old_path != ".":
+                old_rel_dir = old_path.strip("/")
+                old_full_path = f"{PROJECT_BASE_DIR}/{old_rel_dir}/{old_name}"
+            else:
+                old_full_path = f"{PROJECT_BASE_DIR}/{old_name}"
+
+            if new_path and new_path != "/" and new_path != ".":
+                new_rel_dir = new_path.strip("/")
+                new_full_dir = f"{PROJECT_BASE_DIR}/{new_rel_dir}"
+                new_full_path = f"{new_full_dir}/{new_name}"
+            else:
+                new_full_dir = PROJECT_BASE_DIR
+                new_full_path = f"{PROJECT_BASE_DIR}/{new_name}"
+
+            # Ensure new directory exists
+            try:
+                await asyncio.to_thread(sandbox.fs.create_folder, new_full_dir)
+            except Exception:
+                pass  # Directory may already exist
+
+            # Move/rename file - read content from old location and write to new
+            content_bytes = await asyncio.to_thread(
+                sandbox.fs.download_file, old_full_path
+            )
+            await asyncio.to_thread(
+                sandbox.fs.upload_file, content_bytes, new_full_path
+            )
+            await asyncio.to_thread(sandbox.fs.delete_file, old_full_path)
+
+            logger.info(f"Renamed file in sandbox: {old_full_path} -> {new_full_path}")
+            return {"success": True}
+
+        except Exception as e:
+            logger.error(f"Failed to sync file rename: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
 
 daytona_service = DaytonaService()

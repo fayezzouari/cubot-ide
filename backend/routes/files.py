@@ -1,8 +1,12 @@
 from fastapi import APIRouter, HTTPException, status
 from typing import List
+import logging
 
 from models.file import FileCreate, FileUpdate, FileResponse
 from services.file_service import file_service
+from services.daytona_service import daytona_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -11,6 +15,18 @@ router = APIRouter(prefix="/files", tags=["files"])
 async def create_file(file_data: FileCreate):
     """Create a new file"""
     file = await file_service.create_file(file_data)
+
+    # Sync to Daytona sandbox
+    try:
+        await daytona_service.sync_file_add(
+            project_id=file.project_id,
+            file_path=file.path,
+            file_name=file.name,
+            content=file.content
+        )
+    except Exception as e:
+        logger.warning(f"Failed to sync file to Daytona: {e}")
+
     return file
 
 
@@ -48,22 +64,78 @@ async def get_file_by_path(project_id: str, path: str):
 @router.put("/{file_id}", response_model=FileResponse)
 async def update_file(file_id: str, file_update: FileUpdate):
     """Update a file"""
+    # Get the old file data to check for rename/move
+    old_file = await file_service.get_file(file_id)
+    if not old_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File with id {file_id} not found"
+        )
+
+    # Update the file
     file = await file_service.update_file(file_id, file_update)
     if not file:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"File with id {file_id} not found"
         )
+
+    # Sync to Daytona sandbox
+    try:
+        # Check if it's a rename/move operation
+        name_changed = file_update.name is not None and file_update.name != old_file.name
+        path_changed = file_update.path is not None and file_update.path != old_file.path
+
+        if name_changed or path_changed:
+            # Handle rename/move
+            await daytona_service.sync_file_rename(
+                project_id=file.project_id,
+                old_path=old_file.path,
+                old_name=old_file.name,
+                new_path=file.path,
+                new_name=file.name
+            )
+        elif file_update.content is not None:
+            # Handle content update
+            await daytona_service.sync_file_update(
+                project_id=file.project_id,
+                file_path=file.path,
+                file_name=file.name,
+                content=file.content
+            )
+    except Exception as e:
+        logger.warning(f"Failed to sync file update to Daytona: {e}")
+
     return file
 
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_file(file_id: str):
     """Delete a file"""
+    # Get the file data before deletion for Daytona sync
+    file = await file_service.get_file(file_id)
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File with id {file_id} not found"
+        )
+
+    # Delete from database
     deleted = await file_service.delete_file(file_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"File with id {file_id} not found"
         )
+
+    # Sync deletion to Daytona sandbox
+    try:
+        await daytona_service.sync_file_delete(
+            project_id=file.project_id,
+            file_path=file.path,
+            file_name=file.name
+        )
+    except Exception as e:
+        logger.warning(f"Failed to sync file deletion to Daytona: {e}")
+
     return None
