@@ -19,26 +19,40 @@ export default function HeroSection() {
         {/* Main Heading */}
         <div className="mb-8 flex flex-col items-center justify-center">
           <div
+            className="w-full mx-auto flex items-center justify-center relative rounded-xl bg-[rgba(20,20,20,0.04)]"
             style={{
-              width: '100%',
-              maxWidth: 700,
-              minHeight: 180,
-              height: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto',
-              background: 'rgba(20,20,20,0.04)',
-              borderRadius: '0.75rem',
-              overflow: 'auto',
-              position: 'relative',
+              aspectRatio: '4/1',
+              minHeight: '120px',
+              maxWidth: '100vw',
             }}
           >
+            <style>{`
+              @media (min-width: 640px) {
+                .ascii-hero {
+                  min-height: 200px;
+                  aspect-ratio: 4/1;
+                }
+              }
+              @media (min-width: 1024px) {
+                .ascii-hero {
+                  min-height: 260px;
+                  aspect-ratio: 5/1;
+                }
+              }
+              @media (min-width: 1280px) {
+                .ascii-hero {
+                  min-height: 320px;
+                  aspect-ratio: 6/1;
+                }
+              }
+            `}</style>
+            <div className="ascii-hero w-full h-full flex items-center justify-center">
             <ASCIIText
               text="CuBot"
               enableWaves={false}
               asciiFontSize={7}
             />
+            </div>
           </div>
           <small className="block text-muted-foreground text-sm text-center mt-4">
             Embedded Robotics<br />
