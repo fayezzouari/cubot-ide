@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
+import ASCIIText from '@/components/ui/ASCIIText';
 export default function HeroSection() {
   const router = useRouter();
 
@@ -17,10 +17,34 @@ export default function HeroSection() {
         </div>
 
         {/* Main Heading */}
-        <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-foreground mb-8 leading-tight">
-          Embedded Robotics<br />
-          <span className="text-primary">Simplified</span>
-        </h1>
+        <div className="mb-8 flex flex-col items-center justify-center">
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 700,
+              minHeight: 180,
+              height: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto',
+              background: 'rgba(20,20,20,0.04)',
+              borderRadius: '0.75rem',
+              overflow: 'auto',
+              position: 'relative',
+            }}
+          >
+            <ASCIIText
+              text="CuBot"
+              enableWaves={false}
+              asciiFontSize={7}
+            />
+          </div>
+          <small className="block text-muted-foreground text-sm text-center mt-4">
+            Embedded Robotics<br />
+            <span className="text-primary">Simplified</span>
+          </small>
+        </div>
 
         {/* Description */}
         <p className="text-base md:text-lg text-muted-foreground max-w-2xl mb-12 leading-relaxed">
