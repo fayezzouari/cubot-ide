@@ -4,12 +4,14 @@ import { useRouter } from 'next/navigation';
 import { ArrowRight, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ASCIIText from '@/components/ui/ASCIIText';
+
 export default function HeroSection() {
   const router = useRouter();
 
   return (
-    <section className="pt-24 pb-20 px-6 bg-background min-h-screen flex flex-col justify-center">
-      <div className="max-w-5xl mx-auto w-full">
+    <section className="pt-24 pb-20 px-6 bg-background min-h-screen flex flex-col justify-center relative overflow-hidden">
+
+      <div className="max-w-5xl mx-auto w-full relative z-10">
         {/* Tagline */}
         <div className="mb-6 flex items-center gap-3">
           <div className="h-px w-12 bg-primary" />
