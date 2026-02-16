@@ -36,7 +36,7 @@ export default function CreateFileDialog({
 }: CreateFileDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md bg-white">
         <DialogHeader>
           <DialogTitle className="font-black">CREATE NEW FILE</DialogTitle>
           <DialogDescription>Add a new file to your project.</DialogDescription>
@@ -65,22 +65,22 @@ export default function CreateFileDialog({
           <Button
             variant="outline"
             onClick={onCancel}
-            className="border-2 border-foreground font-black"
+            className="border-2 font-black"
           >
-            CANCEL
+            Cancel
           </Button>
           <Button
             onClick={onCreate}
             disabled={isCreatingFile || !newFileName.trim() || !newFilePath.trim()}
-            className="px-6 py-2 bg-primary border-2 border-foreground text-primary-foreground font-black hover:bg-muted hover:text-black transition-all"
+            className="px-6 py-2 bg-primary border-2 border text-primary-foreground font-black hover:bg-muted hover:text-black transition-all"
           >
             {isCreatingFile ? (
               <>
                 <Loader2 size={14} className="mr-2 animate-spin" />
-                CREATING...
+                Creating...
               </>
             ) : (
-              'CREATE FILE'
+              'Create File'
             )}
           </Button>
         </div>
