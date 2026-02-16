@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 interface TopBarProps {
   projectId: string | null;
   isArduinoProject: boolean;
+  projectType: string | null;
   onOpenCompile: () => void;
   onOpenSerial: () => void;
 }
@@ -14,6 +15,7 @@ interface TopBarProps {
 export default function TopBar({
   projectId,
   isArduinoProject,
+  projectType,
   onOpenCompile,
   onOpenSerial,
 }: TopBarProps) {
@@ -37,7 +39,7 @@ export default function TopBar({
           <Play size={14} className="mr-1.5" />
           Compile
         </Button>
-        {isArduinoProject && (
+        {isArduinoProject && projectType !== 'ros' && (
           <>
             <Button
               variant="outline"

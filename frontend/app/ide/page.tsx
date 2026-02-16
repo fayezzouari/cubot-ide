@@ -614,6 +614,7 @@ export default function IDEPage() {
       <TopBar
         projectId={currentProject?.id ?? null}
         isArduinoProject={currentProject?.target_compiler === 'arduino'}
+        projectType={currentProject?.project_type ?? null}
         onOpenCompile={handleOpenCompileModal}
         onOpenSerial={handleOpenSerialModal}
       />
