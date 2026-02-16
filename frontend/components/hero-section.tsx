@@ -62,29 +62,30 @@ export default function HeroSection() {
           </small>
         </div>
 
-        {/* Description */}
-        <p className="text-base md:text-lg text-muted-foreground max-w-2xl mb-12 leading-relaxed">
-          Master microcontrollers and embedded systems with AI-powered code editing and no-code robot programming. Compile, simulate, and test on virtual boards before deploying to real hardware.
-        </p>
-
-        {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 items-start">
-          <Button
-            onClick={() => router.push('/dashboard')}
-            size="lg"
-            className="px-8 h-12 font-medium text-base cursor-pointer flex items-center gap-2"
-          >
-            Start Building
-            <ArrowRight size={18} />
-          </Button>
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center px-8 h-12 border border-border text-foreground font-medium text-base hover:bg-muted rounded transition-colors cursor-pointer"
-          >
-            View on GitHub
-          </a>
+        {/* Description & CTA Centered */}
+        <div className="flex flex-col items-center justify-center">
+          <p className="text-base md:text-lg text-muted-foreground max-w-2xl mb-12 leading-relaxed text-center">
+            Master microcontrollers and embedded systems with AI-powered code editing and no-code robot programming. Compile, simulate, and test on virtual boards before deploying to real hardware.
+          </p>
+          {/* CTA Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
+            <Button
+              onClick={() => router.push('/dashboard')}
+              size="lg"
+              className="px-8 h-12 font-medium text-base cursor-pointer flex items-center gap-2 transition-transform transition-shadow transition-colors duration-200 hover:scale-105 hover:shadow-lg hover:bg-white hover:text-black"
+            >
+              Start Building
+              <ArrowRight size={18} />
+            </Button>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center px-8 h-12 border border-border text-foreground font-medium text-base hover:bg-muted rounded transition-colors cursor-pointer"
+            >
+              View on GitHub
+            </a>
+          </div>
         </div>
       </div>
 
