@@ -168,7 +168,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="max-w-4xl border border-border bg-white p-0 gap-0">
+      <DialogContent className="max-w-4xl border border-border p-0 gap-0">
         <DialogHeader className="p-6 pb-4 border-b border-border">
           <DialogTitle className="text-xl font-semibold text-foreground">
             {step === 'select'
