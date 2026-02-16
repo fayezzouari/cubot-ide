@@ -440,59 +440,55 @@ export default function SimulatorPage() {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       {/* Header */}
-      <header className="h-14 border-b-4 border-foreground flex items-center justify-between px-4">
+      <header className="h-14 border-b border-border flex items-center justify-between px-4 bg-[#252526]">
         <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary border-2 border-foreground flex items-center justify-center">
-              <span className="text-primary-foreground font-black text-sm">⚙</span>
+          <Link href="/" className="flex items-center gap-2 cursor-pointer">
+            <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
+              <span className="text-primary font-semibold text-sm">⚙</span>
             </div>
-            <span className="font-serif text-xl font-black">CUBOT SIMULATOR</span>
+            <span className="text-lg font-semibold text-foreground">CuBot Simulator</span>
           </Link>
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            className="border-2 border-foreground font-black"
             onClick={handleCompile}
             disabled={compileStatus === 'compiling'}
           >
-            <Cpu size={14} />
-            {compileStatus === 'compiling' ? 'COMPILING...' : 'COMPILE'}
+            <Cpu size={14} className="mr-2" />
+            {compileStatus === 'compiling' ? 'Compiling...' : 'Compile'}
           </Button>
           {!isRunning ? (
             <Button
               variant="outline"
               size="sm"
-              className="border-2 border-foreground font-black"
               onClick={handleStart}
               disabled={compileStatus !== 'ready'}
             >
-              <Play size={14} />
-              RUN
+              <Play size={14} className="mr-2" />
+              Run
             </Button>
           ) : (
             <Button
               variant="outline"
               size="sm"
-              className="border-2 border-foreground font-black"
               onClick={handleStop}
             >
-              <Square size={14} />
-              STOP
+              <Square size={14} className="mr-2" />
+              Stop
             </Button>
           )}
           <Button
             variant="outline"
             size="sm"
-            className="border-2 border-foreground font-black"
             onClick={handleReset}
           >
-            <RotateCcw size={14} />
-            RESET
+            <RotateCcw size={14} className="mr-2" />
+            Reset
           </Button>
           <Link href={`/ide?project=${projectId}`}>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="cursor-pointer">
               <Home size={18} />
             </Button>
           </Link>
@@ -502,11 +498,11 @@ export default function SimulatorPage() {
       {/* Main content */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Arduino Board Visualization */}
-        <div className="w-1/2 border-r-4 border-foreground p-6 overflow-y-auto">
-          <h2 className="text-xl font-black mb-4">ARDUINO UNO</h2>
+        <div className="w-1/2 border-r border-border p-6 overflow-y-auto bg-background">
+          <h2 className="text-xl font-semibold mb-4 text-foreground">Arduino Uno</h2>
 
           {/* Simple board representation */}
-          <div className="bg-blue-900 border-4 border-foreground rounded-lg p-6 max-w-md">
+          <div className="bg-blue-900 border border-border rounded-lg p-6 max-w-md">
             <div className="flex justify-between mb-4">
               <span className="text-white font-bold text-xs">DIGITAL PINS</span>
             </div>
@@ -547,39 +543,39 @@ export default function SimulatorPage() {
           </div>
 
           {/* Environment Simulator & Sensors */}
-          <div className="mt-6 border-2 border-foreground max-w-md bg-background">
+          <div className="mt-6 border border-border rounded-lg max-w-md bg-card">
             {/* Environment Presets */}
-            <div className="border-b-2 border-foreground p-3">
+            <div className="border-b border-border p-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-black text-sm">ENVIRONMENTS</span>
+                <span className="font-semibold text-sm text-foreground">Environments</span>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="border-2 border-foreground font-black h-7 text-xs"
+                  className="h-7 text-xs"
                   onClick={() => setShowCreateEnv((v) => !v)}
                 >
-                  <Plus size={12} />
-                  CUSTOM
+                  <Plus size={12} className="mr-1" />
+                  Custom
                 </Button>
               </div>
 
               {showCreateEnv && (
-                <div className="mb-2 flex items-center gap-2 p-2 border-2 border-dashed border-primary rounded">
+                <div className="mb-2 flex items-center gap-2 p-2 border border-dashed border-primary rounded">
                   <Input
                     value={newEnvName}
                     onChange={(e) => setNewEnvName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleCreateCustomEnvironment()}
                     placeholder="Environment name..."
-                    className="h-7 text-xs flex-1 border-2 border-foreground"
+                    className="h-7 text-xs flex-1 border border-input"
                   />
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 text-xs border-2 border-foreground font-black"
+                    className="h-7 text-xs"
                     onClick={handleCreateCustomEnvironment}
                     disabled={!newEnvName.trim() || sensors.length === 0}
                   >
-                    SAVE
+                    Save
                   </Button>
                   <Button
                     variant="ghost"
@@ -598,10 +594,10 @@ export default function SimulatorPage() {
                     key={env.id}
                     onClick={() => handleActivateEnvironment(env.id)}
                     title={env.description}
-                    className={`flex flex-col items-center gap-1 p-2 rounded border-2 text-xs font-bold transition-all ${
+                    className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
                       activeEnvironment === env.id
-                        ? 'border-primary bg-primary/15 text-primary shadow-md'
-                        : 'border-foreground/30 hover:border-foreground hover:bg-muted'
+                        ? 'border-primary bg-primary/15 text-primary shadow-sm'
+                        : 'border-border hover:border-primary/50 hover:bg-muted/50'
                     }`}
                   >
                     {getEnvIcon(env.icon)}
@@ -612,10 +608,10 @@ export default function SimulatorPage() {
                   <div key={env.id} className="relative group">
                     <button
                       onClick={() => handleActivateEnvironment(env.id)}
-                      className={`flex flex-col items-center gap-1 p-2 rounded border-2 text-xs font-bold transition-all w-full ${
+                      className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs font-medium transition-all w-full cursor-pointer ${
                         activeEnvironment === env.id
-                          ? 'border-primary bg-primary/15 text-primary shadow-md'
-                          : 'border-foreground/30 hover:border-foreground hover:bg-muted'
+                          ? 'border-primary bg-primary/15 text-primary shadow-sm'
+                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
                       }`}
                     >
                       <FlaskConical size={14} />
@@ -623,7 +619,7 @@ export default function SimulatorPage() {
                     </button>
                     <button
                       onClick={() => handleDeleteCustomEnvironment(env.id)}
-                      className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                     >
                       <X size={8} />
                     </button>
@@ -640,19 +636,19 @@ export default function SimulatorPage() {
             {/* Sensors */}
             <div className="p-3">
               <div className="flex items-center justify-between">
-                <span className="font-black text-sm">SENSORS</span>
+                <span className="font-semibold text-sm text-foreground">Sensors</span>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="border-2 border-foreground font-black h-7"
+                  className="h-7"
                   onClick={handleAddSensor}
                 >
-                  <Plus size={12} />
-                  ADD
+                  <Plus size={12} className="mr-1" />
+                  Add
                 </Button>
               </div>
               {sensors.length === 0 ? (
-                <p className="text-xs text-muted-foreground mt-2">No sensors added yet. Click ADD to attach virtual sensors.</p>
+                <p className="text-xs text-muted-foreground mt-2">No sensors added yet. Click Add to attach virtual sensors.</p>
               ) : (
                 <div className="mt-3 space-y-3">
                   {sensors.map((sensor) => {
@@ -664,8 +660,8 @@ export default function SimulatorPage() {
                     return (
                       <div
                         key={sensor.id}
-                        className={`border-2 p-2 rounded transition-colors ${
-                          linked ? 'border-primary/60 bg-primary/5' : 'border-foreground'
+                        className={`border rounded-lg p-2 transition-colors ${
+                          linked ? 'border-primary/60 bg-primary/5' : 'border-border'
                         }`}
                       >
                         <div className="flex items-center gap-2">
@@ -679,7 +675,7 @@ export default function SimulatorPage() {
                                 value: next.defaultValue,
                               });
                             }}
-                            className="flex-1 border-2 border-foreground px-2 py-1 text-xs font-bold bg-background rounded"
+                            className="flex-1 border border-input px-2 py-1 text-xs font-medium bg-background rounded cursor-pointer"
                           >
                             {SENSOR_OPTIONS.map((opt) => (
                               <option key={opt.type} value={opt.type}>
@@ -690,14 +686,14 @@ export default function SimulatorPage() {
                           <Input
                             value={sensor.pin}
                             onChange={(e) => handleUpdateSensor(sensor.id, { pin: e.target.value })}
-                            className="w-16 h-7 text-xs font-mono border-2 border-foreground"
+                            className="w-16 h-7 text-xs font-mono border border-input"
                             placeholder="A0"
                           />
                           {activeEnvironment && (
                             <Button
                               variant={linked ? 'default' : 'outline'}
                               size="icon"
-                              className={`h-7 w-7 border-2 ${linked ? 'border-primary' : 'border-foreground'}`}
+                              className="h-7 w-7"
                               onClick={() => handleToggleSensorLink(sensor.id, activeEnvironment)}
                               title={linked ? `Linked to ${linkedEnvName}` : 'Link to active environment'}
                             >
@@ -707,7 +703,7 @@ export default function SimulatorPage() {
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-7 w-7 border-2 border-foreground"
+                            className="h-7 w-7"
                             onClick={() => handleRemoveSensor(sensor.id)}
                           >
                             <Trash2 size={12} />
@@ -722,7 +718,7 @@ export default function SimulatorPage() {
                             onChange={(e) => handleUpdateSensor(sensor.id, { value: Number(e.target.value) })}
                             className="flex-1 accent-primary"
                           />
-                          <span className="text-xs font-bold w-16 text-right tabular-nums">
+                          <span className="text-xs font-semibold w-16 text-right tabular-nums">
                             {sensor.value} {option.unit}
                           </span>
                         </div>
@@ -741,28 +737,28 @@ export default function SimulatorPage() {
 
           {/* Compile status */}
           {compileStatus === 'error' && (
-            <div className="mt-4 p-3 bg-destructive/10 border-2 border-destructive rounded">
-              <span className="text-destructive font-bold text-sm">{compileError}</span>
+            <div className="mt-4 p-3 bg-destructive/10 border border-destructive rounded-lg">
+              <span className="text-destructive font-medium text-sm">{compileError}</span>
             </div>
           )}
 
           {compileStatus === 'ready' && (
-            <div className="mt-4 p-3 bg-green-500/10 border-2 border-green-500 rounded">
-              <span className="text-green-600 font-bold text-sm">
-                ✓ Compiled successfully. Click RUN to start simulation.
+            <div className="mt-4 p-3 bg-green-500/10 border border-green-500 rounded-lg">
+              <span className="text-green-600 font-medium text-sm">
+                ✓ Compiled successfully. Click Run to start simulation.
               </span>
             </div>
           )}
         </div>
 
         {/* Right panel: Wiring Diagram + Serial Monitor */}
-        <div className="w-1/2 flex flex-col min-h-0 overflow-hidden">
+        <div className="w-1/2 flex flex-col min-h-0 overflow-hidden bg-background">
           {/* Wiring Diagram */}
-          <div className="flex-1 border-b-4 border-foreground flex flex-col min-h-0 overflow-hidden">
-            <div className="h-10 border-b-2 border-foreground flex items-center px-4 shrink-0">
-              <span className="font-black text-sm">WIRING DIAGRAM</span>
+          <div className="flex-1 border-b border-border flex flex-col min-h-0 overflow-hidden">
+            <div className="h-10 border-b border-border flex items-center px-4 shrink-0 bg-[#252526]">
+              <span className="font-semibold text-sm text-foreground">Wiring Diagram</span>
               {isGeneratingWiring && (
-                <span className="ml-auto text-xs font-bold text-primary">Generating…</span>
+                <span className="ml-auto text-xs font-medium text-primary">Generating…</span>
               )}
             </div>
             <div className="flex-1 min-h-0 relative">
@@ -776,12 +772,12 @@ export default function SimulatorPage() {
 
           {/* Serial Monitor */}
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="h-10 border-b-2 border-foreground flex items-center px-4 shrink-0">
-              <span className="font-black text-sm">SERIAL MONITOR</span>
+            <div className="h-10 border-b border-border flex items-center px-4 shrink-0 bg-[#252526]">
+              <span className="font-semibold text-sm text-foreground">Serial Monitor</span>
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden bg-[#1e1e1e]">
               <ScrollArea className="h-full p-4">
-                <pre className="font-mono text-sm whitespace-pre-wrap">
+                <pre className="font-mono text-sm whitespace-pre-wrap text-[#cccccc]">
                   {serialOutput || 'No serial output yet.'}
                 </pre>
               </ScrollArea>

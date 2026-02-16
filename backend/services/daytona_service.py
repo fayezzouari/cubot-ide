@@ -9,6 +9,7 @@ import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from daytona import Daytona, DaytonaConfig, CreateSandboxBaseParams
 
 from core.config import settings
 from schemas.daytona import (
@@ -19,10 +20,10 @@ from schemas.daytona import (
     CodeExecutionResponse,
 )
 from services.file_service import FileService
+from services.project_service import project_service
 
 logger = logging.getLogger(__name__)
 
-from daytona import Daytona, DaytonaConfig
 
 PROJECT_BASE_DIR = "/home/daytona/project"
 
@@ -42,6 +43,9 @@ class DaytonaService:
 
         # Initialize Daytona client
         config = DaytonaConfig(api_key=self.api_key)
+        self.params = CreateSandboxBaseParams(
+            snapshot="ros-humble-core"
+        )
         self.daytona = Daytona(config)
         logger.info("✓ Daytona SDK initialized with API key")
     
@@ -51,6 +55,7 @@ class DaytonaService:
     ) -> DaytonaWorkspaceResponse:
         """
         Create a new Daytona sandbox for a project via HTTP API.
+        Will reconnect to existing sandbox if one is saved in the database.
 
         Args:
             request: Workspace creation parameters
@@ -60,9 +65,9 @@ class DaytonaService:
         """
         workspace_id = f"sandbox-{request.project_id}"
 
-        # Check if sandbox already exists
+        # Check if sandbox already exists in memory
         if workspace_id in self._sandboxes:
-            logger.info(f"Reusing existing sandbox: {workspace_id}")
+            logger.info(f"Reusing existing sandbox from memory: {workspace_id}")
             return DaytonaWorkspaceResponse(
                 workspace_id=workspace_id,
                 project_id=request.project_id,
@@ -71,10 +76,62 @@ class DaytonaService:
                 metadata=self._workspace_metadata[workspace_id],
             )
 
+        # Check if project has a saved sandbox_id in the database
+        saved_sandbox_id = await project_service.get_sandbox_id(request.project_id)
+
+        if saved_sandbox_id:
+            logger.info(f"Found saved sandbox ID for project {request.project_id}: {saved_sandbox_id}")
+            try:
+                # Try to reconnect to the existing sandbox
+                sandbox = await asyncio.to_thread(self.daytona.get, saved_sandbox_id)
+
+                # Test if sandbox is responsive
+                await asyncio.to_thread(
+                    sandbox.process.exec,
+                    "echo 'reconnecting'",
+                    timeout=5
+                )
+
+                logger.info(f"Successfully reconnected to existing sandbox: {saved_sandbox_id}")
+
+                # Store in memory
+                self._sandboxes[workspace_id] = sandbox
+
+                workspace = DaytonaWorkspaceResponse(
+                    workspace_id=workspace_id,
+                    project_id=request.project_id,
+                    state=WorkspaceState.RUNNING,
+                    created_at=datetime.utcnow().isoformat(),
+                    metadata={
+                        "mode": "daytona",
+                        "sandbox_id": sandbox.id,
+                    },
+                )
+
+                self._workspace_metadata[workspace_id] = workspace.model_dump()
+
+                # Sync project files into the sandbox (in case files changed)
+                sync_result = await self.sync_project_files(workspace_id, request.project_id)
+                workspace.files_synced = sync_result["files_synced"]
+                has_errors = len(sync_result["errors"]) > 0
+                if sync_result["files_synced"] > 0:
+                    workspace.sync_status = "partial" if has_errors else "synced"
+                elif has_errors:
+                    workspace.sync_status = "failed"
+
+                self._workspace_metadata[workspace_id] = workspace.model_dump()
+                return workspace
+
+            except Exception as e:
+                logger.warning(f"Failed to reconnect to saved sandbox {saved_sandbox_id}: {e}")
+                logger.info("Will create a new sandbox instead")
+                # Clear the saved sandbox_id since it's no longer valid
+                await project_service.update_sandbox_id(request.project_id, None)
+
         try:
             # Create Daytona sandbox using SDK
-            logger.info(f"Creating Daytona sandbox: {workspace_id}")
-            sandbox = await asyncio.to_thread(self.daytona.create)
+            logger.info(f"Creating new Daytona sandbox for project: {request.project_id}")
+            sandbox = await asyncio.to_thread(self.daytona.create, self.params)
             logger.info(f"Sandbox created: {sandbox.id}, waiting for it to start...")
 
             # Wait for sandbox to be fully ready
@@ -96,6 +153,10 @@ class DaytonaService:
                     else:
                         logger.warning(f"Sandbox may not be fully ready: {e}")
                         # Continue anyway, it might work
+
+            # Save sandbox ID to database
+            await project_service.update_sandbox_id(request.project_id, sandbox.id)
+            logger.info(f"Saved sandbox ID {sandbox.id} to project {request.project_id}")
 
             self._sandboxes[workspace_id] = sandbox
 
@@ -290,8 +351,17 @@ class DaytonaService:
         sandbox = self._sandboxes.get(workspace_id)
         if sandbox:
             try:
+                # Extract project_id from workspace_id (format: "sandbox-{project_id}")
+                project_id = workspace_id.replace("sandbox-", "")
+
+                # Delete the sandbox
                 await asyncio.to_thread(sandbox.delete)
                 logger.info(f"Stopped sandbox: {sandbox.id}")
+
+                # Clear sandbox_id from database
+                await project_service.update_sandbox_id(project_id, None)
+                logger.info(f"Cleared sandbox ID from project {project_id}")
+
             except Exception as e:
                 logger.error(f"Failed to stop sandbox: {e}")
 

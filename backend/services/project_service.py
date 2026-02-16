@@ -16,19 +16,20 @@ class ProjectService:
     async def create_project(cls, project_data: ProjectCreate) -> ProjectResponse:
         """Create a new project"""
         collection = get_collection(cls.COLLECTION_NAME)
-        
+
         doc = {
             "name": project_data.name,
             "description": project_data.description or "",
             "target_compiler": project_data.target_compiler.value,
             "project_type": project_data.project_type.value,
+            "sandbox_id": project_data.sandbox_id,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
-        
+
         result = await collection.insert_one(doc)
         doc["_id"] = str(result.inserted_id)
-        
+
         return ProjectResponse(
             id=doc["_id"],
             name=doc["name"],
@@ -146,13 +147,36 @@ class ProjectService:
     async def delete_project(cls, project_id: str) -> bool:
         """Delete a project and all its files"""
         collection = get_collection(cls.COLLECTION_NAME)
-        
+
         # Delete all files first
         await file_service.delete_files_by_project(project_id)
-        
+
         # Delete the project
         result = await collection.delete_one({"_id": ObjectId(project_id)})
         return result.deleted_count > 0
+
+    @classmethod
+    async def update_sandbox_id(cls, project_id: str, sandbox_id: Optional[str]) -> bool:
+        """Update the sandbox_id for a project"""
+        collection = get_collection(cls.COLLECTION_NAME)
+
+        result = await collection.update_one(
+            {"_id": ObjectId(project_id)},
+            {"$set": {"sandbox_id": sandbox_id, "updated_at": datetime.utcnow()}}
+        )
+
+        return result.matched_count > 0
+
+    @classmethod
+    async def get_sandbox_id(cls, project_id: str) -> Optional[str]:
+        """Get the sandbox_id for a project"""
+        collection = get_collection(cls.COLLECTION_NAME)
+
+        doc = await collection.find_one({"_id": ObjectId(project_id)}, {"sandbox_id": 1})
+        if not doc:
+            return None
+
+        return doc.get("sandbox_id")
 
 
 project_service = ProjectService()
