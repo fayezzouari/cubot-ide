@@ -400,12 +400,9 @@ class CanvAscii {
     this.animate();
   }
 
+  // Mouse movement is now ignored; animation will not move with mouse
   onMouseMove(evt: MouseEvent | TouchEvent) {
-    const e = (evt as TouchEvent).touches ? (evt as TouchEvent).touches[0] : (evt as MouseEvent);
-    const bounds = this.container.getBoundingClientRect();
-    const x = e.clientX - bounds.left;
-    const y = e.clientY - bounds.top;
-    this.mouse = { x, y };
+    // Do nothing
   }
 
   animate() {
@@ -429,11 +426,10 @@ class CanvAscii {
   }
 
   updateRotation() {
-    const x = map(this.mouse.y, 0, this.height, 0.5, -0.5);
-    const y = map(this.mouse.x, 0, this.width, -0.5, 0.5);
-
-    this.mesh.rotation.x += (x - this.mesh.rotation.x) * 0.05;
-    this.mesh.rotation.y += (y - this.mesh.rotation.y) * 0.05;
+    // Keep mesh rotation fixed (no mouse-based movement)
+    // Optionally, you can set a static rotation if desired:
+    // this.mesh.rotation.x = 0;
+    // this.mesh.rotation.y = 0;
   }
 
   clear() {
