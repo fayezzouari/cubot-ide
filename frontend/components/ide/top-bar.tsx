@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { Play, Settings, Home, TerminalSquare, Cpu } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
 interface TopBarProps {
   projectId: string | null;
@@ -20,54 +19,63 @@ export default function TopBar({
   onOpenSerial,
 }: TopBarProps) {
   return (
-    <header className="h-12 border-b border-border flex items-center justify-between px-4 bg-card">
-      <div className="flex items-center gap-4">
-        <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <div className="w-7 h-7 bg-primary rounded flex items-center justify-center">
-            <span className="text-primary-foreground font-semibold text-sm">⚙</span>
+    <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
+      {/* Left: Logo */}
+      <div className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-2 group">
+          <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center">
+            <Cpu size={12} className="text-black" />
           </div>
-          <span className="font-semibold text-base">Cubot IDE</span>
+          <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">cubot</span>
         </Link>
+
+        <span className="text-white/[0.12]">·</span>
+
+        <span className="text-xs text-white/30 font-mono">IDE</span>
       </div>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="default"
-          size="sm"
-          className="h-8 px-3 font-medium"
+
+      {/* Right: Actions */}
+      <div className="flex items-center gap-1.5">
+        <button
           onClick={onOpenCompile}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
         >
-          <Play size={14} className="mr-1.5" />
+          <Play size={11} />
           Compile
-        </Button>
+        </button>
+
         {isArduinoProject && projectType !== 'ros' && (
           <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 px-3 font-medium"
+            <button
               onClick={onOpenSerial}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/50 hover:text-white font-medium text-xs rounded-lg transition-all cursor-pointer"
             >
-              <TerminalSquare size={14} className="mr-1.5" />
-              Serial Monitor
-            </Button>
+              <TerminalSquare size={11} />
+              Serial
+            </button>
+
             {projectId && (
-              <Link href={`/simulator?project=${projectId}`}>
-                <Button variant="outline" size="sm" className="h-8 px-3 font-medium">
-                  <Cpu size={14} className="mr-1.5" />
-                  Simulate
-                </Button>
+              <Link
+                href={`/simulator?project=${projectId}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/50 hover:text-white font-medium text-xs rounded-lg transition-all"
+              >
+                <Cpu size={11} />
+                Simulate
               </Link>
             )}
           </>
         )}
-        <div className="w-px h-6 bg-border mx-1" />
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <Settings size={16} />
-        </Button>
-        <Link href="/">
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Home size={16} />
-          </Button>
+
+        <span className="w-px h-4 bg-white/[0.08] mx-1" />
+
+        <button className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all cursor-pointer">
+          <Settings size={13} />
+        </button>
+        <Link
+          href="/"
+          className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
+        >
+          <Home size={13} />
         </Link>
       </div>
     </header>
