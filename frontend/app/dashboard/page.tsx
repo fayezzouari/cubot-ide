@@ -6,7 +6,7 @@ import Header from '@/components/header';
 import WorkspaceModal from '@/components/workspace-modal';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
-import { Plus, ArrowRight, Trash2, Clock, Code2 } from 'lucide-react';
+import { Plus, ArrowRight, Trash2, Clock, Code2, Cpu, Blocks, Box } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,48 +29,33 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let isMounted = true;
-
-    const loadProjects = async () => {
+    const load = async () => {
       setIsLoading(true);
       setError(null);
       try {
         const data = await projectService.getAll();
-        if (isMounted) {
-          setProjects(Array.isArray(data) ? data : []);
-        }
+        if (isMounted) setProjects(Array.isArray(data) ? data : []);
       } catch (err: any) {
-        if (isMounted) {
-          setError(err?.message || 'Failed to load projects');
-        }
+        if (isMounted) setError(err?.message || 'Failed to load projects');
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        if (isMounted) setIsLoading(false);
       }
     };
-
-    loadProjects();
+    load();
     return () => { isMounted = false; };
   }, []);
 
-  const sortedProjects = useMemo(() => {
-    return [...projects].sort((a, b) =>
+  const sortedProjects = useMemo(() =>
+    [...projects].sort((a, b) =>
       new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-    );
-  }, [projects]);
+    ), [projects]);
 
   const handleOpenProject = (project: ProjectResponse) => {
-    const workspaceType =
-      localStorage.getItem(`cubot-ide-project-workspace-${project.id}`) || 'ide';
+    const ws = localStorage.getItem(`cubot-ide-project-workspace-${project.id}`) || 'ide';
     localStorage.setItem('cubot-ide-last-project', project.id);
-
-    if (workspaceType === 'blocks') {
-      router.push(`/blocks?project=${project.id}`);
-    } else if (workspaceType === 'cad') {
-      router.push(`/cad?session=${project.id}`);
-    } else {
-      router.push(`/ide?project=${project.id}`);
-    }
+    if (ws === 'blocks') router.push(`/blocks?project=${project.id}`);
+    else if (ws === 'cad') router.push(`/cad?session=${project.id}`);
+    else router.push(`/ide?project=${project.id}`);
   };
 
   const handleDeleteProject = async () => {
@@ -87,8 +72,7 @@ export default function DashboardPage() {
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
-    const now = new Date();
-    const diff = now.getTime() - d.getTime();
+    const diff = Date.now() - d.getTime();
     const days = Math.floor(diff / 86400000);
     if (days === 0) return 'Today';
     if (days === 1) return 'Yesterday';
@@ -96,103 +80,134 @@ export default function DashboardPage() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  return (
-    <main className="min-h-screen bg-background text-foreground font-sans">
-      <Header />
+  const getWorkspaceIcon = (projectId: string) => {
+    const ws = typeof window !== 'undefined'
+      ? localStorage.getItem(`cubot-ide-project-workspace-${projectId}`) || 'ide'
+      : 'ide';
+    if (ws === 'blocks') return Blocks;
+    if (ws === 'cad') return Box;
+    return Code2;
+  };
 
-      <div className="pt-14">
+  return (
+    <main className="min-h-screen bg-black text-foreground font-sans">
+      <Header />
+            {/* Subtle dot grid background */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 3px, transparent 0)',
+          backgroundSize: '32px 32px',
+        }}
+      />
+
+      <div className="max-w-5xl mx-auto px-6 pt-28 pb-16">
+
         {/* Page header */}
-        <div className="border-b border-border px-6 py-8">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div>
-              <p className="text-xs font-mono text-muted-foreground mb-1">dashboard</p>
-              <h1 className="text-xl font-semibold text-foreground tracking-tight">Projects</h1>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-lg font-semibold text-white tracking-tight">Projects</h1>
+            <p className="text-xs text-white/30 mt-0.5 font-mono">
+              {isLoading ? '—' : `${sortedProjects.length} project${sortedProjects.length !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
+          >
+            <Plus size={12} />
+            New Project
+          </button>
+        </div>
+
+        {/* Error */}
+        {!isLoading && error && (
+          <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/5 mb-6">
+            <p className="text-xs text-red-400 font-mono">{error}</p>
+          </div>
+        )}
+
+        {/* Skeleton */}
+        {isLoading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-40 rounded-xl border border-white/[0.06] bg-white/[0.02] animate-pulse" />
+            ))}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoading && !error && sortedProjects.length === 0 && (
+          <div className="rounded-xl border border-white/[0.06] border-dashed p-20 text-center">
+            <div className="w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center mx-auto mb-4">
+              <Cpu size={18} className="text-white/20" />
             </div>
+            <p className="text-sm font-medium text-white/60 mb-1">No projects yet</p>
+            <p className="text-xs text-white/25 mb-6">Create your first project to get started.</p>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-md transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
             >
-              <Plus size={13} />
+              <Plus size={12} />
               New Project
             </button>
           </div>
-        </div>
+        )}
 
-        {/* Content */}
-        <div className="max-w-6xl mx-auto px-6 py-8">
-          {isLoading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-36 rounded-lg border border-border bg-card animate-pulse" />
-              ))}
-            </div>
-          )}
-
-          {!isLoading && error && (
-            <div className="p-4 border border-destructive/30 bg-destructive/5 rounded-lg">
-              <p className="text-xs text-destructive font-mono">{error}</p>
-            </div>
-          )}
-
-          {!isLoading && !error && sortedProjects.length === 0 && (
-            <div className="border border-border border-dashed rounded-lg p-16 text-center">
-              <div className="w-10 h-10 border border-border rounded-lg flex items-center justify-center mx-auto mb-4 text-muted-foreground">
-                <Code2 size={18} />
-              </div>
-              <p className="text-sm font-medium text-foreground mb-1">No projects yet</p>
-              <p className="text-xs text-muted-foreground mb-5">Create your first project to get started.</p>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-md transition-colors cursor-pointer"
-              >
-                <Plus size={13} />
-                New Project
-              </button>
-            </div>
-          )}
-
-          {!isLoading && !error && sortedProjects.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sortedProjects.map((project) => (
+        {/* Project grid */}
+        {!isLoading && !error && sortedProjects.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {sortedProjects.map((project) => {
+              const WorkspaceIcon = getWorkspaceIcon(project.id);
+              return (
                 <div
                   key={project.id}
-                  className="group border border-border rounded-lg bg-card hover:border-foreground/20 transition-all"
+                  className="group relative rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12] transition-all"
                 >
                   <div className="p-5">
-                    {/* Header row */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 min-w-0 mr-3">
-                        <h3 className="text-sm font-semibold text-foreground truncate">{project.name}</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                          {project.description || 'No description'}
-                        </p>
+                    {/* Icon + name */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.04] flex items-center justify-center flex-shrink-0">
+                          <WorkspaceIcon size={14} className="text-white/50" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-medium text-white truncate leading-tight">
+                            {project.name}
+                          </h3>
+                          <p className="text-xs text-white/30 mt-0.5 truncate">
+                            {project.description || 'No description'}
+                          </p>
+                        </div>
                       </div>
+
+                      {/* Delete */}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <button
-                            className="opacity-0 group-hover:opacity-100 p-1.5 text-muted-foreground hover:text-destructive transition-all cursor-pointer flex-shrink-0"
+                            className="opacity-0 group-hover:opacity-100 p-1 text-white/20 hover:text-red-400 transition-all cursor-pointer flex-shrink-0 ml-2"
                             onClick={() => setProjectToDelete(project)}
                           >
                             <Trash2 size={13} />
                           </button>
                         </AlertDialogTrigger>
-                        <AlertDialogContent className="bg-card border-border">
+                        <AlertDialogContent className="bg-[#0a0a0a] border border-white/[0.08] rounded-xl shadow-2xl">
                           <AlertDialogHeader>
-                            <AlertDialogTitle className="text-sm">Delete project</AlertDialogTitle>
-                            <AlertDialogDescription className="text-xs text-muted-foreground">
+                            <AlertDialogTitle className="text-sm text-white">Delete project</AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs text-white/40">
                               Are you sure you want to delete &ldquo;{project.name}&rdquo;? This cannot be undone.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel
-                              className="text-xs h-8"
+                              className="text-xs h-8 rounded-lg border-white/[0.08] bg-transparent text-white/60 hover:bg-white/[0.06]"
                               onClick={() => setProjectToDelete(null)}
                             >
                               Cancel
                             </AlertDialogCancel>
                             <AlertDialogAction
                               onClick={handleDeleteProject}
-                              className="text-xs h-8 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              className="text-xs h-8 rounded-lg bg-red-500/90 hover:bg-red-500 text-white border-0"
                             >
                               Delete
                             </AlertDialogAction>
@@ -201,31 +216,44 @@ export default function DashboardPage() {
                       </AlertDialog>
                     </div>
 
-                    {/* Footer row */}
-                    <div className="flex items-center justify-between pt-3 border-t border-border">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-mono text-muted-foreground px-1.5 py-0.5 bg-secondary rounded border border-border">
+                    {/* Footer */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-[10px] font-mono text-white/25 px-1.5 py-0.5 rounded-md border border-white/[0.06] bg-white/[0.03]">
                           {project.target_compiler?.toUpperCase() || 'UNKNOWN'}
                         </span>
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock size={10} />
+                        <span className="flex items-center gap-1 text-[10px] text-white/25">
+                          <Clock size={9} />
                           {formatDate(project.updated_at)}
                         </span>
                       </div>
+
                       <button
                         onClick={() => handleOpenProject(project)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground font-medium text-xs rounded-md transition-all cursor-pointer group/btn"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-white/40 hover:text-white border border-white/[0.06] hover:border-white/20 hover:bg-white/[0.06] rounded-lg transition-all cursor-pointer group/btn"
                       >
                         Open
-                        <ArrowRight size={11} className="group-hover/btn:translate-x-0.5 transition-transform" />
+                        <ArrowRight size={10} className="group-hover/btn:translate-x-0.5 transition-transform" />
                       </button>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              );
+            })}
+
+            {/* New project card */}
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="rounded-xl border border-dashed border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.02] transition-all p-5 flex flex-col items-center justify-center gap-2 min-h-[10rem] cursor-pointer group"
+            >
+              <div className="w-8 h-8 rounded-lg border border-dashed border-white/[0.1] group-hover:border-white/20 flex items-center justify-center transition-colors">
+                <Plus size={14} className="text-white/25 group-hover:text-white/50 transition-colors" />
+              </div>
+              <span className="text-xs text-white/25 group-hover:text-white/50 transition-colors">New Project</span>
+            </button>
+          </div>
+        )}
+
       </div>
 
       <WorkspaceModal open={isModalOpen} onOpenChange={setIsModalOpen} />
