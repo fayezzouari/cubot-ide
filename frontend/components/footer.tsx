@@ -1,84 +1,76 @@
-import Link from 'next/link';
 import { Github, Mail, Cpu, Twitter } from 'lucide-react';
 
 export default function Footer() {
   return (
-    <footer className="bg-muted/30 border-t border-border py-12 px-6">
+    <footer className="border-t border-border py-12 px-6">
       <div className="max-w-6xl mx-auto">
-        <div className="grid md:grid-cols-3 gap-12 mb-12">
+        <div className="grid md:grid-cols-4 gap-10 mb-10">
           {/* Brand */}
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-                <Cpu size={16} className="text-primary-foreground" />
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="w-7 h-7 bg-primary rounded-md flex items-center justify-center">
+                <Cpu size={14} className="text-primary-foreground" />
               </div>
-              <span className="text-xl font-semibold text-foreground">Cubot</span>
+              <span className="text-sm font-semibold text-foreground">Cubot</span>
             </div>
-            <p className="text-muted-foreground leading-relaxed text-sm">
-              Learn embedded systems and robotics with AI assistance. Code on virtual hardware, then deploy to real microcontrollers.
+            <p className="text-xs text-muted-foreground leading-relaxed max-w-xs">
+              Learn embedded systems and robotics with AI assistance.
+              Code on virtual hardware, then deploy to real microcontrollers.
             </p>
           </div>
 
-          {/* Quick Links */}
+          {/* Resources */}
           <div>
-            <h3 className="font-semibold text-foreground mb-4 text-sm">Resources</h3>
-            <ul className="space-y-2">
-              <li>
-                <a href="#about" className="text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer">
-                  About Platform
-                </a>
-              </li>
-              <li>
-                <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer">
-                  Features
-                </a>
-              </li>
-              <li>
-                <a href="#github" className="text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer">
-                  Get Started
-                </a>
-              </li>
-              <li>
-                <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer">
-                  Documentation
-                </a>
-              </li>
+            <p className="text-xs font-semibold text-foreground mb-4 tracking-wider uppercase">Resources</p>
+            <ul className="space-y-2.5">
+              {[
+                { label: 'Platform', href: '#about' },
+                { label: 'Features', href: '#features' },
+                { label: 'Documentation', href: 'https://github.com' },
+                { label: 'Get Started', href: '#github' },
+              ].map(({ label, href }) => (
+                <li key={label}>
+                  <a href={href} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                    {label}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
 
-          {/* Social Links */}
+          {/* Community */}
           <div>
-            <h3 className="font-semibold text-foreground mb-4 text-sm">Community</h3>
-            <div className="flex gap-3">
-              <a
-                href="https://github.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-10 h-10 bg-background border border-border rounded hover:bg-muted hover:border-primary/50 transition-colors flex items-center justify-center cursor-pointer"
-              >
-                <Github size={18} />
-              </a>
-              <a
-                href="https://twitter.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-10 h-10 bg-background border border-border rounded hover:bg-muted hover:border-primary/50 transition-colors flex items-center justify-center cursor-pointer"
-              >
-                <Twitter size={18} />
-              </a>
-              <a
-                href="mailto:hello@cubot.dev"
-                className="w-10 h-10 bg-background border border-border rounded hover:bg-muted hover:border-primary/50 transition-colors flex items-center justify-center cursor-pointer"
-              >
-                <Mail size={18} />
-              </a>
+            <p className="text-xs font-semibold text-foreground mb-4 tracking-wider uppercase">Community</p>
+            <div className="flex gap-2">
+              {[
+                { href: 'https://github.com', icon: Github, label: 'GitHub' },
+                { href: 'https://twitter.com', icon: Twitter, label: 'Twitter' },
+                { href: 'mailto:hello@cubot.dev', icon: Mail, label: 'Email' },
+              ].map(({ href, icon: Icon, label }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target={href.startsWith('http') ? '_blank' : undefined}
+                  rel={href.startsWith('http') ? 'noopener noreferrer' : undefined}
+                  aria-label={label}
+                  className="w-8 h-8 border border-border rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors"
+                >
+                  <Icon size={14} />
+                </a>
+              ))}
             </div>
           </div>
         </div>
 
         {/* Bottom */}
-        <div className="border-t border-border pt-6 text-center text-muted-foreground text-sm">
-          <p>© 2024 Cubot. Making embedded systems education accessible.</p>
+        <div className="border-t border-border pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground font-mono">
+            © 2024 Cubot. Open source embedded systems education.
+          </p>
+          <div className="flex items-center gap-4">
+            <a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy</a>
+            <a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms</a>
+          </div>
         </div>
       </div>
     </footer>

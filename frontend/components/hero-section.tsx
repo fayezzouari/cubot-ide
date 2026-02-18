@@ -1,105 +1,106 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { ArrowRight, Cpu } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ArrowRight } from 'lucide-react';
 import ASCIIText from '@/components/ui/ASCIIText';
 import TextType from '@/components/TextType';
+import { useNavigate } from '@/hooks/useNavigate';
+
 export default function HeroSection() {
-  const router = useRouter();
+  const navigate = useNavigate();
 
   return (
-    <section className="pt-24 pb-20 px-6 bg-background min-h-screen flex flex-col justify-center relative overflow-hidden">
+    <section className="min-h-screen flex flex-col justify-center pt-14 pb-16 px-6 relative overflow-hidden">
+      {/* Subtle dot grid background */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0)',
+          backgroundSize: '32px 32px',
+        }}
+      />
 
       <div className="max-w-5xl mx-auto w-full relative z-10">
+        {/* Badge */}
+        <div className="flex justify-center mb-8">
+          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border text-xs text-muted-foreground font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            Open Source Embedded IDE
+          </span>
+        </div>
 
-        {/* Main Heading */}
-        <div className="mb-8 flex flex-col items-center justify-center">
-          <div
-            className="w-full mx-auto flex items-center justify-center relative rounded-xl bg-[rgba(20,20,20,0.04)]"
-            style={{
-              aspectRatio: '4/1',
-              minHeight: '120px',
-              maxWidth: '100vw',
-            }}
-          >
-            <style>{`
-              @media (min-width: 640px) {
-                .ascii-hero {
-                  min-height: 200px;
-                  aspect-ratio: 4/1;
-                }
-              }
-              @media (min-width: 1024px) {
-                .ascii-hero {
-                  min-height: 260px;
-                  aspect-ratio: 5/1;
-                }
-              }
-              @media (min-width: 1280px) {
-                .ascii-hero {
-                  min-height: 320px;
-                  aspect-ratio: 6/1;
-                }
-              }
-            `}</style>
-            <div className="ascii-hero w-full h-full flex items-center justify-center">
+        {/* ASCII Title */}
+        <div
+          className="w-full mx-auto mb-4 pointer-events-none"
+          style={{ aspectRatio: '5/1', minHeight: '120px' }}
+        >
+          <style>{`
+            @media (min-width: 640px) { .ascii-hero { min-height: 160px; } }
+            @media (min-width: 1024px) { .ascii-hero { min-height: 220px; } }
+            @media (min-width: 1280px) { .ascii-hero { min-height: 270px; } }
+          `}</style>
+          <div className="ascii-hero w-full h-full flex items-center justify-center">
             <ASCIIText
               text="CuBot"
               enableWaves={false}
               asciiFontSize={7}
             />
-            </div>
           </div>
-  <div className="mb-6">
-    <TextType
-      text={[
-        "Learn robotics with ease.",
-        "Build your next project.",
-        "Deploy code to real hardware.",
-        "Learn, Build, Deploy.",
-        "Build and deploy with AI.",
-        "Deploy your ideas into reality.",
-        "Learn new skills every day.",
-        "Build smarter, not harder.",
-        "Deploy with confidence."
-      ]}
-      typingSpeed={10}
-      pauseDuration={1500}
-      showCursor
-      cursorCharacter="_"
-      deletingSpeed={10}
-      cursorBlinkDuration={0.5}
-    />
-  </div>
+        </div>
 
-        {/* Description & CTA Centered */}
-<div className="flex flex-col items-center justify-center">
-  <p className="text-base md:text-lg text-muted-foreground max-w-2xl mb-6 leading-relaxed text-center">
-    Master microcontrollers and embedded systems with AI-powered code editing and no-code robot programming. Compile, simulate, and test on virtual boards before deploying to real hardware.
-  </p>
+        {/* Typing tagline */}
+        <div className="flex justify-center mb-6">
+          <TextType
+            text={[
+              "Write embedded software with AI.",
+              "Simulate on virtual microcontrollers.",
+              "Deploy to real hardware.",
+              "Learn, Build, Deploy.",
+            ]}
+            typingSpeed={12}
+            pauseDuration={2000}
+            showCursor
+            cursorCharacter="_"
+            deletingSpeed={8}
+            cursorBlinkDuration={0.5}
+          />
+        </div>
 
-  <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
-    <Button
-      onClick={() => router.push('/dashboard')}
-      size="lg"
-      className="px-8 h-12 font-medium text-base cursor-pointer flex items-center gap-2 transition-transform transition-shadow transition-colors duration-200 hover:scale-105 hover:shadow-lg hover:bg-white hover:text-black"
-    >
-      Start Building
-      <ArrowRight size={18} />
-    </Button>
-    <a
-      href="https://github.com"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center justify-center px-8 h-12 border border-border text-foreground font-medium text-base hover:bg-muted rounded transition-colors cursor-pointer"
-    >
-      View on GitHub
-    </a>
-  </div>
-</div>
+        {/* Description */}
+        <p className="text-center text-sm md:text-base text-muted-foreground max-w-xl mx-auto mb-8 leading-relaxed">
+          AI-powered code editor and no-code block builder for embedded systems.
+          Compile, simulate, and test on virtual boards — then deploy to real hardware.
+        </p>
+
+        {/* CTAs */}
+        <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-12">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm rounded-md transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] cursor-pointer"
+          >
+            Start Building
+            <ArrowRight size={15} />
+          </button>
+          <a
+            href="https://github.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 border border-border hover:border-foreground/30 text-foreground font-medium text-sm rounded-md transition-colors"
+          >
+            View on GitHub
+          </a>
+        </div>
+
+        {/* Stats strip */}
+        <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground font-mono">
+          <span>4 MCU targets</span>
+          <span className="text-border">·</span>
+          <span>AI-powered</span>
+          <span className="text-border">·</span>
+          <span>Open source</span>
+          <span className="text-border">·</span>
+          <span>No hardware needed</span>
+        </div>
       </div>
-      </div>
-      </section>
+    </section>
   );
 }

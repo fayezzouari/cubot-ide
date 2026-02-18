@@ -1,10 +1,9 @@
 'use client';
 
-import { Code2, Boxes, Cpu, Zap, Radio, RotateCcw } from 'lucide-react';
-import { Card } from '@/components/ui/card';
+import { Code2, Boxes, Cpu, Zap, Radio, RotateCcw, Check } from 'lucide-react';
 
 export default function AboutSection() {
-  const roboticFeatures = [
+  const embeddedFeatures = [
     { icon: Cpu, label: 'MCU Support', desc: 'ARM, ESP32, STM32' },
     { icon: Zap, label: 'Real-time I/O', desc: 'GPIO, ADC, PWM' },
     { icon: Radio, label: 'Wireless', desc: 'BLE, WiFi, LoRaWAN' },
@@ -12,124 +11,109 @@ export default function AboutSection() {
   ];
 
   return (
-    <section id="about" className="py-24 px-6 bg-background">
+    <section id="about" className="py-24 px-6 border-t border-border">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-12">
-          <h2 className="text-4xl md:text-5xl font-bold text-foreground mb-3">
-            Two Paths
+
+        {/* Section header */}
+        <div className="mb-16">
+          <p className="text-xs font-mono text-primary mb-3 tracking-widest uppercase">Platform</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4 tracking-tight">
+            Two ways to build
           </h2>
-          <p className="text-lg text-muted-foreground">
-            Choose your learning style
+          <p className="text-muted-foreground text-sm max-w-md">
+            Choose the workflow that fits your skill level. Switch between them anytime.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6 mb-20">
-          {/* Code-Based Editor */}
-          <div className="p-6 border border-border bg-card rounded-lg">
-            <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Code2 size={24} className="text-primary" />
+        {/* Two paths */}
+        <div className="grid md:grid-cols-2 gap-4 mb-20">
+          {/* Code Editor */}
+          <div className="group p-6 border border-border rounded-lg bg-card hover:border-primary/30 transition-colors">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-9 h-9 border border-border rounded-md flex items-center justify-center text-primary bg-primary/5">
+                <Code2 size={18} />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-foreground">Code Editor</h3>
-                <p className="text-sm text-muted-foreground mt-1">Professional Development</p>
+                <h3 className="font-semibold text-foreground text-sm">Code Editor</h3>
+                <p className="text-xs text-muted-foreground">Professional Development</p>
               </div>
             </div>
-            <p className="text-foreground/90 leading-relaxed mb-6">
+            <p className="text-sm text-muted-foreground leading-relaxed mb-5">
               Write embedded C/C++ with full IDE features, AI autocompletion, and cross-platform compilation for multiple microcontrollers.
             </p>
-            <ul className="space-y-2.5 text-sm text-foreground">
-              <li className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
-                Full IDE with debugging
-              </li>
-              <li className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
-                Cross-compiler support
-              </li>
-              <li className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
-                Real hardware deployment
-              </li>
+            <ul className="space-y-2">
+              {['Full IDE with AI assistance', 'Cross-compiler support', 'Real hardware deployment'].map((item) => (
+                <li key={item} className="flex items-center gap-2 text-xs text-foreground/80">
+                  <Check size={12} className="text-primary flex-shrink-0" />
+                  {item}
+                </li>
+              ))}
             </ul>
           </div>
 
-          {/* No-Code Solution */}
-          <div className="p-6 border border-border bg-card rounded-lg">
-            <div className="flex items-start gap-4 mb-6 pb-6 border-b border-border">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Boxes size={24} className="text-primary" />
+          {/* Block Builder */}
+          <div className="group p-6 border border-border rounded-lg bg-card hover:border-primary/30 transition-colors">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-9 h-9 border border-border rounded-md flex items-center justify-center text-primary bg-primary/5">
+                <Boxes size={18} />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-foreground">Block Builder</h3>
-                <p className="text-sm text-muted-foreground mt-1">Visual Programming</p>
+                <h3 className="font-semibold text-foreground text-sm">Block Builder</h3>
+                <p className="text-xs text-muted-foreground">Visual Programming</p>
               </div>
             </div>
-            <p className="text-foreground/90 leading-relaxed mb-6">
+            <p className="text-sm text-muted-foreground leading-relaxed mb-5">
               Drag-and-drop blocks to control motors, sensors, and actuators. Perfect for beginners and robotics competitions.
             </p>
-            <ul className="space-y-2.5 text-sm text-foreground">
-              <li className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
-                Drag-and-drop interface
-              </li>
-              <li className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
-                Live sensor feedback
-              </li>
-              <li className="flex items-center gap-2.5">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full" />
-                Instant compilation
-              </li>
+            <ul className="space-y-2">
+              {['Drag-and-drop interface', 'Live sensor feedback', 'Instant compilation'].map((item) => (
+                <li key={item} className="flex items-center gap-2 text-xs text-foreground/80">
+                  <Check size={12} className="text-primary flex-shrink-0" />
+                  {item}
+                </li>
+              ))}
             </ul>
           </div>
         </div>
 
-        {/* Supported Robotics Features */}
+        {/* Embedded Features */}
         <div className="mb-20">
-          <h3 className="text-3xl font-semibold text-foreground mb-8">
-            Embedded Features
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {roboticFeatures.map((feature, i) => {
-              const Icon = feature.icon;
-              return (
-                <div
-                  key={i}
-                  className="p-5 bg-card border border-border rounded-lg text-center hover:border-primary/50 transition-colors"
-                >
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg mx-auto mb-3 flex items-center justify-center">
-                    <Icon size={20} className="text-primary" />
-                  </div>
-                  <p className="font-semibold text-foreground text-sm mb-1">{feature.label}</p>
-                  <p className="text-xs text-muted-foreground">{feature.desc}</p>
+          <p className="text-xs font-mono text-muted-foreground mb-6 tracking-widest uppercase">Embedded Features</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {embeddedFeatures.map(({ icon: Icon, label, desc }, i) => (
+              <div
+                key={i}
+                className="p-4 border border-border rounded-lg bg-card hover:border-primary/30 transition-colors"
+              >
+                <div className="w-8 h-8 border border-border rounded-md flex items-center justify-center text-primary mb-3">
+                  <Icon size={15} />
                 </div>
-              );
-            })}
+                <p className="text-xs font-semibold text-foreground mb-0.5">{label}</p>
+                <p className="text-xs text-muted-foreground">{desc}</p>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Virtual Hardware Grid */}
+        {/* Supported MCUs */}
         <div>
-          <h3 className="text-3xl font-semibold text-foreground mb-8">
-            Supported Microcontrollers
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <p className="text-xs font-mono text-muted-foreground mb-6 tracking-widest uppercase">Supported Microcontrollers</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { name: 'ARM Cortex-M4', chip: 'STM32F4' },
-              { name: 'ESP32', chip: 'Xtensa' },
+              { name: 'ESP32', chip: 'Xtensa LX6' },
               { name: 'STM32L476', chip: 'Cortex-M4' },
               { name: 'Arduino Nano', chip: 'ATmega328P' },
             ].map((mcu, i) => (
               <div
                 key={i}
-                className="p-5 bg-card border border-border rounded-lg text-center hover:border-primary/50 transition-colors"
+                className="p-4 border border-border rounded-lg bg-card hover:border-primary/30 transition-colors"
               >
-                <div className="w-10 h-10 bg-primary/10 rounded-lg mx-auto mb-3 flex items-center justify-center">
-                  <Cpu size={20} className="text-primary" />
+                <div className="w-8 h-8 border border-border rounded-md flex items-center justify-center text-primary mb-3">
+                  <Cpu size={15} />
                 </div>
-                <p className="font-semibold text-foreground text-sm mb-1">{mcu.name}</p>
-                <p className="text-xs text-muted-foreground">{mcu.chip}</p>
+                <p className="text-xs font-semibold text-foreground mb-0.5">{mcu.name}</p>
+                <p className="text-xs text-muted-foreground font-mono">{mcu.chip}</p>
               </div>
             ))}
           </div>
