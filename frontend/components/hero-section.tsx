@@ -14,7 +14,7 @@ export default function HeroSection() {
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 1px, transparent 0)',
+          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 3px, transparent 0)',
           backgroundSize: '32px 32px',
         }}
       />
@@ -23,7 +23,7 @@ export default function HeroSection() {
         {/* Badge */}
         <div className="flex justify-center mb-8">
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border text-xs text-muted-foreground font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            <span className="rounded-full bg-primary animate-pulse" />
             Open Source Embedded IDE
           </span>
         </div>
@@ -48,7 +48,7 @@ export default function HeroSection() {
         </div>
 
         {/* Typing tagline */}
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center mb-6 mt-[100px]">
           <TextType
             text={[
               "Write embedded software with AI.",
