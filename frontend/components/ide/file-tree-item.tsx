@@ -36,7 +36,7 @@ export default function FileTreeItem({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
-            className={`w-full flex items-center gap-2 px-2 py-1 text-left text-sm font-bold hover:bg-muted transition-colors ${
+            className={`w-full flex items-center gap-2 px-2 py-1 text-left text-sm font-bold hover:bg-muted transition-colors cursor-pointer hover:bg-white/10 ${
               isSelected ? 'bg-muted border-l-2 border-foreground' : ''
             }`}
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
