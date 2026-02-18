@@ -9,7 +9,7 @@ export default function HeroSection() {
   const navigate = useNavigate();
 
   return (
-    <section className="min-h-screen flex flex-col justify-center pt-14 pb-16 px-6 relative overflow-hidden">
+    <section className="min-h-screen flex flex-col justify-center pt-20 pb-16 px-6 relative overflow-hidden">
       {/* Subtle dot grid background */}
       <div
         className="absolute inset-0 pointer-events-none"
@@ -75,7 +75,7 @@ export default function HeroSection() {
         <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-12">
           <button
             onClick={() => navigate('/dashboard')}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm rounded-md transition-all hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm rounded-md transition-all hover:shadow-[0_0_20px_rgba(255,255,255,0.1)] cursor-pointer"
           >
             Start Building
             <ArrowRight size={15} />
