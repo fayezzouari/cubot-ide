@@ -8,8 +8,14 @@ against the full project structure.
 import asyncio
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime
-from daytona import Daytona, DaytonaConfig, CreateSandboxBaseParams
+from datetime import datetime, timezone
+from daytona import (
+    Daytona,
+    DaytonaConfig,
+    CreateSandboxBaseParams,
+    CreateSandboxFromSnapshotParams,
+    CreateSandboxFromImageParams,
+)
 
 from core.config import settings
 from schemas.daytona import (
@@ -43,29 +49,133 @@ class DaytonaService:
 
         # Initialize Daytona client
         config = DaytonaConfig(api_key=self.api_key)
-        self.params = CreateSandboxBaseParams(
-            snapshot="ros-humble-core"
-        )
         self.daytona = Daytona(config)
-        logger.info("✓ Daytona SDK initialized with API key")
+        logger.info("✓ Daytona SDK initialized")
+
+    async def _test_sandbox_connection(self, sandbox: Any, timeout: int = 5) -> bool:
+        """Test if a sandbox is responsive by running a simple command."""
+        try:
+            await asyncio.to_thread(
+                sandbox.process.exec,
+                "echo 'test'",
+                timeout=timeout
+            )
+            return True
+        except Exception:
+            return False
+
+    async def _wait_for_sandbox_ready(self, sandbox: Any, max_retries: int = 10) -> bool:
+        """Wait for sandbox to be fully ready."""
+        for i in range(max_retries):
+            if await self._test_sandbox_connection(sandbox):
+                logger.info(f"Sandbox {sandbox.id} is ready!")
+                return True
+            if i < max_retries - 1:
+                logger.info(f"Sandbox not ready yet, waiting... ({i+1}/{max_retries})")
+                await asyncio.sleep(2)
+        logger.warning(f"Sandbox may not be fully ready after {max_retries} attempts")
+        return False
+
+    def _create_workspace_response(
+        self,
+        workspace_id: str,
+        project_id: str,
+        sandbox: Any
+    ) -> DaytonaWorkspaceResponse:
+        """Create a DaytonaWorkspaceResponse object."""
+        return DaytonaWorkspaceResponse(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            state=WorkspaceState.RUNNING,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            metadata={
+                "mode": "daytona",
+                "sandbox_id": sandbox.id,
+            },
+        )
+
+    async def _sync_and_finalize_workspace(
+        self,
+        workspace: DaytonaWorkspaceResponse,
+        workspace_id: str,
+        project_id: str
+    ) -> DaytonaWorkspaceResponse:
+        """Sync project files and finalize workspace setup."""
+        sync_result = await self.sync_project_files(workspace_id, project_id)
+        workspace.files_synced = sync_result["files_synced"]
+        has_errors = len(sync_result["errors"]) > 0
+
+        if sync_result["files_synced"] > 0:
+            workspace.sync_status = "partial" if has_errors else "synced"
+        elif has_errors:
+            workspace.sync_status = "failed"
+
+        self._workspace_metadata[workspace_id] = workspace.model_dump()
+        return workspace
+
+    async def _delete_sandbox_by_name(self, sandbox_name: str, saved_sandbox_id: Optional[str] = None) -> bool:
+        """
+        Delete a sandbox by name. Returns True if successful.
+
+        Tries multiple approaches:
+        1. Delete by saved_sandbox_id if available
+        2. List all sandboxes and find by name
+        """
+        # Approach 1: Use saved_sandbox_id if available
+        if saved_sandbox_id:
+            try:
+                logger.info(f"Attempting to delete sandbox by ID: {saved_sandbox_id}")
+                old_sandbox = await asyncio.to_thread(self.daytona.get, saved_sandbox_id)
+                await asyncio.to_thread(old_sandbox.delete)
+                logger.info(f"Successfully deleted sandbox {saved_sandbox_id}")
+                return True
+            except Exception as e:
+                logger.warning(f"Could not delete by ID {saved_sandbox_id}: {e}")
+
+        # Approach 2: List all sandboxes and find by name
+        try:
+            logger.info("Listing all sandboxes to find and delete by name...")
+            paginated_sandboxes = await asyncio.to_thread(self.daytona.list)
+            sandboxes = getattr(paginated_sandboxes, 'items', None) or getattr(paginated_sandboxes, 'data', None) or []
+            logger.info(f"Found {len(sandboxes)} sandboxes")
+
+            for sb in sandboxes:
+                sb_name = getattr(sb, 'name', None)
+                if sb_name == sandbox_name:
+                    sb_id = getattr(sb, 'id', None)
+                    logger.info(f"Found sandbox with matching name: {sb_id}")
+                    await asyncio.to_thread(sb.delete)
+                    logger.info(f"Successfully deleted sandbox {sb_id}")
+                    return True
+
+            logger.warning(f"No sandbox found with name {sandbox_name}")
+        except Exception as e:
+            logger.error(f"Could not list/delete sandboxes: {e}", exc_info=True)
+
+        return False
     
     async def create_workspace(
         self,
         request: DaytonaWorkspaceCreate
     ) -> DaytonaWorkspaceResponse:
         """
-        Create a new Daytona sandbox for a project via HTTP API.
-        Will reconnect to existing sandbox if one is saved in the database.
+        Create a new Daytona sandbox for a project.
+
+        Workflow:
+        1. Check if sandbox exists in memory (fast path)
+        2. Try to reconnect to saved sandbox from database
+        3. If reconnect fails, try to start the stopped sandbox
+        4. If all fails, create a new sandbox
 
         Args:
             request: Workspace creation parameters
 
         Returns:
-            Workspace information
+            Workspace information with sync status
         """
         workspace_id = f"sandbox-{request.project_id}"
 
-        # Check if sandbox already exists in memory
+        # Fast path: Reuse existing sandbox from memory
         if workspace_id in self._sandboxes:
             logger.info(f"Reusing existing sandbox from memory: {workspace_id}")
             return DaytonaWorkspaceResponse(
@@ -76,118 +186,190 @@ class DaytonaService:
                 metadata=self._workspace_metadata[workspace_id],
             )
 
-        # Check if project has a saved sandbox_id in the database
+        # Try to reconnect to existing sandbox
         saved_sandbox_id = await project_service.get_sandbox_id(request.project_id)
-
         if saved_sandbox_id:
-            logger.info(f"Found saved sandbox ID for project {request.project_id}: {saved_sandbox_id}")
-            try:
-                # Try to reconnect to the existing sandbox
-                sandbox = await asyncio.to_thread(self.daytona.get, saved_sandbox_id)
-
-                # Test if sandbox is responsive
-                await asyncio.to_thread(
-                    sandbox.process.exec,
-                    "echo 'reconnecting'",
-                    timeout=5
-                )
-
-                logger.info(f"Successfully reconnected to existing sandbox: {saved_sandbox_id}")
-
-                # Store in memory
-                self._sandboxes[workspace_id] = sandbox
-
-                workspace = DaytonaWorkspaceResponse(
-                    workspace_id=workspace_id,
-                    project_id=request.project_id,
-                    state=WorkspaceState.RUNNING,
-                    created_at=datetime.utcnow().isoformat(),
-                    metadata={
-                        "mode": "daytona",
-                        "sandbox_id": sandbox.id,
-                    },
-                )
-
-                self._workspace_metadata[workspace_id] = workspace.model_dump()
-
-                # Sync project files into the sandbox (in case files changed)
-                sync_result = await self.sync_project_files(workspace_id, request.project_id)
-                workspace.files_synced = sync_result["files_synced"]
-                has_errors = len(sync_result["errors"]) > 0
-                if sync_result["files_synced"] > 0:
-                    workspace.sync_status = "partial" if has_errors else "synced"
-                elif has_errors:
-                    workspace.sync_status = "failed"
-
-                self._workspace_metadata[workspace_id] = workspace.model_dump()
+            workspace = await self._try_reconnect_sandbox(
+                workspace_id, request.project_id, saved_sandbox_id
+            )
+            if workspace:
                 return workspace
 
-            except Exception as e:
-                logger.warning(f"Failed to reconnect to saved sandbox {saved_sandbox_id}: {e}")
-                logger.info("Will create a new sandbox instead")
-                # Clear the saved sandbox_id since it's no longer valid
-                await project_service.update_sandbox_id(request.project_id, None)
+        # Create new sandbox
+        return await self._create_new_sandbox(workspace_id, request.project_id, saved_sandbox_id)
+
+    async def _try_reconnect_sandbox(
+        self,
+        workspace_id: str,
+        project_id: str,
+        saved_sandbox_id: str
+    ) -> Optional[DaytonaWorkspaceResponse]:
+        """
+        Try to reconnect to an existing sandbox. If it's stopped, try to start it.
+
+        Returns:
+            Workspace response if successful, None otherwise
+        """
+        logger.info(f"Found saved sandbox ID for project {project_id}: {saved_sandbox_id}")
 
         try:
-            # Create Daytona sandbox using SDK
-            logger.info(f"Creating new Daytona sandbox for project: {request.project_id}")
-            sandbox = await asyncio.to_thread(self.daytona.create, self.params)
-            logger.info(f"Sandbox created: {sandbox.id}, waiting for it to start...")
+            # Try to reconnect to the existing sandbox
+            sandbox = await asyncio.to_thread(self.daytona.get, saved_sandbox_id)
 
-            # Wait for sandbox to be fully ready
-            max_retries = 10
-            for i in range(max_retries):
-                try:
-                    # Try a simple command to check if sandbox is ready
-                    await asyncio.to_thread(
-                        sandbox.process.exec,
-                        "echo 'ready'",
-                        timeout=5
-                    )
-                    logger.info(f"Sandbox {sandbox.id} is ready!")
-                    break
-                except Exception as e:
-                    if i < max_retries - 1:
-                        logger.info(f"Sandbox not ready yet, waiting... ({i+1}/{max_retries})")
-                        await asyncio.sleep(2)
-                    else:
-                        logger.warning(f"Sandbox may not be fully ready: {e}")
-                        # Continue anyway, it might work
+            if await self._test_sandbox_connection(sandbox):
+                logger.info(f"Successfully reconnected to existing sandbox: {saved_sandbox_id}")
+                return await self._finalize_sandbox_connection(
+                    workspace_id, project_id, sandbox
+                )
 
-            # Save sandbox ID to database
-            await project_service.update_sandbox_id(request.project_id, sandbox.id)
-            logger.info(f"Saved sandbox ID {sandbox.id} to project {request.project_id}")
+            # Sandbox exists but not responsive - try to start it
+            logger.info(f"Sandbox {saved_sandbox_id} is not responsive, attempting to start it")
+            await asyncio.to_thread(sandbox.start, 60)
+            logger.info(f"Successfully started sandbox {saved_sandbox_id}")
 
-            self._sandboxes[workspace_id] = sandbox
-
-            workspace = DaytonaWorkspaceResponse(
-                workspace_id=workspace_id,
-                project_id=request.project_id,
-                state=WorkspaceState.RUNNING,
-                created_at=datetime.utcnow().isoformat(),
-                metadata={
-                    "mode": "daytona",
-                    "sandbox_id": sandbox.id,
-                },
-            )
-
-            self._workspace_metadata[workspace_id] = workspace.model_dump()
-
-            # Sync project files into the sandbox
-            sync_result = await self.sync_project_files(workspace_id, request.project_id)
-            workspace.files_synced = sync_result["files_synced"]
-            has_errors = len(sync_result["errors"]) > 0
-            if sync_result["files_synced"] > 0:
-                workspace.sync_status = "partial" if has_errors else "synced"
-            elif has_errors:
-                workspace.sync_status = "failed"
-
-            self._workspace_metadata[workspace_id] = workspace.model_dump()
-            return workspace
+            if await self._test_sandbox_connection(sandbox):
+                logger.info(f"Sandbox {saved_sandbox_id} is now running!")
+                return await self._finalize_sandbox_connection(
+                    workspace_id, project_id, sandbox
+                )
 
         except Exception as e:
-            logger.error(f"Failed to create Daytona sandbox: {e}", exc_info=True)
-            raise
+            logger.warning(f"Failed to reconnect/start sandbox {saved_sandbox_id}: {e}")
+            await project_service.update_sandbox_id(project_id, None)
+
+        return None
+
+    async def _finalize_sandbox_connection(
+        self,
+        workspace_id: str,
+        project_id: str,
+        sandbox: Any
+    ) -> DaytonaWorkspaceResponse:
+        """Store sandbox in memory, sync files, and return workspace response."""
+        self._sandboxes[workspace_id] = sandbox
+        workspace = self._create_workspace_response(workspace_id, project_id, sandbox)
+        self._workspace_metadata[workspace_id] = workspace.model_dump()
+        return await self._sync_and_finalize_workspace(workspace, workspace_id, project_id)
+
+    def _build_ros_sandbox_params(self, sandbox_name: str) -> CreateSandboxBaseParams:
+        """
+        Build sandbox creation params using a Daytona ROS Humble snapshot if configured,
+        otherwise fall back to the official ROS Humble Docker image.
+        """
+        ros_snapshot = getattr(settings, "DAYTONA_ROS_SNAPSHOT", None)
+
+        if ros_snapshot:
+            logger.info(f"Using Daytona ROS snapshot: {ros_snapshot}")
+            return CreateSandboxFromSnapshotParams(
+                name=sandbox_name,
+                snapshot=ros_snapshot,
+                env_vars={
+                    "ROS_DISTRO": "humble",
+                    "ROS_VERSION": "2",
+                    "ROS_PYTHON_VERSION": "3",
+                    "DEBIAN_FRONTEND": "noninteractive",
+                    "LANG": "en_US.UTF-8",
+                },
+                auto_stop_interval=0,
+            )
+
+        # Fall back to the official ROS Humble base image
+        logger.info("No ROS snapshot configured, using osrf/ros:humble-ros-base image")
+        return CreateSandboxFromImageParams(
+            name=sandbox_name,
+            image="ros:humble-ros-base",
+            env_vars={
+                "ROS_DISTRO": "humble",
+                "ROS_VERSION": "2",
+                "ROS_PYTHON_VERSION": "3",
+                "DEBIAN_FRONTEND": "noninteractive",
+                "LANG": "en_US.UTF-8",
+            },
+            auto_stop_interval=0,
+        )
+
+    async def _setup_ros_workspace(self, sandbox: Any) -> None:
+        """
+        Initialize the ROS workspace inside the sandbox after creation.
+
+        Sets up:
+        - colcon workspace structure under PROJECT_BASE_DIR
+        - bashrc sourcing of ROS setup
+
+        Note: rosdep update is intentionally omitted (slow network call).
+        Run it on demand when installing project dependencies.
+        """
+        logger.info("Setting up ROS workspace environment...")
+
+        # Single exec to avoid multiple round-trip overheads
+        setup_script = (
+            f"source /opt/ros/humble/setup.bash"
+            f" && mkdir -p {PROJECT_BASE_DIR}/src"
+            f" && grep -qxF 'source /opt/ros/humble/setup.bash' /home/daytona/.bashrc"
+            f" || echo 'source /opt/ros/humble/setup.bash' >> /home/daytona/.bashrc"
+        )
+
+        try:
+            result = await asyncio.to_thread(
+                sandbox.process.exec,
+                f"/bin/bash -c '{setup_script}'",
+                timeout=30,
+            )
+            if result.exit_code != 0:
+                logger.warning("ROS workspace setup returned non-zero exit code")
+            else:
+                logger.info("✓ ROS workspace environment ready")
+        except Exception as e:
+            logger.warning(f"ROS workspace setup failed (non-fatal): {e}")
+
+    async def _create_new_sandbox(
+        self,
+        workspace_id: str,
+        project_id: str,
+        saved_sandbox_id: Optional[str]
+    ) -> DaytonaWorkspaceResponse:
+        """Create a new Daytona ROS Humble sandbox with automatic cleanup on name conflicts."""
+        logger.info(f"Creating new ROS Humble sandbox for project: {project_id}")
+
+        sandbox_name = f"ros-project-{project_id[:8]}"
+        params = self._build_ros_sandbox_params(sandbox_name)
+
+        try:
+            sandbox = await asyncio.to_thread(self.daytona.create, params)
+        except Exception as create_error:
+            # Handle name conflicts by cleaning up old sandbox
+            if "already exists" in str(create_error):
+                logger.warning(f"Sandbox '{sandbox_name}' already exists, attempting cleanup...")
+
+                if await self._delete_sandbox_by_name(sandbox_name, saved_sandbox_id):
+                    logger.info("Retrying sandbox creation after cleanup...")
+                    await asyncio.sleep(2)  # Give it time to fully clean up
+                    try:
+                        sandbox = await asyncio.to_thread(self.daytona.create, params)
+                        logger.info("Successfully created sandbox after cleanup")
+                    except Exception as retry_error:
+                        logger.error(f"Sandbox creation failed on retry: {retry_error}", exc_info=True)
+                        raise retry_error
+                else:
+                    logger.error("Could not delete existing sandbox, cannot proceed")
+                    raise create_error
+            else:
+                logger.error(f"Sandbox creation failed: {create_error}", exc_info=True)
+                raise
+
+        # Wait for sandbox to be ready
+        logger.info(f"Sandbox created: {sandbox.id}, waiting for it to start...")
+        await self._wait_for_sandbox_ready(sandbox)
+
+        # Initialize ROS workspace
+        await self._setup_ros_workspace(sandbox)
+
+        # Save sandbox ID to database
+        await project_service.update_sandbox_id(project_id, sandbox.id)
+        logger.info(f"Saved sandbox ID {sandbox.id} to project {project_id}")
+
+        # Finalize and return
+        return await self._finalize_sandbox_connection(workspace_id, project_id, sandbox)
 
     async def sync_project_files(
         self,
@@ -310,10 +492,14 @@ class DaytonaService:
 
             logger.debug(f"Executing command in sandbox {sandbox.id}: {request.code}")
 
+            # Check if ROS is installed, if so source it
+            # Otherwise just run the command directly
+            wrapped_command = f'/bin/bash -c "if [ -f /opt/ros/humble/setup.bash ]; then source /opt/ros/humble/setup.bash; fi && {request.code}"'
+
             # Use SDK's exec method for shell commands
             response = await asyncio.to_thread(
                 sandbox.process.exec,
-                request.code,
+                wrapped_command,
                 cwd=PROJECT_BASE_DIR,
                 timeout=request.timeout or 30,
             )
