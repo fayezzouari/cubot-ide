@@ -4,11 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header';
 import WorkspaceModal from '@/components/workspace-modal';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
-import { Plus, ArrowRight, FolderOpen, Trash2 } from 'lucide-react';
+import { Plus, ArrowRight, Trash2, Clock, Code2 } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,24 +50,18 @@ export default function DashboardPage() {
     };
 
     loadProjects();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, []);
 
   const sortedProjects = useMemo(() => {
-    return [...projects].sort((a, b) => {
-      const aTime = new Date(a.updated_at).getTime();
-      const bTime = new Date(b.updated_at).getTime();
-      return bTime - aTime;
-    });
+    return [...projects].sort((a, b) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
   }, [projects]);
 
   const handleOpenProject = (project: ProjectResponse) => {
     const workspaceType =
       localStorage.getItem(`cubot-ide-project-workspace-${project.id}`) || 'ide';
-
     localStorage.setItem('cubot-ide-last-project', project.id);
 
     if (workspaceType === 'blocks') {
@@ -83,10 +75,8 @@ export default function DashboardPage() {
 
   const handleDeleteProject = async () => {
     if (!projectToDelete) return;
-
     try {
       await projectService.delete(projectToDelete.id);
-      // Refresh projects list
       const data = await projectService.getAll();
       setProjects(Array.isArray(data) ? data : []);
       setProjectToDelete(null);
@@ -95,118 +85,148 @@ export default function DashboardPage() {
     }
   };
 
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days}d ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground font-sans">
       <Header />
 
-      <section className="pt-24 pb-16 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="pt-14">
+        {/* Page header */}
+        <div className="border-b border-border px-6 py-8">
+          <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Dashboard</p>
-              <h1 className="text-3xl md:text-4xl font-semibold text-foreground mt-2">
-                Your Projects
-              </h1>
+              <p className="text-xs font-mono text-muted-foreground mb-1">dashboard</p>
+              <h1 className="text-xl font-semibold text-foreground tracking-tight">Projects</h1>
             </div>
-            <Button
+            <button
               onClick={() => setIsModalOpen(true)}
-              className="px-5 py-2.5 h-10 font-medium text-sm flex items-center gap-2"
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-md transition-colors cursor-pointer"
             >
-              <Plus size={16} />
+              <Plus size={13} />
               New Project
-            </Button>
-          </div>
-
-          <div className="mt-8 grid gap-6">
-            {isLoading && (
-              <Card className="border border-border">
-                <CardContent className="p-8 text-muted-foreground">Loading projects...</CardContent>
-              </Card>
-            )}
-
-            {!isLoading && error && (
-              <Card className="border border-border">
-                <CardContent className="p-8 text-destructive">{error}</CardContent>
-              </Card>
-            )}
-
-            {!isLoading && !error && sortedProjects.length === 0 && (
-              <Card className="border border-border">
-                <CardContent className="p-8 text-center text-muted-foreground">
-                  No projects yet. Create one to get started.
-                </CardContent>
-              </Card>
-            )}
-
-            {!isLoading && !error && sortedProjects.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {sortedProjects.map((project) => (
-                  <Card key={project.id} className="border border-border hover:border-primary/50 transition-colors">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg font-semibold flex items-start justify-between gap-3">
-                        <span className="truncate">{project.name}</span>
-                        <div className="flex items-center gap-2">
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <button
-                                className="text-muted-foreground hover:text-destructive transition-colors p-1 cursor-pointer"
-                                onClick={() => setProjectToDelete(project)}
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Project</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete "{project.name}"? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel onClick={() => setProjectToDelete(null)}>
-                                  Cancel
-                                </AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={handleDeleteProject}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                          <FolderOpen size={18} className="text-muted-foreground" />
-                        </div>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {project.description || 'No description provided.'}
-                      </p>
-                      <div className="text-xs text-muted-foreground">
-                        Updated {new Date(project.updated_at).toLocaleDateString()}
-                      </div>
-                      <div className="flex items-center justify-between pt-2">
-                        <span className="text-xs font-medium px-2.5 py-1 bg-muted rounded text-foreground">
-                          {project.target_compiler?.toUpperCase()}
-                        </span>
-                        <Button
-                          onClick={() => handleOpenProject(project)}
-                          size="sm"
-                          className="h-8 px-4 font-medium text-xs flex items-center gap-1.5"
-                        >
-                          Open
-                          <ArrowRight size={14} />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+            </button>
           </div>
         </div>
-      </section>
+
+        {/* Content */}
+        <div className="max-w-6xl mx-auto px-6 py-8">
+          {isLoading && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-36 rounded-lg border border-border bg-card animate-pulse" />
+              ))}
+            </div>
+          )}
+
+          {!isLoading && error && (
+            <div className="p-4 border border-destructive/30 bg-destructive/5 rounded-lg">
+              <p className="text-xs text-destructive font-mono">{error}</p>
+            </div>
+          )}
+
+          {!isLoading && !error && sortedProjects.length === 0 && (
+            <div className="border border-border border-dashed rounded-lg p-16 text-center">
+              <div className="w-10 h-10 border border-border rounded-lg flex items-center justify-center mx-auto mb-4 text-muted-foreground">
+                <Code2 size={18} />
+              </div>
+              <p className="text-sm font-medium text-foreground mb-1">No projects yet</p>
+              <p className="text-xs text-muted-foreground mb-5">Create your first project to get started.</p>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-md transition-colors cursor-pointer"
+              >
+                <Plus size={13} />
+                New Project
+              </button>
+            </div>
+          )}
+
+          {!isLoading && !error && sortedProjects.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sortedProjects.map((project) => (
+                <div
+                  key={project.id}
+                  className="group border border-border rounded-lg bg-card hover:border-foreground/20 transition-all"
+                >
+                  <div className="p-5">
+                    {/* Header row */}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1 min-w-0 mr-3">
+                        <h3 className="text-sm font-semibold text-foreground truncate">{project.name}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                          {project.description || 'No description'}
+                        </p>
+                      </div>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button
+                            className="opacity-0 group-hover:opacity-100 p-1.5 text-muted-foreground hover:text-destructive transition-all cursor-pointer flex-shrink-0"
+                            onClick={() => setProjectToDelete(project)}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="bg-card border-border">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="text-sm">Delete project</AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs text-muted-foreground">
+                              Are you sure you want to delete &ldquo;{project.name}&rdquo;? This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel
+                              className="text-xs h-8"
+                              onClick={() => setProjectToDelete(null)}
+                            >
+                              Cancel
+                            </AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={handleDeleteProject}
+                              className="text-xs h-8 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+
+                    {/* Footer row */}
+                    <div className="flex items-center justify-between pt-3 border-t border-border">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono text-muted-foreground px-1.5 py-0.5 bg-secondary rounded border border-border">
+                          {project.target_compiler?.toUpperCase() || 'UNKNOWN'}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock size={10} />
+                          {formatDate(project.updated_at)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleOpenProject(project)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground font-medium text-xs rounded-md transition-all cursor-pointer group/btn"
+                      >
+                        Open
+                        <ArrowRight size={11} className="group-hover/btn:translate-x-0.5 transition-transform" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       <WorkspaceModal open={isModalOpen} onOpenChange={setIsModalOpen} />
     </main>

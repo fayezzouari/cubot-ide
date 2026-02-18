@@ -8,27 +8,30 @@ import PixelSnow from '@/components/PixelSnow';
 
 export default function Home() {
   return (
-    <main className="bg-background text-foreground font-sans relative overflow-hidden">
-      {/* PixelSnow background effect */}
-      <div style={{
-        position: 'fixed',
-        inset: 0,
-        width: '100vw',
-        height: '100vh',
-        zIndex: 0,
-        pointerEvents: 'none',
-      }}>
+    <main className="bg-background text-foreground font-sans relative">
+      {/* Subtle particle background on hero only */}
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          width: '100vw',
+          height: '40vh',
+          zIndex: 0,
+          pointerEvents: 'none',
+          opacity: 0.4,
+        }}
+      >
         <PixelSnow
-          color="#ffffff"
-          flakeSize={0.003}
+          color="#3b82f6"
+          flakeSize={0.002}
           minFlakeSize={1}
-          pixelResolution={375}
-          speed={0.85}
-          depthFade={5}
-          farPlane={15}
-          brightness={1}
+          pixelResolution={500}
+          speed={0.5}
+          depthFade={8}
+          farPlane={20}
+          brightness={0.7}
           gamma={0.4545}
-          density={0.7}
+          density={0.4}
           variant="square"
           direction={90}
         />
