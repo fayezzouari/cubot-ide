@@ -610,7 +610,7 @@ export default function IDEPage() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+    <div className="h-screen flex flex-col bg-black text-foreground overflow-hidden">
       <TopBar
         projectId={currentProject?.id ?? null}
         isArduinoProject={currentProject?.target_compiler === 'arduino'}
@@ -669,9 +669,9 @@ export default function IDEPage() {
         <ResizablePanelGroup direction="horizontal">
           {/* File Sidebar */}
           <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
-            <aside className="w-full h-full border-r border-border flex flex-col bg-sidebar">
-              <div className="px-4 py-2 border-b border-border flex items-center justify-between">
-                <span className="font-semibold text-xs uppercase tracking-wide text-sidebar-foreground">
+            <aside className="w-full h-full border-r border-white/[0.06] flex flex-col bg-black">
+              <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
+                <span className="font-medium text-[10px] uppercase tracking-widest text-white/25 font-mono">
                   {currentProject ? 'Explorer' : 'Files'}
                 </span>
                 <Button
@@ -711,7 +711,7 @@ export default function IDEPage() {
                 </ScrollArea>
               )}
               {isRenamingFile && (
-                <div className="p-3 border-t border-border bg-card">
+                <div className="p-3 border-t border-white/[0.06] bg-black">
                   <div className="flex items-center gap-2">
                     <Input
                       value={newFileNameInput}
@@ -748,7 +748,7 @@ export default function IDEPage() {
             </aside>
           </ResizablePanel>
 
-          <ResizableHandle withHandle className="w-px bg-border hover:bg-primary/50 transition-colors" />
+          <ResizableHandle withHandle className="w-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
 
           <ResizablePanel defaultSize={55} minSize={30}>
             {currentProject?.project_type === 'ros' ? (
@@ -768,7 +768,7 @@ export default function IDEPage() {
                   />
                 </ResizablePanel>
 
-                <ResizableHandle withHandle className="h-1 bg-foreground hover:bg-primary transition-colors" />
+                <ResizableHandle withHandle className="h-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
 
                 {/* Sandbox Terminal - ROS Projects Only */}
                 <ResizablePanel defaultSize={35} minSize={20}>
@@ -791,7 +791,7 @@ export default function IDEPage() {
             )}
           </ResizablePanel>
 
-          <ResizableHandle withHandle className="w-1 bg-foreground hover:bg-primary transition-colors" />
+          <ResizableHandle withHandle className="w-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
 
           <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
             <RightSidebar
