@@ -7,6 +7,8 @@ against the full project structure.
 """
 import asyncio
 import logging
+import re
+import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from daytona import (
@@ -288,23 +290,78 @@ class DaytonaService:
             auto_stop_interval=0,
         )
 
-    async def _setup_ros_workspace(self, sandbox: Any) -> None:
+    @staticmethod
+    def _ros_package_name(project_name: str) -> str:
+        """Derive a valid ROS 2 / Python package name from a project name.
+
+        Rules: lowercase, any non-alphanumeric char → underscore,
+        collapse consecutive underscores, strip leading/trailing underscores.
         """
-        Initialize the ROS workspace inside the sandbox after creation.
+        name = project_name.lower().strip()
+        name = re.sub(r'[^a-z0-9]+', '_', name)
+        name = name.strip('_')
+        return name or "ros_project"
 
-        Sets up:
-        - colcon workspace structure under PROJECT_BASE_DIR
-        - bashrc sourcing of ROS setup
-
-        Note: rosdep update is intentionally omitted (slow network call).
-        Run it on demand when installing project dependencies.
+    async def _setup_ros_workspace(self, sandbox: Any, pkg_name: str) -> None:
         """
-        logger.info("Setting up ROS workspace environment...")
+        Initialize the ROS 2 workspace inside the sandbox after creation.
 
-        # Single exec to avoid multiple round-trip overheads
+        Creates a full ament_python package structure under src/<pkg_name>/:
+          package.xml, setup.py, setup.cfg, resource/<pkg_name>, <pkg_name>/__init__.py
+
+        Also sources ROS into .bashrc for interactive shells.
+        rosdep update is intentionally omitted (slow network call).
+        """
+        logger.info(f"Setting up ROS workspace for package '{pkg_name}'...")
+
+        pkg_dir = f"{PROJECT_BASE_DIR}/src/{pkg_name}"
+        py_dir = f"{pkg_dir}/{pkg_name}"
+        resource_dir = f"{pkg_dir}/resource"
+
+        package_xml = (
+            f'<?xml version="1.0"?>\\n'
+            f'<package format="3">\\n'
+            f'  <name>{pkg_name}</name>\\n'
+            f'  <version>0.0.1</version>\\n'
+            f'  <description>{pkg_name} ROS 2 package</description>\\n'
+            f'  <maintainer email="user@example.com">user</maintainer>\\n'
+            f'  <license>Apache-2.0</license>\\n'
+            f'  <exec_depend>rclpy</exec_depend>\\n'
+            f'  <export>\\n'
+            f'    <build_type>ament_python</build_type>\\n'
+            f'  </export>\\n'
+            f'</package>'
+        )
+
+        setup_py = (
+            f"from setuptools import setup\\n\\n"
+            f"package_name = '{pkg_name}'\\n\\n"
+            f"setup(\\n"
+            f"    name=package_name,\\n"
+            f"    version='0.0.1',\\n"
+            f"    packages=[package_name],\\n"
+            f"    data_files=[\\n"
+            f"        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),\\n"
+            f"        ('share/' + package_name, ['package.xml']),\\n"
+            f"    ],\\n"
+            f"    install_requires=['setuptools'],\\n"
+            f"    zip_safe=True,\\n"
+            f"    entry_points={{\\n"
+            f"        'console_scripts': [],\\n"
+            f"    }},\\n"
+            f")"
+        )
+
+        setup_cfg = "[develop]\\nscript_dir=$base/lib/{pkg_name}\\n[install]\\ninstall_scripts=$base/lib/{pkg_name}".format(pkg_name=pkg_name)
+
         setup_script = (
             f"source /opt/ros/humble/setup.bash"
-            f" && mkdir -p {PROJECT_BASE_DIR}/src"
+            f" && mkdir -p {py_dir} {resource_dir}"
+            f" && printf '%s' '{package_xml}' > {pkg_dir}/package.xml"
+            f" && printf '%s' '{setup_py}' > {pkg_dir}/setup.py"
+            f" && printf '%s' '{setup_cfg}' > {pkg_dir}/setup.cfg"
+            f" && touch {resource_dir}/{pkg_name}"
+            f" && touch {py_dir}/__init__.py"
             f" && grep -qxF 'source /opt/ros/humble/setup.bash' /home/daytona/.bashrc"
             f" || echo 'source /opt/ros/humble/setup.bash' >> /home/daytona/.bashrc"
         )
@@ -316,9 +373,9 @@ class DaytonaService:
                 timeout=30,
             )
             if result.exit_code != 0:
-                logger.warning("ROS workspace setup returned non-zero exit code")
+                logger.warning(f"ROS workspace setup returned non-zero exit code")
             else:
-                logger.info("✓ ROS workspace environment ready")
+                logger.info(f"✓ ROS package '{pkg_name}' scaffold created")
         except Exception as e:
             logger.warning(f"ROS workspace setup failed (non-fatal): {e}")
 
@@ -330,6 +387,11 @@ class DaytonaService:
     ) -> DaytonaWorkspaceResponse:
         """Create a new Daytona ROS Humble sandbox with automatic cleanup on name conflicts."""
         logger.info(f"Creating new ROS Humble sandbox for project: {project_id}")
+
+        # Derive ROS package name from project name
+        project = await project_service.get_project(project_id)
+        pkg_name = self._ros_package_name(project.name) if project else "ros_project"
+        logger.info(f"ROS package name: '{pkg_name}'")
 
         sandbox_name = f"ros-project-{project_id[:8]}"
         params = self._build_ros_sandbox_params(sandbox_name)
@@ -361,12 +423,15 @@ class DaytonaService:
         logger.info(f"Sandbox created: {sandbox.id}, waiting for it to start...")
         await self._wait_for_sandbox_ready(sandbox)
 
-        # Initialize ROS workspace
-        await self._setup_ros_workspace(sandbox)
+        # Initialize ROS package structure
+        await self._setup_ros_workspace(sandbox, pkg_name)
 
-        # Save sandbox ID to database
+        # Save sandbox ID and pkg_name to database / metadata
         await project_service.update_sandbox_id(project_id, sandbox.id)
         logger.info(f"Saved sandbox ID {sandbox.id} to project {project_id}")
+
+        # Store pkg_name in metadata so sync can use it
+        self._workspace_metadata.setdefault(workspace_id, {})["pkg_name"] = pkg_name
 
         # Finalize and return
         return await self._finalize_sandbox_connection(workspace_id, project_id, sandbox)
@@ -377,17 +442,24 @@ class DaytonaService:
         project_id: str
     ) -> Dict[str, Any]:
         """
-        Sync project files from MongoDB into the sandbox filesystem via HTTP API.
+        Sync project files from MongoDB into the sandbox filesystem.
 
-        Fetches all files for the project and writes them into the sandbox
-        at /home/daytona/project/, preserving directory structure.
+        Files are placed inside the ROS package Python module directory:
+          src/<pkg_name>/<pkg_name>/<file>
+        so they are importable by the package and picked up by colcon.
 
-        Returns:
-            Dict with 'files_synced' count and 'errors' list
+        Falls back to PROJECT_BASE_DIR if no pkg_name is recorded (legacy/non-ROS).
         """
         sandbox = self._sandboxes.get(workspace_id)
         if not sandbox:
             return {"files_synced": 0, "errors": ["Sandbox not found"]}
+
+        # Determine sync root: package python module dir if available
+        pkg_name = self._workspace_metadata.get(workspace_id, {}).get("pkg_name")
+        if pkg_name:
+            sync_root = f"{PROJECT_BASE_DIR}/src/{pkg_name}/{pkg_name}"
+        else:
+            sync_root = PROJECT_BASE_DIR
 
         # Fetch project files from MongoDB
         try:
@@ -404,10 +476,10 @@ class DaytonaService:
         errors: List[str] = []
         created_dirs: set = set()
 
-        # Create base project directory
+        # Ensure sync root exists
         try:
-            await asyncio.to_thread(sandbox.fs.create_folder, PROJECT_BASE_DIR)
-            created_dirs.add(PROJECT_BASE_DIR)
+            await asyncio.to_thread(sandbox.fs.create_folder, sync_root)
+            created_dirs.add(sync_root)
         except Exception:
             pass  # may already exist
 
@@ -420,17 +492,17 @@ class DaytonaService:
                 if not file_name:
                     continue
 
-                # Build directory path
-                if file_path and file_path != "/" and file_path != ".":
+                # Build directory path relative to sync_root
+                if file_path and file_path not in ("/", "."):
                     rel_dir = file_path.strip("/")
-                    full_dir = f"{PROJECT_BASE_DIR}/{rel_dir}"
+                    full_dir = f"{sync_root}/{rel_dir}"
                 else:
-                    full_dir = PROJECT_BASE_DIR
+                    full_dir = sync_root
 
                 # Create parent directories
                 if full_dir not in created_dirs:
-                    parts = full_dir.replace(PROJECT_BASE_DIR, "").strip("/").split("/")
-                    current = PROJECT_BASE_DIR
+                    parts = full_dir.replace(sync_root, "").strip("/").split("/")
+                    current = sync_root
                     for part in parts:
                         if not part:
                             continue
@@ -442,7 +514,7 @@ class DaytonaService:
                                 pass
                             created_dirs.add(current)
 
-                # Write file content to sandbox (upload_file takes bytes)
+                # Write file to sandbox
                 full_file_path = f"{full_dir}/{file_name}"
                 content_bytes = content.encode('utf-8')
                 await asyncio.to_thread(
@@ -458,7 +530,7 @@ class DaytonaService:
 
         logger.info(
             f"Synced {synced}/{len(files)} files for project {project_id} "
-            f"into sandbox {sandbox.id}"
+            f"into {sync_root} (sandbox {sandbox.id})"
         )
         return {"files_synced": synced, "errors": errors}
 
@@ -757,6 +829,176 @@ class DaytonaService:
         except Exception as e:
             logger.error(f"Failed to sync file rename: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
+
+    async def list_sandbox_files(self, workspace_id: str) -> List[str]:
+        """
+        List all entries (files AND directories) in the sandbox under PROJECT_BASE_DIR.
+
+        Returns a list of dicts with 'path' (relative to PROJECT_BASE_DIR) and
+        'type' ("file" or "dir"). Hidden entries (starting with '.') are excluded.
+
+        Using explicit type info avoids the frontend having to guess whether a path
+        segment is a file or a folder, which breaks when a file and a directory
+        share the same name at the same level.
+        """
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            return []
+
+        try:
+            # Two separate finds (files then dirs) prefixed with a type tag.
+            # Avoids -printf which is GNU find-specific and may not be available.
+            # Prefix format: "f <abs_path>" or "d <abs_path>"
+            cmd = (
+                f"("
+                f"find {PROJECT_BASE_DIR} -mindepth 1 -not -path '*/.*' -type f | sed 's|^|f |';"
+                f"find {PROJECT_BASE_DIR} -mindepth 1 -not -path '*/.*' -type d | sed 's|^|d |'"
+                f") | sort -k2"
+            )
+            result = await asyncio.to_thread(
+                sandbox.process.exec,
+                f"/bin/bash -c '{cmd}'",
+                timeout=15,
+            )
+            if result.exit_code != 0:
+                logger.warning("list_sandbox_files: find command returned non-zero")
+                return []
+
+            prefix = PROJECT_BASE_DIR.rstrip("/") + "/"
+            entries = []
+            for line in (result.result or "").splitlines():
+                line = line.strip()
+                if not line or " " not in line:
+                    continue
+                type_tag, abs_path = line.split(" ", 1)
+                abs_path = abs_path.strip()
+                if not abs_path.startswith(prefix):
+                    continue
+                rel_path = abs_path[len(prefix):]
+                if not rel_path:
+                    continue
+                entry_type = "file" if type_tag == "f" else "dir"
+                entries.append({"path": rel_path, "type": entry_type})
+            return entries
+
+        except Exception as e:
+            logger.error(f"Failed to list sandbox files: {e}", exc_info=True)
+            return []
+
+    async def get_sandbox_file_content(self, workspace_id: str, relative_path: str) -> str:
+        """
+        Download the content of a single file from the sandbox.
+
+        Args:
+            workspace_id: The workspace ID.
+            relative_path: Path relative to PROJECT_BASE_DIR, e.g. "src/hello_world/package.xml".
+
+        Returns:
+            File content as a UTF-8 string.
+        """
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            raise ValueError("Sandbox not found")
+
+        abs_path = f"{PROJECT_BASE_DIR}/{relative_path.lstrip('/')}"
+        content_bytes: bytes = await asyncio.to_thread(
+            sandbox.fs.download_file, abs_path
+        )
+        return content_bytes.decode("utf-8", errors="replace")
+
+    async def create_pty_session(
+        self,
+        workspace_id: str,
+        cols: int = 220,
+        rows: int = 50,
+    ) -> Dict[str, Any]:
+        """
+        Create a PTY session in the sandbox and return WebSocket connection info.
+
+        Returns:
+            Dict with session_id, ws_url, ws_headers for connecting to the PTY.
+        """
+        from daytona_toolbox_api_client import PtyCreateRequest
+
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            raise ValueError(f"Sandbox not found: {workspace_id}")
+
+        session_id = f"pty-{uuid.uuid4().hex[:8]}"
+
+        def _setup_pty():
+            # Ensure the toolbox URL is initialised (blocking)
+            sandbox.process._ensure_toolbox_url()
+
+            # Create the PTY session via the toolbox API
+            response = sandbox.process._api_client.create_pty_session(
+                request=PtyCreateRequest(
+                    id=session_id,
+                    cwd=PROJECT_BASE_DIR,
+                    envs={
+                        "TERM": "xterm-256color",
+                        "COLORTERM": "truecolor",
+                    },
+                    cols=cols,
+                    rows=rows,
+                    lazy_start=True,
+                )
+            )
+
+            # Serialise the WebSocket URL and auth headers (pure URL building, no I/O)
+            _, url, headers, *_ = sandbox.process._api_client._connect_pty_session_serialize(
+                session_id=response.session_id,
+                _request_auth=None,
+                _content_type=None,
+                _headers=None,
+                _host_index=None,
+            )
+            ws_url = re.sub(r"^http", "ws", url)
+            return response.session_id, ws_url, dict(headers)
+
+        actual_session_id, ws_url, ws_headers = await asyncio.to_thread(_setup_pty)
+        logger.info(f"Created PTY session {actual_session_id} for workspace {workspace_id}")
+
+        return {
+            "session_id": actual_session_id,
+            "ws_url": ws_url,
+            "ws_headers": ws_headers,
+        }
+
+    async def resize_pty_session(
+        self,
+        workspace_id: str,
+        session_id: str,
+        cols: int,
+        rows: int,
+    ) -> None:
+        """Resize a PTY session to the given terminal dimensions."""
+        from daytona_toolbox_api_client import PtyResizeRequest
+
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            return
+
+        await asyncio.to_thread(
+            sandbox.process._api_client.resize_pty_session,
+            session_id=session_id,
+            request=PtyResizeRequest(cols=cols, rows=rows),
+        )
+
+    async def kill_pty_session(self, workspace_id: str, session_id: str) -> None:
+        """Kill and clean up a PTY session."""
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            return
+
+        try:
+            await asyncio.to_thread(
+                sandbox.process._api_client.delete_pty_session,
+                session_id=session_id,
+            )
+            logger.info(f"Killed PTY session {session_id}")
+        except Exception as e:
+            logger.warning(f"Failed to kill PTY session {session_id}: {e}")
 
 
 daytona_service = DaytonaService()

@@ -66,3 +66,20 @@ class CodeExecutionResponse(BaseModel):
     exit_code: int
     execution_time: float
     error: Optional[str] = None
+
+
+class SandboxFileEntry(BaseModel):
+    """A single entry (file or directory) in the sandbox filesystem"""
+    path: str   # relative to PROJECT_BASE_DIR
+    type: str   # "file" or "dir"
+
+
+class SandboxFileListResponse(BaseModel):
+    """Filesystem entries present in the sandbox"""
+    entries: List[SandboxFileEntry]
+
+
+class SandboxFileContentResponse(BaseModel):
+    """Content of a single sandbox file"""
+    path: str
+    content: str
