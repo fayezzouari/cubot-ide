@@ -47,6 +47,20 @@ export interface CodeExecutionResponse {
   error?: string;
 }
 
+export interface SandboxFileEntry {
+  path: string;          // relative to project root
+  type: 'file' | 'dir';
+}
+
+export interface SandboxFileListResponse {
+  entries: SandboxFileEntry[];
+}
+
+export interface SandboxFileContentResponse {
+  path: string;
+  content: string;
+}
+
 export const daytonaApi = {
   async createWorkspace(projectId: string, repositoryUrl?: string): Promise<DaytonaWorkspace> {
     const response = await fetch(`${API_BASE}/daytona/workspaces`, {
@@ -93,6 +107,21 @@ export const daytonaApi = {
       body: JSON.stringify(request),
     });
     if (!response.ok) throw new Error('Failed to execute code');
+    return response.json();
+  },
+
+  async listFiles(workspaceId: string): Promise<SandboxFileListResponse> {
+    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/files`);
+    if (!response.ok) throw new Error('Failed to list sandbox files');
+    return response.json();
+  },
+
+  async getFileContent(workspaceId: string, filePath: string): Promise<SandboxFileContentResponse> {
+    const encoded = encodeURIComponent(filePath);
+    const response = await fetch(
+      `${API_BASE}/daytona/workspaces/${workspaceId}/file-content?path=${encoded}`
+    );
+    if (!response.ok) throw new Error('Failed to fetch file content');
     return response.json();
   },
 };

@@ -1,20 +1,12 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Terminal, Play, Trash2, Loader2, CheckCircle, XCircle, RefreshCw, FolderSync } from 'lucide-react';
+import { Terminal as TerminalIcon, FolderSync, RefreshCw, Trash2, Loader2 } from 'lucide-react';
+import '@xterm/xterm/css/xterm.css';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { daytonaApi } from '@/lib/api/daytona';
 import { useProject } from '@/contexts/project-context';
 import { toast } from 'sonner';
-
-interface TerminalLine {
-  id: string;
-  type: 'input' | 'output' | 'error' | 'system';
-  content: string;
-  timestamp: Date;
-  isPrompt?: boolean; // true for "$ " prompt line
-}
 
 interface SandboxTerminalProps {
   workspaceId?: string;
@@ -23,101 +15,175 @@ interface SandboxTerminalProps {
 
 type InitStage = 'idle' | 'creating' | 'syncing' | 'ready';
 
-export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: SandboxTerminalProps) {
+export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorkspaceCreate }: SandboxTerminalProps) {
   const { currentProject } = useProject();
-
-  // Only show terminal for ROS projects
   const isRosProject = currentProject?.project_type === 'ros';
 
-  const [lines, setLines] = useState<TerminalLine[]>([]);
-  const [input, setInput] = useState('');
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [currentWorkspaceId, setCurrentWorkspaceId] = useState(workspaceId);
+  const terminalDivRef = useRef<HTMLDivElement>(null);
+  // Using `any` to avoid importing xterm types at module level (SSR safety)
+  const xtermRef = useRef<any>(null);
+  const fitAddonRef = useRef<any>(null);
+  const onDataDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | undefined>(workspaceIdProp);
   const [initStage, setInitStage] = useState<InitStage>('idle');
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isTerminalReady, setIsTerminalReady] = useState(false);
 
-  // Initialize terminal message based on project type
+  // ── 1. Initialise xterm inside useEffect (browser-only) ──────────────────
   useEffect(() => {
-    if (currentProject) {
-      const welcomeMessages: TerminalLine[] = isRosProject
-        ? [
-            {
-              id: '0',
-              type: 'system',
-              content: '🤖 ROS Sandbox Terminal - Ready for ROS development',
-              timestamp: new Date(),
-            },
-            {
-              id: '1',
-              type: 'system',
-              content: '📁 Project files: /home/daytona/project | Auto-sync enabled',
-              timestamp: new Date(),
-            },
-            {
-              id: '2',
-              type: 'system',
-              content: '💡 Quick start: roscore | rosrun | rostopic list | rosmsg show',
-              timestamp: new Date(),
-            },
-          ]
-        : [
-            {
-              id: '0',
-              type: 'system',
-              content: 'Sandbox Terminal - Available only for ROS projects',
-              timestamp: new Date(),
-            },
-          ];
-      setLines(welcomeMessages);
-    }
-  }, [isRosProject, currentProject?.id]);
+    if (!terminalDivRef.current || !isRosProject) return;
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [lines]);
+    let disposed = false;
+    let term: any;
+    let fitAddon: any;
 
-  useEffect(() => {
-    if (workspaceId) {
-      setCurrentWorkspaceId(workspaceId);
-    }
-  }, [workspaceId]);
+    (async () => {
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
+        import('@xterm/xterm') as any,
+        import('@xterm/addon-fit') as any,
+      ]);
 
-  const addLine = (type: TerminalLine['type'], content: string, isPrompt: boolean = false) => {
-    setLines((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString() + Math.random(),
-        type,
-        content,
-        timestamp: new Date(),
-        isPrompt,
-      },
-    ]);
-  };
+      if (disposed || !terminalDivRef.current) return;
 
+      term = new Terminal({
+        cursorBlink: true,
+        scrollback: 5000,
+        theme: {
+          background: '#1e1e1e',
+          foreground: '#cccccc',
+          cursor: '#4ec9b0',
+          selectionBackground: '#264f78',
+          black: '#1e1e1e',
+          red: '#cd3131',
+          green: '#0dbc79',
+          yellow: '#e5e510',
+          blue: '#2472c8',
+          magenta: '#bc3fbc',
+          cyan: '#11a8cd',
+          white: '#e5e5e5',
+          brightBlack: '#666666',
+          brightRed: '#f14c4c',
+          brightGreen: '#23d18b',
+          brightYellow: '#f5f543',
+          brightBlue: '#3b8eea',
+          brightMagenta: '#d670d6',
+          brightCyan: '#29b8db',
+          brightWhite: '#e5e5e5',
+        },
+        fontFamily: '"JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace',
+        fontSize: 13,
+        lineHeight: 1.2,
+        allowProposedApi: true,
+      });
+
+      fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(terminalDivRef.current);
+      fitAddon.fit();
+
+      xtermRef.current = term;
+      fitAddonRef.current = fitAddon;
+      setIsTerminalReady(true);
+    })();
+
+    return () => {
+      disposed = true;
+      term?.dispose();
+      xtermRef.current = null;
+      fitAddonRef.current = null;
+      setIsTerminalReady(false);
+    };
+  }, [isRosProject]);
+
+  // ── 2. Connect to the PTY WebSocket ──────────────────────────────────────
+  const connectToTerminal = useCallback((wsId: string) => {
+    if (wsRef.current) return; // already connected
+
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+    const wsBase = apiBase.replace(/^http/, 'ws');
+    const wsUrl = `${wsBase}/ws/pty/${wsId}`;
+
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setIsConnected(true);
+      // Fit once and send initial size
+      const fitAddon = fitAddonRef.current;
+      const term = xtermRef.current;
+      if (fitAddon && term) {
+        fitAddon.fit();
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      }
+
+      // Wire xterm keystrokes → WebSocket (dispose previous listener if any)
+      onDataDisposableRef.current?.dispose();
+      if (term) {
+        onDataDisposableRef.current = term.onData((data: string) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(data);
+        });
+      }
+
+      // ResizeObserver → fit + send resize
+      if (terminalDivRef.current && fitAddon) {
+        resizeObserverRef.current?.disconnect();
+        const observer = new ResizeObserver(() => {
+          fitAddon.fit();
+          const t = xtermRef.current;
+          if (t && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'resize', cols: t.cols, rows: t.rows }));
+          }
+        });
+        observer.observe(terminalDivRef.current);
+        resizeObserverRef.current = observer;
+      }
+    };
+
+    ws.onmessage = (event) => {
+      const term = xtermRef.current;
+      if (!term) return;
+      if (event.data instanceof ArrayBuffer) {
+        term.write(new Uint8Array(event.data));
+      } else {
+        term.write(event.data as string);
+      }
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+      xtermRef.current?.write('\r\n\x1b[33m[Connection closed]\x1b[0m\r\n');
+      wsRef.current = null;
+      resizeObserverRef.current?.disconnect();
+    };
+
+    ws.onerror = () => {
+      setIsConnected(false);
+      xtermRef.current?.write('\r\n\x1b[31m[WebSocket error]\x1b[0m\r\n');
+    };
+  }, []);
+
+  // ── 3. Create workspace then connect ─────────────────────────────────────
   const ensureWorkspace = useCallback(async (): Promise<string | null> => {
     if (currentWorkspaceId) return currentWorkspaceId;
 
     if (!isRosProject) {
-      addLine('error', 'Daytona sandboxes are only available for ROS projects');
+      xtermRef.current?.write('\r\n\x1b[31mDaytona sandboxes are only available for ROS projects\x1b[0m\r\n');
       return null;
     }
 
-    const projectId = currentProject?.id || 'terminal-session';
+    const projectId = currentProject?.id;
+    if (!projectId) return null;
 
-    // Stage 1: Creating sandbox environment
     setInitStage('creating');
-    addLine('system', 'Creating sandbox environment...');
+    xtermRef.current?.write('\x1b[33mCreating sandbox environment…\x1b[0m\r\n');
 
     try {
-      // Stage 2: The backend creates the sandbox AND syncs files
       setInitStage('syncing');
-      addLine('system', 'Syncing project files to sandbox...');
+      xtermRef.current?.write('\x1b[33mSyncing project files…\x1b[0m\r\n');
 
       const workspace = await daytonaApi.createWorkspace(projectId);
       const wsId = workspace.workspace_id;
@@ -125,252 +191,122 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
       setCurrentWorkspaceId(wsId);
       onWorkspaceCreate?.(wsId);
 
-      // Show sync results
       if (workspace.files_synced > 0) {
-        addLine(
-          'system',
-          `Synced ${workspace.files_synced} project file${workspace.files_synced !== 1 ? 's' : ''} to sandbox`
+        xtermRef.current?.write(
+          `\x1b[32m✓ Synced ${workspace.files_synced} file${workspace.files_synced !== 1 ? 's' : ''}\x1b[0m\r\n`
         );
       }
 
-      if (workspace.sync_status === 'partial') {
-        addLine('error', 'Warning: Some files failed to sync');
-      }
-
-      // Stage 3: Ready
       setInitStage('ready');
-      addLine(
-        'system',
-        `Sandbox ready (${wsId.slice(0, 12)}...) - working directory: /home/daytona/project`
-      );
-
       return wsId;
     } catch (error) {
-      addLine('error', `Failed to create sandbox: ${error}`);
+      xtermRef.current?.write(`\r\n\x1b[31mFailed to create sandbox: ${error}\x1b[0m\r\n`);
       toast.error('Failed to create sandbox');
       return null;
     } finally {
       setInitStage('idle');
     }
-  }, [currentWorkspaceId, currentProject?.id, onWorkspaceCreate]);
+  }, [currentWorkspaceId, currentProject?.id, onWorkspaceCreate, isRosProject]);
 
-  const executeCommand = async () => {
-    if (!input.trim() || isExecuting) return;
+  // ── 4. Auto-init: create workspace once terminal is ready ─────────────────
+  useEffect(() => {
+    if (!isTerminalReady || !isRosProject) return;
+    ensureWorkspace();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTerminalReady, isRosProject]);
 
-    const command = input.trim();
+  // ── 5. Connect PTY once workspace ID is set ───────────────────────────────
+  useEffect(() => {
+    if (!currentWorkspaceId || !isTerminalReady || wsRef.current) return;
+    connectToTerminal(currentWorkspaceId);
+  }, [currentWorkspaceId, isTerminalReady, connectToTerminal]);
 
-    // Add command to history and display
-    setHistory((prev) => [command, ...prev]);
-    setHistoryIndex(-1);
-    addLine('input', `$ ${command}`, true);
-    setInput('');
-    setIsExecuting(true);
+  // ── 6. Cleanup on unmount ─────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      wsRef.current?.close();
+      wsRef.current = null;
+      resizeObserverRef.current?.disconnect();
+      onDataDisposableRef.current?.dispose();
+    };
+  }, []);
 
-    try {
-      const wsId = await ensureWorkspace();
-      if (!wsId) {
-        setIsExecuting(false);
-        return;
-      }
-
-      // Auto-sync files before executing command
-      if (currentProject?.id) {
-        try {
-          const syncResult = await daytonaApi.syncFiles(wsId, currentProject.id);
-          if (syncResult.files_synced > 0) {
-          }
-          if (syncResult.errors.length > 0) {
-            syncResult.errors.slice(0, 3).forEach(err => addLine('error', err));
-          }
-        } catch (syncError) {
-          addLine('error', `Sync warning: ${syncError}`);
-          // Continue anyway - files might still be there from initial sync
-        }
-      }
-
-      const result = await daytonaApi.executeCode({
-        workspace_id: wsId,
-        code: command,
-        language: 'shell',
-        timeout: 30,
-      });
-
-      // Display output
-      if (result.stdout.trim()) {
-        addLine('output', result.stdout);
-      }
-
-      // Display errors if any
-      if (!result.success) {
-        if (result.stderr.trim()) {
-          addLine('error', result.stderr);
-        }
-        if (result.error) {
-          addLine('error', result.error);
-        }
-      }
-    } catch (error) {
-      addLine('error', `Error: ${error}`);
-      toast.error('Command failed');
-    } finally {
-      setIsExecuting(false);
-      inputRef.current?.focus();
-    }
-  };
-
+  // ── Actions ───────────────────────────────────────────────────────────────
   const resyncFiles = async () => {
     if (!currentWorkspaceId || !currentProject?.id) {
       toast.error('No active sandbox or project');
       return;
     }
-
     setInitStage('syncing');
-    addLine('system', 'Re-syncing project files...');
-
+    xtermRef.current?.write('\r\n\x1b[33mRe-syncing project files…\x1b[0m\r\n');
     try {
       const result = await daytonaApi.syncFiles(currentWorkspaceId, currentProject.id);
-      addLine(
-        'system',
-        `Synced ${result.files_synced} file${result.files_synced !== 1 ? 's' : ''} (${result.sync_status})`
+      xtermRef.current?.write(
+        `\x1b[32m✓ Synced ${result.files_synced} file${result.files_synced !== 1 ? 's' : ''}\x1b[0m\r\n`
       );
-      if (result.errors.length > 0) {
-        result.errors.forEach((err) => addLine('error', err));
-      }
     } catch (error) {
-      addLine('error', `Sync failed: ${error}`);
+      xtermRef.current?.write(`\x1b[31mSync failed: ${error}\x1b[0m\r\n`);
       toast.error('File sync failed');
     } finally {
       setInitStage('idle');
     }
   };
 
-  const clearTerminal = () => {
-    setLines([
-      {
-        id: Date.now().toString(),
-        type: 'system',
-        content: 'Terminal cleared',
-        timestamp: new Date(),
-      },
-    ]);
-  };
+  const clearTerminal = () => xtermRef.current?.clear();
 
   const resetSandbox = async () => {
+    wsRef.current?.close();
+    wsRef.current = null;
+    setIsConnected(false);
     if (currentWorkspaceId) {
-      try {
-        await daytonaApi.stopWorkspace(currentWorkspaceId);
-      } catch {
-        // Ignore cleanup errors
-      }
+      try { await daytonaApi.stopWorkspace(currentWorkspaceId); } catch { /* ignore */ }
     }
     setCurrentWorkspaceId(undefined);
     setInitStage('idle');
-    setLines([
-      {
-        id: Date.now().toString(),
-        type: 'system',
-        content: 'Sandbox reset. A new sandbox will be created on next execution.',
-        timestamp: new Date(),
-      },
-    ]);
+    xtermRef.current?.write('\r\n\x1b[33mSandbox reset. Reconnecting…\x1b[0m\r\n');
+    // Trigger recreation
+    setTimeout(() => ensureWorkspace(), 500);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      executeCommand();
-    } else if (e.key === 'ArrowUp' && !e.shiftKey) {
-      e.preventDefault();
-      if (history.length > 0 && historyIndex < history.length - 1) {
-        const newIndex = historyIndex + 1;
-        setHistoryIndex(newIndex);
-        setInput(history[newIndex]);
-      }
-    } else if (e.key === 'ArrowDown' && !e.shiftKey) {
-      e.preventDefault();
-      if (historyIndex > 0) {
-        const newIndex = historyIndex - 1;
-        setHistoryIndex(newIndex);
-        setInput(history[newIndex]);
-      } else if (historyIndex === 0) {
-        setHistoryIndex(-1);
-        setInput('');
-      }
-    }
-  };
+  const isInitializing = initStage === 'creating' || initStage === 'syncing';
 
-  const getLineColor = (type: TerminalLine['type']) => {
-    switch (type) {
-      case 'input':
-        return 'text-[#4ec9b0] font-medium';
-      case 'output':
-        return 'text-[#cccccc] font-normal';
-      case 'error':
-        return 'text-[#f48771] font-medium';
-      case 'system':
-        return 'text-[#ce9178] font-medium';
-      default:
-        return 'text-[#cccccc]';
-    }
-  };
-
-  const getLineIcon = (type: TerminalLine['type']) => {
-    switch (type) {
-      case 'input':
-        return <Play size={12} className="text-[#4ec9b0]" />;
-      case 'output':
-        return <CheckCircle size={12} className="text-[#6a9955]" />;
-      case 'error':
-        return <XCircle size={12} className="text-[#f48771]" />;
-      case 'system':
-        return <Terminal size={12} className="text-[#ce9178]" />;
-      default:
-        return null;
-    }
-  };
-
-  const getInitStageLabel = () => {
-    switch (initStage) {
-      case 'creating':
-        return 'Creating sandbox...';
-      case 'syncing':
-        return 'Syncing files...';
-      default:
-        return '';
-    }
-  };
-
-  const isInitializing = initStage !== 'idle' && initStage !== 'ready';
+  if (!isRosProject) {
+    return (
+      <div className="h-full flex items-center justify-center bg-[#1e1e1e] text-[#858585] font-mono text-sm">
+        Terminal available for ROS projects only
+      </div>
+    );
+  }
 
   return (
-    <div className="h-full flex flex-col bg-[#1e1e1e] font-mono text-sm">
+    <div className="h-full flex flex-col bg-[#1e1e1e] font-mono">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] bg-[#252526]">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] bg-[#252526] flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Terminal size={16} className="text-[#4ec9b0]" />
+            <TerminalIcon size={16} className="text-[#4ec9b0]" />
             <span className="font-semibold text-sm text-[#cccccc]">Sandbox Terminal</span>
           </div>
           {currentWorkspaceId && (
             <>
               <div className="h-4 w-px bg-[#3e3e42]" />
-              <span className="text-xs text-[#858585] font-medium">
-                {currentWorkspaceId.slice(0, 12)}...
-              </span>
+              <span className="text-xs text-[#858585]">{currentWorkspaceId.slice(0, 12)}…</span>
               <span
-                className="text-[10px] px-2 py-0.5 bg-[#0e639c] text-white font-medium rounded-sm"
-                title="Files auto-sync before each command"
+                className={`text-[10px] px-2 py-0.5 font-medium rounded-sm ${
+                  isConnected ? 'bg-[#0e639c] text-white' : 'bg-[#3e3e42] text-[#858585]'
+                }`}
               >
-                Auto-sync
+                {isConnected ? 'Connected' : 'Disconnected'}
               </span>
             </>
           )}
         </div>
+
         <div className="flex items-center gap-1">
           {isInitializing && (
-            <span className="text-xs text-[#ce9178] font-medium flex items-center gap-1.5 px-2 py-1">
+            <span className="text-xs text-[#ce9178] flex items-center gap-1.5 px-2 py-1">
               <Loader2 size={12} className="animate-spin" />
-              {getInitStageLabel()}
+              {initStage === 'creating' ? 'Creating…' : 'Syncing…'}
             </span>
           )}
           {currentWorkspaceId && currentProject?.id && (
@@ -409,82 +345,12 @@ export default function SandboxTerminal({ workspaceId, onWorkspaceCreate }: Sand
         </div>
       </div>
 
-      {/* Terminal Output */}
-      <ScrollArea className="flex-1 p-4 bg-[#1e1e1e]" ref={scrollRef}>
-        <div className="space-y-1">
-          {lines.map((line) => (
-            <div key={line.id} className="flex items-start gap-2 font-mono text-[13px] leading-relaxed">
-              {line.isPrompt ? (
-                <pre className={`flex-1 whitespace-pre-wrap break-words ${getLineColor(line.type)}`}>
-                  {line.content}
-                </pre>
-              ) : (
-                <>
-                  <span className="flex-shrink-0 mt-0.5">
-                    {getLineIcon(line.type)}
-                  </span>
-                  <pre className={`flex-1 whitespace-pre-wrap break-words ${getLineColor(line.type)}`}>
-                    {line.content}
-                  </pre>
-                </>
-              )}
-            </div>
-          ))}
-          {isExecuting && (
-            <div className="flex items-center gap-2 text-[#858585] font-medium py-1">
-              <Loader2 size={12} className="animate-spin" />
-              <span className="text-xs">Executing command...</span>
-            </div>
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* Input Area */}
-      <div className="border-t border-[#2d2d2d] bg-[#252526] p-3">
-        <div className="flex items-start gap-2 bg-[#1e1e1e] border border-[#3e3e42] rounded px-3 py-2 focus-within:border-[#007acc] transition-colors">
-          <span className="text-[#4ec9b0] font-semibold text-sm mt-0.5 flex-shrink-0">$</span>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isRosProject ? 'Type a command...' : 'Terminal available for ROS projects only'}
-            disabled={isExecuting || isInitializing || !isRosProject}
-            className="flex-1 bg-transparent border-none outline-none text-[#cccccc] placeholder:text-[#6a6a6a] font-mono text-sm disabled:opacity-50 resize-none min-h-[20px] max-h-[120px]"
-            rows={1}
-            autoFocus
-          />
-          <Button
-            onClick={executeCommand}
-            size="sm"
-            disabled={isExecuting || isInitializing || !input.trim() || !isRosProject}
-            className="h-7 px-3 bg-[#0e639c] hover:bg-[#1177bb] text-white border-none flex-shrink-0 font-medium rounded transition-colors"
-          >
-            {isExecuting ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <>
-                <Play size={14} className="mr-1" />
-                <span className="text-xs">Run</span>
-              </>
-            )}
-          </Button>
-        </div>
-        <div className="mt-2 text-[10px] text-[#858585] font-medium flex items-center gap-4 px-1">
-          <span className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 bg-[#3e3e42] text-[#cccccc] rounded text-[9px] font-mono">Enter</kbd>
-            Execute
-          </span>
-          <span className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 bg-[#3e3e42] text-[#cccccc] rounded text-[9px] font-mono">Shift+Enter</kbd>
-            New line
-          </span>
-          <span className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 bg-[#3e3e42] text-[#cccccc] rounded text-[9px] font-mono">↑ ↓</kbd>
-            History
-          </span>
-        </div>
-      </div>
+      {/* xterm.js mount point */}
+      <div
+        ref={terminalDivRef}
+        className="flex-1 overflow-hidden"
+        style={{ padding: '4px 8px' }}
+      />
     </div>
   );
 }
