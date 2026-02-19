@@ -1,0 +1,60 @@
+# ROS Humble Development Environment
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Set locale
+RUN apt-get update && apt-get install -y locales \
+    && locale-gen en_US en_US.UTF-8 \
+    && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8
+
+# Install required packages
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg2 \
+    lsb-release \
+    software-properties-common \
+    wget \
+    git \
+    vim \
+    nano \
+    build-essential \
+    python3-pip \
+    python3-rosdep \
+    python3-colcon-common-extensions \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add ROS 2 repository
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+# Install ROS Humble
+RUN apt-get update && apt-get install -y \
+    ros-humble-ros-base \
+    ros-humble-ros-core \
+    ros-dev-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Initialize rosdep
+RUN rosdep init || true \
+    && rosdep update
+
+# Set up ROS environment automatically for all users
+RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
+
+# Create workspace directory
+RUN mkdir -p /home/daytona/project
+WORKDIR /home/daytona/project
+
+# Set up entrypoint to source ROS
+RUN echo '#!/bin/bash\nsource /opt/ros/humble/setup.bash\nexec "$@"' > /entrypoint.sh \
+    && chmod +x /entrypoint.sh
+
+ENV ROS_DISTRO=humble
+ENV ROS_VERSION=2
+ENV ROS_PYTHON_VERSION=3
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/bin/bash"]
