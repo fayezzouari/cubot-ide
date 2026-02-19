@@ -11,7 +11,7 @@ export default function FolderActionButton({ onCreateFile, folderPath }: FolderA
   const [hovered, setHovered] = useState(false);
   return (
     <button
-      className={`ml-1 p-0.5 rounded hover:bg-sidebar-accent transition-colors ${hovered ? 'bg-sidebar-accent' : ''}`}
+      className={`ml-1 p-0.5 rounded hover:bg-sidebar-accent transition-colors cursor-pointer ${hovered ? 'bg-sidebar-accent' : ''}`}
       title="Create file in this folder"
       onClick={e => {
         e.stopPropagation();
