@@ -38,12 +38,10 @@ export default function FileTreeItem({
   const isSelected = selectedFile === node.id;
   const isSandbox = (node.source ?? source) === 'sandbox';
 
-  const [hovered, setHovered] = useState(false);
+  // Only show + button for the hovered folder row, not parent
+  const [rowHovered, setRowHovered] = useState(false);
   return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+    <div>
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
@@ -58,6 +56,8 @@ export default function FileTreeItem({
                 onSelectFile(node.id);
               }
             }}
+            onMouseEnter={() => setRowHovered(true)}
+            onMouseLeave={() => setRowHovered(false)}
           >
             {isFolder ? (
               <>
@@ -71,7 +71,7 @@ export default function FileTreeItem({
                   {node.name}
                 </span>
                 {/* Add + button for creating files in this folder, visible only on hover */}
-                {onCreateFile && hovered && (
+                {onCreateFile && rowHovered && (
                   <span className="ml-auto">
                     <FolderActionButton
                       onCreateFile={onCreateFile}
