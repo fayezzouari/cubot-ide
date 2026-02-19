@@ -11,11 +11,13 @@ import { toast } from 'sonner';
 interface SandboxTerminalProps {
   workspaceId?: string;
   onWorkspaceCreate?: (workspaceId: string) => void;
+  /** Called after a project→sandbox sync completes so the parent can pull new sandbox files back. */
+  onSyncComplete?: (workspaceId: string) => void;
 }
 
 type InitStage = 'idle' | 'creating' | 'syncing' | 'ready';
 
-export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorkspaceCreate }: SandboxTerminalProps) {
+export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorkspaceCreate, onSyncComplete }: SandboxTerminalProps) {
   const { currentProject } = useProject();
   const isRosProject = currentProject?.project_type === 'ros';
 
@@ -244,6 +246,8 @@ export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorksp
       xtermRef.current?.write(
         `\x1b[32m✓ Synced ${result.files_synced} file${result.files_synced !== 1 ? 's' : ''}\x1b[0m\r\n`
       );
+      // Notify parent so it can pull any new sandbox files back into the project
+      onSyncComplete?.(currentWorkspaceId);
     } catch (error) {
       xtermRef.current?.write(`\x1b[31mSync failed: ${error}\x1b[0m\r\n`);
       toast.error('File sync failed');

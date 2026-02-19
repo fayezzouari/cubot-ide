@@ -32,7 +32,7 @@ export default function FileTreeItem({
   const [isOpen, setIsOpen] = useState(true);
   const isFolder = node.type === 'folder';
   const isSelected = selectedFile === node.id;
-  const isSandbox = source === 'sandbox';
+  const isSandbox = (node.source ?? source) === 'sandbox';
 
   return (
     <div>
