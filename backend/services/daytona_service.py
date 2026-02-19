@@ -362,8 +362,13 @@ class DaytonaService:
             f" && printf '%s' '{setup_cfg}' > {pkg_dir}/setup.cfg"
             f" && touch {resource_dir}/{pkg_name}"
             f" && touch {py_dir}/__init__.py"
-            f" && grep -qxF 'source /opt/ros/humble/setup.bash' /home/daytona/.bashrc"
-            f" || echo 'source /opt/ros/humble/setup.bash' >> /home/daytona/.bashrc"
+            # Write to system-wide locations so it works for root (PTY user) and any login shell.
+            f" && (grep -qxF 'source /opt/ros/humble/setup.bash' /etc/bash.bashrc"
+            f" || echo 'source /opt/ros/humble/setup.bash' >> /etc/bash.bashrc)"
+            f" && (grep -qxF 'source /opt/ros/humble/setup.bash' /root/.bashrc"
+            f" || echo 'source /opt/ros/humble/setup.bash' >> /root/.bashrc)"
+            f" && printf '#!/bin/bash\\nsource /opt/ros/humble/setup.bash\\n'"
+            f" > /etc/profile.d/ros-humble.sh && chmod +x /etc/profile.d/ros-humble.sh"
         )
 
         try:
@@ -930,6 +935,21 @@ class DaytonaService:
             # Ensure the toolbox URL is initialised (blocking)
             sandbox.process._ensure_toolbox_url()
 
+            # Guarantee ROS is sourced in every shell type and for every user.
+            # The PTY runs as root so ~/.bashrc = /root/.bashrc, not /home/daytona/.bashrc.
+            # Ubuntu-patched bash also auto-sources /etc/bash.bashrc for interactive
+            # non-login shells, and /etc/profile.d/*.sh is sourced for login shells.
+            sandbox.process.exec(
+                "/bin/bash -c '"
+                "ROS_LINE=\"source /opt/ros/humble/setup.bash\"; "
+                "grep -qxF \"$ROS_LINE\" /etc/bash.bashrc   || echo \"$ROS_LINE\" >> /etc/bash.bashrc; "
+                "grep -qxF \"$ROS_LINE\" /root/.bashrc      || echo \"$ROS_LINE\" >> /root/.bashrc; "
+                "printf \"#!/bin/bash\\n$ROS_LINE\\n\" > /etc/profile.d/ros-humble.sh; "
+                "chmod +x /etc/profile.d/ros-humble.sh"
+                "'",
+                timeout=5,
+            )
+
             # Create the PTY session via the toolbox API
             response = sandbox.process._api_client.create_pty_session(
                 request=PtyCreateRequest(
@@ -938,6 +958,9 @@ class DaytonaService:
                     envs={
                         "TERM": "xterm-256color",
                         "COLORTERM": "truecolor",
+                        "ROS_DISTRO": "humble",
+                        "ROS_VERSION": "2",
+                        "ROS_PYTHON_VERSION": "3",
                     },
                     cols=cols,
                     rows=rows,
