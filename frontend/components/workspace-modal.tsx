@@ -103,6 +103,9 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
   const handleCreateProject = async () => {
     if (!selectedType) return;
     setIsCreating(true);
+    // Keep track of the new project ID so the catch block can still navigate
+    // to the correct project even if a non-critical step (e.g. file creation) fails.
+    let newProjectId: string | null = null;
     try {
       // Create a new project
       const project = await createProject(
@@ -111,18 +114,20 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
         selectedType === 'ide' ? selectedCompiler : 'arduino',
         selectedType === 'ide' ? (selectedProjectType as ProjectType) : undefined
       );
-      
+      newProjectId = project.id;
+
       // Save project ID and workspace type to localStorage
       localStorage.setItem('cubot-ide-last-project', project.id);
       localStorage.setItem(`cubot-ide-project-workspace-${project.id}`, selectedType);
-      
+
       // Load the project to set it as current (IDE/Blocks only)
       if (selectedType !== 'cad') {
         await loadProject(project.id);
       }
-      
-      // Create an initial file for IDE projects
-      if (selectedType === 'ide') {
+
+      // Create a starter file only for embedded IDE projects.
+      // ROS projects get their scaffold files from the sandbox (via auto-sync).
+      if (selectedType === 'ide' && selectedProjectType !== 'ros') {
         try {
           await createFile('main.ino', 'main.ino', STARTER_CODE, 'ino');
           console.log('Created initial file for project');
@@ -130,9 +135,9 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
           console.error('Failed to create initial file:', fileError);
         }
       }
-      
+
       onOpenChange(false);
-      
+
       // Navigate with project ID
       if (selectedType === 'ide') {
         router.push(`/ide?project=${project.id}`);
@@ -143,14 +148,16 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       }
     } catch (error) {
       console.error('Failed to create project:', error);
-      // Fallback: navigate without project (will use mock data)
       onOpenChange(false);
+      // If the project was created before the error, navigate to it.
+      // Otherwise fall back to the dashboard so the user doesn't land
+      // on a stale/wrong project.
       if (selectedType === 'ide') {
-        router.push('/ide');
+        router.push(newProjectId ? `/ide?project=${newProjectId}` : '/dashboard');
       } else if (selectedType === 'blocks') {
-        router.push('/blocks');
+        router.push(newProjectId ? `/blocks?project=${newProjectId}` : '/dashboard');
       } else {
-        router.push(`/cad?project=cad-${Date.now()}`);
+        router.push(newProjectId ? `/cad?project=${newProjectId}` : '/dashboard');
       }
     } finally {
       setIsCreating(false);

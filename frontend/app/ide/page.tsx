@@ -6,7 +6,7 @@ import { daytonaApi, type SandboxFileEntry } from '@/lib/api/daytona';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
-import { compileService, chatService, projectService } from '@/lib/api';
+import { compileService, chatService, projectService, fileService } from '@/lib/api';
 import type { CompilerType } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
 import { mockMessages as initialMessages, type FileNode, type ChatMessage } from '@/lib/mock-data';
@@ -158,16 +158,77 @@ export default function IDEPage() {
     return tree;
   }, [sandboxEntries]);
 
-  // Called by SandboxTerminal when a workspace is created
+  // Determine the full relative path for a project file (dir + name)
+  const projectFilePaths = useMemo(() => {
+    if (!currentProject?.files) return new Set<string>();
+    return new Set(
+      currentProject.files.map(f => {
+        const dir = f.path && f.path !== '/' && f.path !== '.'
+          ? f.path.replace(/^\//, '').replace(/\/$/, '') + '/'
+          : '';
+        return dir + f.name;
+      })
+    );
+  }, [currentProject?.files]);
+
+  // Called by SandboxTerminal when a workspace is created/reconnected.
+  // Lists sandbox files, then auto-imports any src/ files that are not yet
+  // tracked in the project (e.g. the ROS scaffold created during setup).
   const handleWorkspaceCreate = useCallback(async (wsId: string) => {
     setActiveWorkspaceId(wsId);
     try {
       const result = await daytonaApi.listFiles(wsId);
       setSandboxEntries(result.entries);
+
+      if (!currentProject) return;
+
+      // Only consider files under src/ — skip build/, install/, log/ artifacts
+      const srcFiles = result.entries.filter(
+        e => e.type === 'file' && e.path.startsWith('src/')
+      );
+
+      const missing = srcFiles.filter(e => !projectFilePaths.has(e.path));
+      if (missing.length === 0) return;
+
+      console.log(`[workspace sync] importing ${missing.length} missing sandbox file(s)…`);
+
+      const fileTypeMap: Record<string, string> = {
+        c: 'c', cpp: 'cpp', h: 'h', hpp: 'hpp', ino: 'ino',
+        py: 'py', txt: 'txt', md: 'md', json: 'json',
+        xml: 'other', cfg: 'other', toml: 'other',
+      };
+
+      let imported = 0;
+      for (const entry of missing) {
+        try {
+          const { content } = await daytonaApi.getFileContent(wsId, entry.path);
+          const parts = entry.path.split('/');
+          const fileName = parts[parts.length - 1];
+          const filePath = parts.slice(0, -1).join('/');
+          const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+          const fileType = fileTypeMap[ext] ?? 'other';
+
+          await fileService.create({
+            project_id: currentProject.id,
+            name: fileName,
+            path: filePath,
+            content,
+            file_type: fileType as any,
+          });
+          imported++;
+        } catch (err) {
+          console.error(`[workspace sync] failed to import ${entry.path}:`, err);
+        }
+      }
+
+      if (imported > 0) {
+        console.log(`[workspace sync] imported ${imported} file(s), refreshing project…`);
+        await loadProject(currentProject.id);
+      }
     } catch (err) {
       console.error('Failed to list sandbox files:', err);
     }
-  }, []);
+  }, [currentProject, projectFilePaths, loadProject]);
 
   // Import a sandbox file into the IDE (MongoDB) on click
   const handleSandboxFileClick = useCallback(async (nodeId: string) => {
