@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { Loader2, Plus } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Loader2, Plus, ChevronDown, ChevronRight, HardDrive } from 'lucide-react';
+import { daytonaApi, type SandboxFileEntry } from '@/lib/api/daytona';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
@@ -54,6 +55,12 @@ export default function IDEPage() {
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [newFileNameInput, setNewFileNameInput] = useState('');
 
+  // Sandbox file tree state
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [sandboxEntries, setSandboxEntries] = useState<SandboxFileEntry[]>([]);
+  const [sandboxSectionOpen, setSandboxSectionOpen] = useState(true);
+  const [isImportingFile, setIsImportingFile] = useState(false);
+
   // Convert project files to file tree structure
   const projectFileTree = useMemo((): FileNode[] => {
     if (!currentProject?.files || currentProject.files.length === 0) {
@@ -104,6 +111,91 @@ export default function IDEPage() {
     }
     return [];
   }, [currentProject?.files, projectFileTree]);
+
+  // Build sandbox file tree using explicit type info from the backend.
+  // The backend returns both files AND directories with a 'type' field, so we
+  // never have to guess whether a path segment is a file or a folder.
+  const sandboxFileTree = useMemo((): FileNode[] => {
+    if (sandboxEntries.length === 0) return [];
+
+    const tree: FileNode[] = [];
+    // Map from relative path → FileNode (for directories only)
+    const folderMap: Record<string, FileNode> = {};
+
+    // Sort so parent directories always come before their children
+    const sorted = [...sandboxEntries].sort((a, b) => a.path.localeCompare(b.path));
+
+    // First pass: create folder nodes
+    sorted.filter(e => e.type === 'dir').forEach(entry => {
+      const parts = entry.path.split('/');
+      const name = parts[parts.length - 1];
+      folderMap[entry.path] = { id: `sandbox-folder:${entry.path}`, name, type: 'folder', children: [] };
+    });
+
+    // Second pass: place every entry under its parent
+    sorted.forEach(entry => {
+      const parts = entry.path.split('/');
+      const parentPath = parts.slice(0, -1).join('/');
+      const name = parts[parts.length - 1];
+
+      const node: FileNode = entry.type === 'dir'
+        ? folderMap[entry.path]
+        : { id: `sandbox:${entry.path}`, name, type: 'file' };
+
+      if (!parentPath) {
+        tree.push(node);
+      } else {
+        const parent = folderMap[parentPath];
+        if (parent) {
+          parent.children!.push(node);
+        } else {
+          // Orphaned entry — fallback to root
+          tree.push(node);
+        }
+      }
+    });
+
+    return tree;
+  }, [sandboxEntries]);
+
+  // Called by SandboxTerminal when a workspace is created
+  const handleWorkspaceCreate = useCallback(async (wsId: string) => {
+    setActiveWorkspaceId(wsId);
+    try {
+      const result = await daytonaApi.listFiles(wsId);
+      setSandboxEntries(result.entries);
+    } catch (err) {
+      console.error('Failed to list sandbox files:', err);
+    }
+  }, []);
+
+  // Import a sandbox file into the IDE (MongoDB) on click
+  const handleSandboxFileClick = useCallback(async (nodeId: string) => {
+    if (!activeWorkspaceId || !currentProject || isImportingFile) return;
+    const relPath = nodeId.replace(/^sandbox:/, '');
+    const parts = relPath.split('/');
+    const fileName = parts[parts.length - 1];
+    const filePath = parts.slice(0, -1).join('/') || '/';
+
+    setIsImportingFile(true);
+    try {
+      const { content } = await daytonaApi.getFileContent(activeWorkspaceId, relPath);
+      const ext = fileName.split('.').pop()?.toLowerCase() || '';
+      const fileTypeMap: Record<string, string> = {
+        c: 'c', cpp: 'cpp', h: 'h', hpp: 'hpp', ino: 'ino',
+        py: 'py', txt: 'txt', md: 'md', json: 'json',
+      };
+      const fileType = fileTypeMap[ext] || 'other';
+      const newFile = await createFile(fileName, filePath, content, fileType);
+      setSelectedFile(newFile.id);
+      setEditedContent(content);
+      setFileContents(prev => ({ ...prev, [newFile.id]: content }));
+    } catch (err) {
+      console.error('Failed to import sandbox file:', err);
+    } finally {
+      setIsImportingFile(false);
+    }
+  }, [activeWorkspaceId, currentProject, isImportingFile, createFile]);
 
   const handleSendMessage = async () => {
     if (!chatInput.trim() || !currentProject) return;
@@ -693,18 +785,57 @@ export default function IDEPage() {
                   <div className="py-2">
                     {displayFileTree.length > 0 ? (
                       displayFileTree.map((node) => (
-                        <FileTreeItem 
-                          key={node.id} 
+                        <FileTreeItem
+                          key={node.id}
                           node={node}
                           selectedFile={selectedFile}
                           onSelectFile={handleFileSelect}
                           onRenameFile={handleRenameFile}
                           onDeleteFile={handleDeleteFile}
+                          source="ide"
                         />
                       ))
                     ) : (
                       <div className="p-4 text-center text-muted-foreground text-sm">
                         No files in project
+                      </div>
+                    )}
+
+                    {/* Sandbox file tree — shown when a workspace is active */}
+                    {activeWorkspaceId && (
+                      <div className="mt-2">
+                        <button
+                          className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-white/5 transition-colors"
+                          onClick={() => setSandboxSectionOpen(o => !o)}
+                        >
+                          {sandboxSectionOpen
+                            ? <ChevronDown size={12} className="text-amber-500/60" />
+                            : <ChevronRight size={12} className="text-amber-500/60" />}
+                          <HardDrive size={12} className="text-amber-500/60" />
+                          <span className="font-medium text-[10px] uppercase tracking-widest text-amber-500/60 font-mono">
+                            Sandbox
+                          </span>
+                          {isImportingFile && <Loader2 size={10} className="animate-spin text-amber-500/60 ml-auto" />}
+                        </button>
+                        {sandboxSectionOpen && (
+                          sandboxFileTree.length > 0
+                            ? sandboxFileTree.map((node) => (
+                                <FileTreeItem
+                                  key={node.id}
+                                  node={node}
+                                  selectedFile={selectedFile}
+                                  onSelectFile={handleSandboxFileClick}
+                                  onRenameFile={() => {}}
+                                  onDeleteFile={() => {}}
+                                  source="sandbox"
+                                />
+                              ))
+                            : (
+                                <div className="px-4 py-2 text-[11px] text-amber-500/40 font-mono">
+                                  Loading…
+                                </div>
+                              )
+                        )}
                       </div>
                     )}
                   </div>
@@ -772,7 +903,7 @@ export default function IDEPage() {
 
                 {/* Sandbox Terminal - ROS Projects Only */}
                 <ResizablePanel defaultSize={35} minSize={20}>
-                  <SandboxTerminal />
+                  <SandboxTerminal onWorkspaceCreate={handleWorkspaceCreate} />
                 </ResizablePanel>
               </ResizablePanelGroup>
             ) : (

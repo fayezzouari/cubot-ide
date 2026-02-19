@@ -17,6 +17,7 @@ interface FileTreeItemProps {
   onSelectFile: (id: string) => void;
   onRenameFile: (id: string) => void;
   onDeleteFile: (id: string) => void;
+  source?: 'ide' | 'sandbox';
 }
 
 export default function FileTreeItem({
@@ -26,10 +27,12 @@ export default function FileTreeItem({
   onSelectFile,
   onRenameFile,
   onDeleteFile,
+  source = 'ide',
 }: FileTreeItemProps) {
   const [isOpen, setIsOpen] = useState(true);
   const isFolder = node.type === 'folder';
   const isSelected = selectedFile === node.id;
+  const isSandbox = source === 'sandbox';
 
   return (
     <div>
@@ -51,18 +54,25 @@ export default function FileTreeItem({
             {isFolder ? (
               <>
                 {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                {isOpen ? <FolderOpen size={14} /> : <Folder size={14} />}
+                {isOpen ? (
+                  <FolderOpen size={14} className={isSandbox ? 'text-amber-500/70' : ''} />
+                ) : (
+                  <Folder size={14} className={isSandbox ? 'text-amber-500/70' : ''} />
+                )}
               </>
             ) : (
               <>
                 <span className="w-3.5" />
-                <File size={14} />
+                <File size={14} className={isSandbox ? 'text-amber-500/60' : ''} />
               </>
             )}
-            <span className="truncate">{node.name}</span>
+            <span className={`truncate ${isSandbox ? 'text-amber-100/70' : ''}`}>
+              {node.name}
+            </span>
           </button>
         </ContextMenuTrigger>
-        {!isFolder && (
+        {/* Only show context menu for IDE-managed files */}
+        {!isFolder && !isSandbox && (
           <ContextMenuContent>
             <ContextMenuItem onClick={() => onRenameFile(node.id)}>
               Rename
@@ -87,6 +97,7 @@ export default function FileTreeItem({
               onSelectFile={onSelectFile}
               onRenameFile={onRenameFile}
               onDeleteFile={onDeleteFile}
+              source={source}
             />
           ))}
         </div>
