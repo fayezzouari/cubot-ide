@@ -98,7 +98,8 @@ class AIService:
                 messages=messages,
                 system_prompt=system_prompt,
                 tool_config=tool_config,
-                project_id=project_id
+                project_id=project_id,
+                max_iterations=20
             )
             
             # Save messages to database
