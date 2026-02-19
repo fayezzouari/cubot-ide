@@ -14,7 +14,7 @@ import TopBar from '@/components/ide/top-bar';
 import FileTreeItem from '@/components/ide/file-tree-item';
 import EditorPanel from '@/components/ide/editor-panel';
 import RightSidebar from '@/components/ide/right-sidebar';
-import SandboxTerminal from '@/components/ide/sandbox-terminal';
+import TerminalTabsManager from '@/components/ide/terminal-tabs-manager';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
 import CreateFileDialog from '@/components/ide/create-file-dialog';
@@ -904,7 +904,7 @@ export default function IDEPage() {
 
                 {/* Sandbox Terminal - ROS Projects Only */}
                 <ResizablePanel defaultSize={35} minSize={20}>
-                  <SandboxTerminal
+                  <TerminalTabsManager
                     onWorkspaceCreate={handleWorkspaceCreate}
                     onSyncComplete={handleSyncComplete}
                   />
