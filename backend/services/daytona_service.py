@@ -1011,7 +1011,7 @@ class DaytonaService:
             )
             result = await asyncio.to_thread(
                 sandbox.process.exec,
-                f"/bin/bash -c '{cmd}'",
+                f'/bin/bash -c "{cmd}"',
                 timeout=15,
             )
             if result.exit_code != 0:
