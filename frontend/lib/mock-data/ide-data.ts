@@ -4,6 +4,7 @@ export interface FileNode {
   name: string;
   type: 'file' | 'folder';
   children?: FileNode[];
+  source?: 'ide' | 'sandbox';
 }
 
 export const mockFileTree: FileNode[] = [
