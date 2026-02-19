@@ -364,8 +364,14 @@ export default function IDEPage() {
     return () => window.removeEventListener('keydown', handleGlobalSave);
   }, [hasUnsavedChanges, handleSaveFile]);
 
-  const handleCreateNewFile = () => {
+  // Used for sidebar + button: open create file modal for a specific folder
+  const handleCreateNewFile = (folderPath?: string) => {
     setIsCreateFileModalOpen(true);
+    if (folderPath !== undefined) {
+      setNewFilePath(folderPath);
+    } else {
+      setNewFilePath('');
+    }
   };
 
   const handleCreateFileSubmit = async () => {
@@ -763,7 +769,7 @@ export default function IDEPage() {
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 hover:bg-sidebar-accent"
-                  onClick={handleCreateNewFile}
+                  onClick={() => handleCreateNewFile()}
                   disabled={isCreatingFile}
                 >
                   {isCreatingFile ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
@@ -796,6 +802,7 @@ export default function IDEPage() {
                               onSelectFile={handleUnifiedFileClick}
                               onRenameFile={handleRenameFile}
                               onDeleteFile={handleDeleteFile}
+                              onCreateFile={handleCreateNewFile}
                               source={node.source || 'sandbox'}
                             />
                           ))
@@ -814,6 +821,7 @@ export default function IDEPage() {
                               onSelectFile={handleFileSelect}
                               onRenameFile={handleRenameFile}
                               onDeleteFile={handleDeleteFile}
+                              onCreateFile={handleCreateNewFile}
                               source="ide"
                             />
                           ))

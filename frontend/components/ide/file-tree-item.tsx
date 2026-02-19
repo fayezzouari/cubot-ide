@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import FolderActionButton from './folder-action-button';
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from 'lucide-react';
 import {
   ContextMenu,
@@ -17,6 +18,7 @@ interface FileTreeItemProps {
   onSelectFile: (id: string) => void;
   onRenameFile: (id: string) => void;
   onDeleteFile: (id: string) => void;
+  onCreateFile?: (folderPath: string) => void;
   source?: 'ide' | 'sandbox';
 }
 
@@ -27,15 +29,21 @@ export default function FileTreeItem({
   onSelectFile,
   onRenameFile,
   onDeleteFile,
+  onCreateFile,
   source = 'ide',
 }: FileTreeItemProps) {
-  const [isOpen, setIsOpen] = useState(true);
+  // Folders start collapsed by default
+  const [isOpen, setIsOpen] = useState(false);
   const isFolder = node.type === 'folder';
   const isSelected = selectedFile === node.id;
   const isSandbox = (node.source ?? source) === 'sandbox';
 
+  const [hovered, setHovered] = useState(false);
   return (
-    <div>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
@@ -59,16 +67,29 @@ export default function FileTreeItem({
                 ) : (
                   <Folder size={14} className={isSandbox ? 'text-amber-500/70' : ''} />
                 )}
+                <span className={`truncate ${isSandbox ? 'text-amber-100/70' : ''}`}>
+                  {node.name}
+                </span>
+                {/* Add + button for creating files in this folder, visible only on hover */}
+                {onCreateFile && hovered && (
+                  <span className="ml-auto">
+                    <FolderActionButton
+                      onCreateFile={onCreateFile}
+                      folderPath={node.id.replace(/^(sandbox-folder:|folder-)/, '')}
+                    />
+                  </span>
+                )}
               </>
             ) : (
               <>
                 <span className="w-3.5" />
                 <File size={14} className={isSandbox ? 'text-amber-500/60' : ''} />
+                <span className={`truncate ${isSandbox ? 'text-amber-100/70' : ''}`}>
+                  {node.name}
+                </span>
               </>
             )}
-            <span className={`truncate ${isSandbox ? 'text-amber-100/70' : ''}`}>
-              {node.name}
-            </span>
+
           </button>
         </ContextMenuTrigger>
         {/* Only show context menu for IDE-managed files */}
@@ -97,6 +118,7 @@ export default function FileTreeItem({
               onSelectFile={onSelectFile}
               onRenameFile={onRenameFile}
               onDeleteFile={onDeleteFile}
+              onCreateFile={onCreateFile}
               source={source}
             />
           ))}
