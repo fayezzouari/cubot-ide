@@ -1,16 +1,38 @@
-from fastapi import APIRouter, HTTPException, status
+import logging
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from typing import List
 
 from models.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectWithFiles
 from services.project_service import project_service
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+async def _provision_ros_sandbox(project_id: str) -> None:
+    """Background task: create & fully initialise a Daytona sandbox for a ROS project."""
+    from services.daytona_service import daytona_service
+    from schemas.daytona import DaytonaWorkspaceCreate
+    try:
+        logger.info(f"[bg] Provisioning ROS sandbox for project {project_id}…")
+        await daytona_service.create_workspace(DaytonaWorkspaceCreate(project_id=project_id))
+        logger.info(f"[bg] Sandbox ready for project {project_id}")
+    except Exception as exc:
+        logger.error(
+            f"[bg] Sandbox provisioning failed for project {project_id}: {exc}",
+            exc_info=True,
+        )
+
+
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(project_data: ProjectCreate):
-    """Create a new project"""
+async def create_project(project_data: ProjectCreate, background_tasks: BackgroundTasks):
+    """Create a new project. For ROS projects, a sandbox is provisioned in the background."""
     project = await project_service.create_project(project_data)
+
+    if project.project_type == "ros":
+        background_tasks.add_task(_provision_ros_sandbox, project.id)
+
     return project
 
 

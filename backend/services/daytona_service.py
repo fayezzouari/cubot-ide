@@ -48,11 +48,21 @@ class DaytonaService:
         self.api_key = getattr(settings, "DAYTONA_API_KEY", None)
         self._sandboxes: Dict[str, Any] = {}  # workspace_id -> sandbox instance
         self._workspace_metadata: Dict[str, Dict[str, Any]] = {}
+        # Per-workspace locks prevent duplicate sandbox creation when multiple
+        # coroutines (e.g. background provisioning task + terminal open) call
+        # create_workspace for the same project simultaneously.
+        self._workspace_locks: Dict[str, asyncio.Lock] = {}
 
         # Initialize Daytona client
         config = DaytonaConfig(api_key=self.api_key)
         self.daytona = Daytona(config)
         logger.info("✓ Daytona SDK initialized")
+
+    def _get_workspace_lock(self, workspace_id: str) -> asyncio.Lock:
+        """Return (creating if needed) the asyncio.Lock for a workspace_id."""
+        if workspace_id not in self._workspace_locks:
+            self._workspace_locks[workspace_id] = asyncio.Lock()
+        return self._workspace_locks[workspace_id]
 
     async def _test_sandbox_connection(self, sandbox: Any, timeout: int = 5) -> bool:
         """Test if a sandbox is responsive by running a simple command."""
@@ -146,9 +156,21 @@ class DaytonaService:
                 if sb_name == sandbox_name:
                     sb_id = getattr(sb, 'id', None)
                     logger.info(f"Found sandbox with matching name: {sb_id}")
-                    await asyncio.to_thread(sb.delete)
-                    logger.info(f"Successfully deleted sandbox {sb_id}")
-                    return True
+                    # Retry deletion if the sandbox is mid-startup ("state change in progress")
+                    for attempt in range(6):
+                        try:
+                            await asyncio.to_thread(sb.delete)
+                            logger.info(f"Successfully deleted sandbox {sb_id}")
+                            return True
+                        except Exception as del_err:
+                            if "state change in progress" in str(del_err).lower() and attempt < 5:
+                                logger.warning(
+                                    f"Sandbox {sb_id} state change in progress, "
+                                    f"waiting 10 s before retry ({attempt + 1}/5)…"
+                                )
+                                await asyncio.sleep(10)
+                            else:
+                                raise
 
             logger.warning(f"No sandbox found with name {sandbox_name}")
         except Exception as e:
@@ -177,7 +199,7 @@ class DaytonaService:
         """
         workspace_id = f"sandbox-{request.project_id}"
 
-        # Fast path: Reuse existing sandbox from memory
+        # ── Fast path (no lock needed) ────────────────────────────────────────
         if workspace_id in self._sandboxes:
             logger.info(f"Reusing existing sandbox from memory: {workspace_id}")
             return DaytonaWorkspaceResponse(
@@ -188,17 +210,35 @@ class DaytonaService:
                 metadata=self._workspace_metadata[workspace_id],
             )
 
-        # Try to reconnect to existing sandbox
-        saved_sandbox_id = await project_service.get_sandbox_id(request.project_id)
-        if saved_sandbox_id:
-            workspace = await self._try_reconnect_sandbox(
-                workspace_id, request.project_id, saved_sandbox_id
-            )
-            if workspace:
-                return workspace
+        # ── Serialize per-project to prevent concurrent duplicate creation ────
+        # The background provisioning task (started at project-creation time) and
+        # the terminal's first createWorkspace call can race.  One of them will
+        # acquire the lock and complete setup; the other will fast-path out on
+        # the re-check below.
+        lock = self._get_workspace_lock(workspace_id)
+        async with lock:
+            # Re-check: the first waiter may have completed setup while we waited.
+            if workspace_id in self._sandboxes:
+                logger.info(f"Reusing existing sandbox from memory (post-lock): {workspace_id}")
+                return DaytonaWorkspaceResponse(
+                    workspace_id=workspace_id,
+                    project_id=request.project_id,
+                    state=WorkspaceState.RUNNING,
+                    created_at=self._workspace_metadata[workspace_id]["created_at"],
+                    metadata=self._workspace_metadata[workspace_id],
+                )
 
-        # Create new sandbox
-        return await self._create_new_sandbox(workspace_id, request.project_id, saved_sandbox_id)
+            # Try to reconnect to existing sandbox
+            saved_sandbox_id = await project_service.get_sandbox_id(request.project_id)
+            if saved_sandbox_id:
+                workspace = await self._try_reconnect_sandbox(
+                    workspace_id, request.project_id, saved_sandbox_id
+                )
+                if workspace:
+                    return workspace
+
+            # Create new sandbox
+            return await self._create_new_sandbox(workspace_id, request.project_id, saved_sandbox_id)
 
     async def _try_reconnect_sandbox(
         self,
@@ -309,7 +349,10 @@ class DaytonaService:
         Creates a full ament_python package structure under src/<pkg_name>/:
           package.xml, setup.py, setup.cfg, resource/<pkg_name>, <pkg_name>/__init__.py
 
-        Also sources ROS into .bashrc for interactive shells.
+        File contents are uploaded directly via fs.upload_file to avoid any
+        shell-quoting issues (single-quotes in Python strings, etc.).
+        A small shell script handles directory creation and .bashrc patching.
+
         rosdep update is intentionally omitted (slow network call).
         """
         logger.info(f"Setting up ROS workspace for package '{pkg_name}'...")
@@ -318,71 +361,157 @@ class DaytonaService:
         py_dir = f"{pkg_dir}/{pkg_name}"
         resource_dir = f"{pkg_dir}/resource"
 
+        # ── File contents (real Python newlines — no shell quoting needed) ──
+
         package_xml = (
-            f'<?xml version="1.0"?>\\n'
-            f'<package format="3">\\n'
-            f'  <name>{pkg_name}</name>\\n'
-            f'  <version>0.0.1</version>\\n'
-            f'  <description>{pkg_name} ROS 2 package</description>\\n'
-            f'  <maintainer email="user@example.com">user</maintainer>\\n'
-            f'  <license>Apache-2.0</license>\\n'
-            f'  <exec_depend>rclpy</exec_depend>\\n'
-            f'  <export>\\n'
-            f'    <build_type>ament_python</build_type>\\n'
-            f'  </export>\\n'
-            f'</package>'
+            f'<?xml version="1.0"?>\n'
+            f'<package format="3">\n'
+            f'  <name>{pkg_name}</name>\n'
+            f'  <version>0.0.1</version>\n'
+            f'  <description>{pkg_name} ROS 2 package</description>\n'
+            f'  <maintainer email="user@example.com">user</maintainer>\n'
+            f'  <license>Apache-2.0</license>\n'
+            f'  <exec_depend>rclpy</exec_depend>\n'
+            f'  <export>\n'
+            f'    <build_type>ament_python</build_type>\n'
+            f'  </export>\n'
+            f'</package>\n'
         )
 
         setup_py = (
-            f"from setuptools import setup\\n\\n"
-            f"package_name = '{pkg_name}'\\n\\n"
-            f"setup(\\n"
-            f"    name=package_name,\\n"
-            f"    version='0.0.1',\\n"
-            f"    packages=[package_name],\\n"
-            f"    data_files=[\\n"
-            f"        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),\\n"
-            f"        ('share/' + package_name, ['package.xml']),\\n"
-            f"    ],\\n"
-            f"    install_requires=['setuptools'],\\n"
-            f"    zip_safe=True,\\n"
-            f"    entry_points={{\\n"
-            f"        'console_scripts': [],\\n"
-            f"    }},\\n"
-            f")"
+            f"from setuptools import setup\n\n"
+            f"package_name = '{pkg_name}'\n\n"
+            f"setup(\n"
+            f"    name=package_name,\n"
+            f"    version='0.0.1',\n"
+            f"    packages=[package_name],\n"
+            f"    data_files=[\n"
+            f"        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),\n"
+            f"        ('share/' + package_name, ['package.xml']),\n"
+            f"    ],\n"
+            f"    install_requires=['setuptools'],\n"
+            f"    zip_safe=True,\n"
+            f"    entry_points={{\n"
+            f"        'console_scripts': [],\n"
+            f"    }},\n"
+            f")\n"
         )
 
-        setup_cfg = "[develop]\\nscript_dir=$base/lib/{pkg_name}\\n[install]\\ninstall_scripts=$base/lib/{pkg_name}".format(pkg_name=pkg_name)
+        setup_cfg = (
+            f"[develop]\n"
+            f"script_dir=$base/lib/{pkg_name}\n"
+            f"[install]\n"
+            f"install_scripts=$base/lib/{pkg_name}\n"
+        )
 
-        setup_script = (
-            f"source /opt/ros/humble/setup.bash"
-            f" && mkdir -p {py_dir} {resource_dir}"
-            f" && printf '%s' '{package_xml}' > {pkg_dir}/package.xml"
-            f" && printf '%s' '{setup_py}' > {pkg_dir}/setup.py"
-            f" && printf '%s' '{setup_cfg}' > {pkg_dir}/setup.cfg"
-            f" && touch {resource_dir}/{pkg_name}"
-            f" && touch {py_dir}/__init__.py"
-            # Write to system-wide locations so it works for root (PTY user) and any login shell.
-            f" && (grep -qxF 'source /opt/ros/humble/setup.bash' /etc/bash.bashrc"
-            f" || echo 'source /opt/ros/humble/setup.bash' >> /etc/bash.bashrc)"
-            f" && (grep -qxF 'source /opt/ros/humble/setup.bash' /root/.bashrc"
-            f" || echo 'source /opt/ros/humble/setup.bash' >> /root/.bashrc)"
-            f" && printf '#!/bin/bash\\nsource /opt/ros/humble/setup.bash\\n'"
-            f" > /etc/profile.d/ros-humble.sh && chmod +x /etc/profile.d/ros-humble.sh"
+        # ── Shell script: create dirs + patch shell rc files ────────────────
+        # Written to a tmp file so no shell-quoting issues at all.
+        scaffold_sh = (
+            f"#!/bin/bash\n"
+            f"set -e\n"
+            f"source /opt/ros/humble/setup.bash\n"
+            f"mkdir -p {PROJECT_BASE_DIR} {py_dir} {resource_dir}\n"
+            f"touch {resource_dir}/{pkg_name}\n"
+            f"touch {py_dir}/__init__.py\n"
+            f'ROS_LINE="source /opt/ros/humble/setup.bash"\n'
+            f'grep -qxF "$ROS_LINE" /etc/bash.bashrc   || echo "$ROS_LINE" >> /etc/bash.bashrc\n'
+            f'grep -qxF "$ROS_LINE" /root/.bashrc      || echo "$ROS_LINE" >> /root/.bashrc\n'
+            f'printf "#!/bin/bash\\n$ROS_LINE\\n"       > /etc/profile.d/ros-humble.sh\n'
+            f"chmod +x /etc/profile.d/ros-humble.sh\n"
         )
 
         try:
+            # 1. Run the scaffold shell script (creates dirs, patches .bashrc)
+            await asyncio.to_thread(
+                sandbox.fs.upload_file,
+                scaffold_sh.encode("utf-8"),
+                "/tmp/ros_scaffold.sh",
+            )
             result = await asyncio.to_thread(
                 sandbox.process.exec,
-                f"/bin/bash -c '{setup_script}'",
+                "bash /tmp/ros_scaffold.sh",
                 timeout=30,
             )
             if result.exit_code != 0:
-                logger.warning(f"ROS workspace setup returned non-zero exit code")
-            else:
-                logger.info(f"✓ ROS package '{pkg_name}' scaffold created")
+                logger.warning(
+                    f"ROS scaffold script returned non-zero ({result.exit_code}): "
+                    f"{(result.result or '')[:300]}"
+                )
+
+            # 2. Upload file contents directly — zero quoting issues
+            await asyncio.to_thread(
+                sandbox.fs.upload_file,
+                package_xml.encode("utf-8"),
+                f"{pkg_dir}/package.xml",
+            )
+            await asyncio.to_thread(
+                sandbox.fs.upload_file,
+                setup_py.encode("utf-8"),
+                f"{pkg_dir}/setup.py",
+            )
+            await asyncio.to_thread(
+                sandbox.fs.upload_file,
+                setup_cfg.encode("utf-8"),
+                f"{pkg_dir}/setup.cfg",
+            )
+
+            logger.info(f"✓ ROS package '{pkg_name}' scaffold created")
         except Exception as e:
             logger.warning(f"ROS workspace setup failed (non-fatal): {e}")
+
+    async def _build_ros_workspace(self, sandbox: Any, pkg_name: str) -> None:
+        """
+        Run `colcon build` inside the sandbox to compile the freshly scaffolded
+        ROS 2 package and make it importable in every subsequent terminal session.
+
+        Also appends `source install/setup.bash` to /root/.bashrc so that
+        new PTY shells have the overlay sourced automatically.
+
+        This step is best-effort: failures are logged but never raised.
+        """
+        logger.info("Building ROS 2 workspace with colcon…")
+
+        install_setup = f"{PROJECT_BASE_DIR}/install/setup.bash"
+
+        # Write the build logic to a script file — avoids every shell-quoting
+        # pitfall (single quotes, special chars in paths, etc.).
+        build_sh = (
+            "#!/bin/bash\n"
+            "set -e\n"
+            # Install colcon if missing (apt path; pip fallback not needed for Humble)
+            "command -v colcon > /dev/null 2>&1 \\\n"
+            "  || (apt-get update -qq && apt-get install -y -q python3-colcon-common-extensions)\n"
+            f"cd {PROJECT_BASE_DIR}\n"
+            "source /opt/ros/humble/setup.bash\n"
+            "colcon build\n"
+            # Patch .bashrc so future PTY sessions have the local overlay sourced
+            f'if [ -f "{install_setup}" ]; then\n'
+            f'  grep -qF "{install_setup}" /root/.bashrc \\\n'
+            f'    || printf "\\n# ROS 2 local workspace overlay\\n'
+            f'[ -f {install_setup} ] && source {install_setup}\\n" >> /root/.bashrc\n'
+            "fi\n"
+        )
+
+        try:
+            await asyncio.to_thread(
+                sandbox.fs.upload_file,
+                build_sh.encode("utf-8"),
+                "/tmp/ros_build.sh",
+            )
+            result = await asyncio.to_thread(
+                sandbox.process.exec,
+                "bash /tmp/ros_build.sh",
+                timeout=180,
+            )
+            if result.exit_code != 0:
+                logger.warning(
+                    f"colcon build returned non-zero ({result.exit_code}): "
+                    f"{(result.result or '')[:300]}"
+                )
+            else:
+                logger.info("✓ colcon build succeeded; workspace overlay sourced in .bashrc")
+        except Exception as e:
+            logger.warning(f"colcon build failed (non-fatal): {e}")
 
     async def _create_new_sandbox(
         self,
@@ -428,17 +557,37 @@ class DaytonaService:
         logger.info(f"Sandbox created: {sandbox.id}, waiting for it to start...")
         await self._wait_for_sandbox_ready(sandbox)
 
-        # Initialize ROS package structure
-        await self._setup_ros_workspace(sandbox, pkg_name)
-
-        # Save sandbox ID and pkg_name to database / metadata
+        # ── Store sandbox in memory and DB immediately ──────────────────────
+        # This MUST happen before any long-running setup step so that any
+        # concurrent createWorkspace call (e.g., from the terminal opening
+        # while the background task is still running) fast-paths to this
+        # sandbox instead of trying to create a duplicate.
+        self._sandboxes[workspace_id] = sandbox
+        self._workspace_metadata[workspace_id] = {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "state": WorkspaceState.RUNNING.value,
+            "sandbox_id": sandbox.id,
+            "pkg_name": pkg_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "files_synced": 0,
+            "sync_status": "none",
+        }
         await project_service.update_sandbox_id(project_id, sandbox.id)
         logger.info(f"Saved sandbox ID {sandbox.id} to project {project_id}")
 
-        # Store pkg_name in metadata so sync can use it
-        self._workspace_metadata.setdefault(workspace_id, {})["pkg_name"] = pkg_name
+        # Set up the ROS package scaffold (fast, ~30 s).  This runs while the
+        # per-workspace lock is still held, so no other coroutine can attempt
+        # to create a duplicate sandbox before we finish.
+        await self._setup_ros_workspace(sandbox, pkg_name)
 
-        # Finalize and return
+        # Kick off `colcon build` as a fire-and-forget asyncio task so the lock
+        # is released promptly.  The build can take several minutes; the terminal
+        # PTY will be usable while it runs in the background.
+        asyncio.create_task(self._build_ros_workspace(sandbox, pkg_name))
+
+        # Finalize: sync project files and update metadata with sync status.
+        # Still inside the lock, but finalize is fast (file upload).
         return await self._finalize_sandbox_connection(workspace_id, project_id, sandbox)
 
     async def sync_project_files(
