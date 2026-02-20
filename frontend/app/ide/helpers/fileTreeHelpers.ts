@@ -36,28 +36,64 @@ export function buildSandboxFileTree(sandboxEntries: SandboxFileEntry[]): FileNo
   return tree;
 }
 
+/**
+ * Derive the directory from a file record.
+ *
+ * The DB stores files in two conventions:
+ *   Convention A (directory-only): path = "src",              name = "node.py"
+ *   Convention B (full-path):      path = "src/node.py",      name = "node.py"
+ *   Root file A:                   path = "" | "." | "/",     name = "root.py"
+ *   Root file B:                   path = "root.py",          name = "root.py"
+ *
+ * We need to extract just the directory portion in every case.
+ */
+function getFileDir(filePath: string, fileName: string): string {
+  const p = (filePath || '').replace(/^\/+|\/+$/g, ''); // trim slashes
+
+  if (!p || p === '.' || p === fileName) {
+    // Root-level file (either empty path, ".", or path equals the filename)
+    return '';
+  }
+
+  if (p.endsWith('/' + fileName)) {
+    // Convention B: path includes the filename at the end — strip it
+    return p.slice(0, -(fileName.length + 1));
+  }
+
+  // Convention A: path is already a directory
+  return p;
+}
+
 export function buildProjectFileTree(files: any[]): FileNode[] {
   if (!files || files.length === 0) return [];
+
   const tree: FileNode[] = [];
   const folders: Record<string, FileNode> = {};
+
   files.forEach(file => {
-    const pathParts = file.path.split('/');
-    if (pathParts.length === 1) {
+    const dir = getFileDir(file.path, file.name);
+
+    if (!dir) {
+      // Root-level file
       tree.push({ id: file.id, name: file.name, type: 'file' });
     } else {
-      const folderName = pathParts[0];
-      if (!folders[folderName]) {
-        folders[folderName] = {
-          id: `folder-${folderName}`,
-          name: folderName,
+      // File lives inside a folder.  We only show the top-level directory
+      // (deeper nesting is flattened, matching the original behaviour).
+      const topFolder = dir.split('/')[0];
+
+      if (!folders[topFolder]) {
+        folders[topFolder] = {
+          id: `folder-${topFolder}`,
+          name: topFolder,
           type: 'folder',
           children: [],
         };
-        tree.push(folders[folderName]);
+        tree.push(folders[topFolder]);
       }
-      folders[folderName].children!.push({ id: file.id, name: file.name, type: 'file' });
+      folders[topFolder].children!.push({ id: file.id, name: file.name, type: 'file' });
     }
   });
+
   return tree;
 }
 

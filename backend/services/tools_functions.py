@@ -58,39 +58,46 @@ async def handle_tool_use(
 
 async def _find_file(project_id: str, path: str):
     """
-    Find a file by path, handling both storage conventions:
-    - Agent-created: path = full path (e.g. "src/node.py"), name = "node.py"
-    - User-created:  path = directory  (e.g. "src"),         name = "node.py"
+    Find a file by path, handling two storage conventions:
+    - Old (full-path): path = "src/node.py", name = "node.py"
+    - New (dir-only):  path = "src",         name = "node.py"
+                       path = "",             name = "root.py"  (root-level)
+    The agent always provides the full path (e.g. "src/node.py" or "test.py").
     """
-    # Try exact match first
+    from core.database import get_collection
+    from models.file import FileResponse
+
+    # 1. Exact match (old convention: path stores full path including filename)
     existing = await file_service.get_file_by_path(project_id, path)
     if existing:
         return existing
 
-    # If not found and path contains a slash, try dir+name split
+    # 2. Dir + name lookup (new convention: path stores directory, name stores filename)
     if "/" in path:
         dir_part, name_part = path.rsplit("/", 1)
-        from core.database import get_collection
-        collection = get_collection("files")
-        doc = await collection.find_one({
-            "project_id": project_id,
-            "path": dir_part,
-            "name": name_part,
-        })
-        if doc:
-            from models.file import FileResponse
-            return FileResponse(
-                id=str(doc["_id"]),
-                name=doc["name"],
-                path=doc["path"],
-                content=doc["content"],
-                file_type=doc["file_type"],
-                project_id=doc["project_id"],
-                created_at=doc["created_at"],
-                updated_at=doc["updated_at"],
-                created_by=doc["created_by"],
-                origin=doc.get("origin"),
-            )
+    else:
+        dir_part = ""   # root-level file
+        name_part = path
+
+    collection = get_collection("files")
+    doc = await collection.find_one({
+        "project_id": project_id,
+        "path": dir_part,
+        "name": name_part,
+    })
+    if doc:
+        return FileResponse(
+            id=str(doc["_id"]),
+            name=doc["name"],
+            path=doc["path"],
+            content=doc["content"],
+            file_type=doc["file_type"],
+            project_id=doc["project_id"],
+            created_at=doc["created_at"],
+            updated_at=doc["updated_at"],
+            created_by=doc["created_by"],
+            origin=doc.get("origin"),
+        )
     return None
 
 
@@ -135,13 +142,23 @@ async def tool_create_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[
     }
     file_type = file_type_map.get(ext, FileType.OTHER)
     
+    # Separate directory and filename so storage is consistent with user-created files.
+    # The model provides the full path (e.g. "src/node.py"); we store the directory
+    # ("src") in `path` and the filename ("node.py") in `name`.
+    if "/" in path:
+        dir_path = path.rsplit("/", 1)[0]
+        file_name = path.rsplit("/", 1)[1]
+    else:
+        dir_path = ""
+        file_name = path
+
     # Create the file
     try:
         file = await file_service.create_file(
             FileCreate(
                 project_id=project_id,
-                name=path.split("/")[-1],
-                path=path,
+                name=file_name,
+                path=dir_path,
                 content=content,
                 file_type=file_type,
             ),
@@ -217,7 +234,7 @@ async def tool_read_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[st
     path = tool_input.get("path")
     logger.info(f"read_file called for project {project_id}: path={path}")
 
-    file = await file_service.get_file_by_path(project_id, path)
+    file = await _find_file(project_id, path)
     if not file:
         logger.warning(f"read_file: file not found: {path}")
         return {
@@ -250,18 +267,25 @@ async def tool_list_files(project_id: str) -> Dict[str, Any]:
     file_list = []
     directories = set()
     for f in files:
-        # Build the full path the agent should use to reference this file.
-        # User-created files store only the directory in f.path (e.g. "src"),
-        # while agent-created files store the full path (e.g. "src/node.py").
-        # We always expose the full path so the model can use it directly.
-        raw_path = (f.path or "").strip("/")
-        if raw_path and not raw_path.endswith(f.name):
-            # raw_path is a directory — combine with filename
-            full_path = raw_path + "/" + f.name
-        elif raw_path:
-            full_path = raw_path
+        # Derive the directory from the stored path, handling both conventions:
+        #   Convention A (dir-only):  path="src",           name="node.py"
+        #   Convention B (full-path): path="src/node.py",   name="node.py"
+        #   Root A:                   path="",              name="root.py"
+        #   Root B:                   path="root.py",       name="root.py"
+        raw = (f.path or "").strip("/")
+
+        if not raw or raw == "." or raw == f.name:
+            # Root-level file
+            dir_part = ""
+        elif raw.endswith("/" + f.name):
+            # Full-path convention — strip filename to get directory
+            dir_part = raw[: -(len(f.name) + 1)]
         else:
-            full_path = f.name
+            # Directory-only convention
+            dir_part = raw
+
+        # The full path the model should use for create/update/read calls
+        full_path = (dir_part + "/" + f.name) if dir_part else f.name
 
         file_list.append({
             "path": full_path,
@@ -270,12 +294,10 @@ async def tool_list_files(project_id: str) -> Dict[str, Any]:
             "size": len(f.content)
         })
 
-        # Derive directory for the directories list
-        if '/' in full_path:
-            dirpath = full_path.rsplit('/', 1)[0]
-            directories.add(dirpath)
+        if dir_part:
+            directories.add(dir_part)
         else:
-            directories.add('.')
+            directories.add(".")
 
     # Return files plus a deduplicated list of directories to help the model
     dirs_sorted = sorted(list(directories))

@@ -221,13 +221,21 @@ class AIService:
         
         for iteration in range(max_iterations):
             logger.info(f"OpenAI iteration {iteration + 1}")
-            
+
             try:
+                # Force tool use on the first call so the model can't skip tools
+                # by returning text only.  Once at least one tool result has been
+                # sent back we switch to "auto" so the model can produce the final
+                # text summary without being forced to call another tool.
+                has_tool_results = any(m.get("role") == "tool" for m in openai_messages)
+                tool_choice = "auto" if has_tool_results else "required"
+
                 # Prepare request body for OpenAI
                 request_body = {
                     "model": settings.BEDROCK_MODEL_ID,
                     "messages": openai_messages,
                     "tools": openai_tools,
+                    "tool_choice": tool_choice,
                     "temperature": 0.7,
                     "max_tokens": 4096
                 }
