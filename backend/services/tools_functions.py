@@ -33,6 +33,7 @@ async def handle_tool_use(
         Dictionary with tool execution result
     """
     logger.info(f"Handling tool use: {tool_name} with input: {tool_input}")
+    logger.debug(f"Tool call - project: {project_id}, tool: {tool_name}, input keys: {list(tool_input.keys())}")
     
     try:
         if tool_name == "create_file":
@@ -51,6 +52,8 @@ async def handle_tool_use(
             "error": str(e),
             "success": False
         }
+    finally:
+        logger.debug(f"Completed tool invocation: {tool_name} for project {project_id}")
 
 
 async def tool_create_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -66,10 +69,13 @@ async def tool_create_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[
     """
     path = tool_input.get("path")
     content = tool_input.get("content", "")
+    logger.info(f"create_file called for project {project_id}: path={path}")
+    logger.debug(f"create_file content length: {len(content) if content is not None else 0}")
     
     # Check if file already exists
     existing = await file_service.get_file_by_path(project_id, path)
     if existing:
+        logger.info(f"create_file aborted: file already exists: {path} (id={existing.id})")
         return {
             "success": False,
             "error": f"File {path} already exists. Use update_file to modify it.",
@@ -92,23 +98,28 @@ async def tool_create_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[
     file_type = file_type_map.get(ext, FileType.OTHER)
     
     # Create the file
-    file = await file_service.create_file(
-        FileCreate(
-            project_id=project_id,
-            name=path.split("/")[-1],
-            path=path,
-            content=content,
-            file_type=file_type,
-        ),
-        created_by="agent"
-    )
-    
-    return {
-        "success": True,
-        "file_id": file.id,
-        "path": file.path,
-        "message": f"Successfully created file: {path}"
-    }
+    try:
+        file = await file_service.create_file(
+            FileCreate(
+                project_id=project_id,
+                name=path.split("/")[-1],
+                path=path,
+                content=content,
+                file_type=file_type,
+            ),
+            created_by="agent"
+        )
+        logger.info(f"create_file succeeded: {path} (id={file.id})")
+        logger.debug(f"create_file result path: {file.path}")
+        return {
+            "success": True,
+            "file_id": file.id,
+            "path": file.path,
+            "message": f"Successfully created file: {path}"
+        }
+    except Exception as e:
+        logger.error(f"create_file failed for {path}: {str(e)}")
+        return {"success": False, "error": str(e)}
 
 
 async def tool_update_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -124,27 +135,34 @@ async def tool_update_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[
     """
     path = tool_input.get("path")
     content = tool_input.get("content", "")
+    logger.info(f"update_file called for project {project_id}: path={path}")
+    logger.debug(f"update_file content length: {len(content) if content is not None else 0}")
     
     # Find the file
     existing = await file_service.get_file_by_path(project_id, path)
     if not existing:
+        logger.warning(f"update_file failed: file not found: {path}")
         return {
             "success": False,
             "error": f"File {path} not found. Use create_file to create it."
         }
     
     # Update the file
-    updated = await file_service.update_file(
-        existing.id,
-        FileUpdate(content=content)
-    )
-    
-    return {
-        "success": True,
-        "file_id": updated.id,
-        "path": updated.path,
-        "message": f"Successfully updated file: {path}"
-    }
+    try:
+        updated = await file_service.update_file(
+            existing.id,
+            FileUpdate(content=content)
+        )
+        logger.info(f"update_file succeeded: {path} (id={updated.id})")
+        return {
+            "success": True,
+            "file_id": updated.id,
+            "path": updated.path,
+            "message": f"Successfully updated file: {path}"
+        }
+    except Exception as e:
+        logger.error(f"update_file failed for {path}: {str(e)}")
+        return {"success": False, "error": str(e)}
 
 
 async def tool_read_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -159,14 +177,17 @@ async def tool_read_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[st
         Dictionary with file content
     """
     path = tool_input.get("path")
-    
+    logger.info(f"read_file called for project {project_id}: path={path}")
+
     file = await file_service.get_file_by_path(project_id, path)
     if not file:
+        logger.warning(f"read_file: file not found: {path}")
         return {
             "success": False,
             "error": f"File {path} not found"
         }
-    
+
+    logger.debug(f"read_file returning content length: {len(file.content) if file.content is not None else 0}")
     return {
         "success": True,
         "path": file.path,
@@ -186,19 +207,33 @@ async def tool_list_files(project_id: str) -> Dict[str, Any]:
         Dictionary with list of files
     """
     files = await file_service.get_files_by_project(project_id)
-    
-    file_list = [
-        {
-            "path": f.path,
+    logger.info(f"list_files called for project {project_id}: found {len(files)} files")
+
+    file_list = []
+    directories = set()
+    for f in files:
+        # Normalize path: strip leading/trailing slashes
+        path = f.path.strip('/') if f.path else f.name
+        file_list.append({
+            "path": path,
             "name": f.name,
             "type": f.file_type,
             "size": len(f.content)
-        }
-        for f in files
-    ]
-    
+        })
+
+        # Derive directory from path (everything before last slash)
+        if '/' in path:
+            dirpath = path.rsplit('/', 1)[0]
+            directories.add(dirpath)
+        else:
+            directories.add('.')
+
+    # Return files plus a deduplicated list of directories to help the model
+    dirs_sorted = sorted(list(directories))
+    logger.debug(f"list_files directories: {dirs_sorted}")
     return {
         "success": True,
         "files": file_list,
+        "directories": dirs_sorted,
         "count": len(file_list)
     }

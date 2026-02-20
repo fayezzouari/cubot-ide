@@ -51,6 +51,7 @@ class FileService:
             "content": file_data.content,
             "file_type": file_type.value,
             "project_id": file_data.project_id,
+            "origin": getattr(file_data, "origin", None),
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
             "created_by": created_by,
@@ -69,13 +70,13 @@ class FileService:
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             created_by=doc["created_by"],
+            origin=doc.get("origin"),
         )
     
     @classmethod
     async def get_file(cls, file_id: str) -> Optional[FileResponse]:
         """Get a file by ID"""
         collection = get_collection(cls.COLLECTION_NAME)
-        
         doc = await collection.find_one({"_id": ObjectId(file_id)})
         if not doc:
             return None
@@ -90,6 +91,7 @@ class FileService:
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             created_by=doc["created_by"],
+            origin=doc.get("origin"),
         )
     
     @classmethod
@@ -110,7 +112,8 @@ class FileService:
                 project_id=doc["project_id"],
                 created_at=doc["created_at"],
                 updated_at=doc["updated_at"],
-                created_by=doc["created_by"],
+                    created_by=doc["created_by"],
+                    origin=doc.get("origin"),
             ))
         
         return files
@@ -138,6 +141,7 @@ class FileService:
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             created_by=doc["created_by"],
+            origin=doc.get("origin"),
         )
     
     @classmethod
@@ -207,6 +211,7 @@ class FileService:
                 created_at=doc["created_at"],
                 updated_at=doc["updated_at"],
                 created_by=doc["created_by"],
+                origin=doc.get("origin"),
             ))
         
         return files

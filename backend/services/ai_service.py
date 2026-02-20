@@ -99,7 +99,7 @@ class AIService:
                 system_prompt=system_prompt,
                 tool_config=tool_config,
                 project_id=project_id,
-                max_iterations=20
+                max_iterations=50
             )
             
             # Save messages to database
@@ -275,6 +275,7 @@ class AIService:
                             tool_input=tool_args,
                             project_id=project_id
                         )
+                        logger.info(f"Tool result for {tool_name} (id={tool_call_id}): {tool_result}")
                         
                         # Track file operations
                         if tool_name in ["create_file", "update_file"] and tool_result.get("success"):
@@ -383,6 +384,7 @@ class AIService:
                                 tool_input=tool_input,
                                 project_id=project_id
                             )
+                            logger.info(f"Tool result for {tool_name} (id={tool_use_id}): {tool_result_content}")
                             
                             # Track file operations
                             if tool_name in ["create_file", "update_file"] and tool_result_content.get("success"):
@@ -485,10 +487,11 @@ Important guidelines:
 - When creating files, use appropriate paths (e.g., 'src/main.cpp', 'include/config.h')
 
 When the user asks you to create or modify code:
-1. Use list_files to see existing files if needed
-2. Use read_file to check current content if modifying
-3. Use create_file for new files or update_file for existing ones
-4. Explain what you did in your response
+1. Always call `list_files` first to discover existing files and directories. The `list_files` tool returns both `files` and a `directories` list — prefer placing new files under existing directories (for example `src/<package>/scripts/<name>.py` or `src/<package>/scripts/<name>.cpp`) instead of creating new top-level folders.
+2. Use `read_file` to inspect a file before modifying it.
+3. Use `create_file` for new files or `update_file` for existing ones. When creating or updating package modules, also update the project's metadata (for Python: `pyproject.toml` / `setup.cfg`; for ROS: `package.xml` / `CMakeLists.txt`) via `update_file` so the package remains consistent.
+4. If you need to add package-level entrypoints (scripts) or modify configuration, make the change to the appropriate config file and explain the exact edits in your response.
+5. Explain what you did in your response and list the paths you created or modified.
 """
     
     async def _save_message(

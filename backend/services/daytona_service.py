@@ -1039,6 +1039,43 @@ class DaytonaService:
             logger.error(f"Failed to list sandbox files: {e}", exc_info=True)
             return []
 
+    async def delete_sandbox_path(self, workspace_id: str, rel_path: str) -> Dict[str, Any]:
+        """
+        Delete a file or directory inside the sandbox under PROJECT_BASE_DIR.
+
+        Args:
+            workspace_id: Sandbox workspace id (sandbox-...)
+            rel_path: Relative path under PROJECT_BASE_DIR to delete
+
+        Returns:
+            Dict with success status and optional error message
+        """
+        sandbox = self._sandboxes.get(workspace_id)
+        if not sandbox:
+            return {"success": False, "error": "Sandbox not found"}
+
+        # Normalize and build full path
+        clean_path = rel_path.strip('/')
+        if not clean_path:
+            return {"success": False, "error": "Path cannot be empty"}
+
+        full_path = f"{PROJECT_BASE_DIR}/{clean_path}"
+
+        try:
+            # Use a safe shell rm -rf to remove file or directory recursively inside sandbox
+            # This avoids having to list and individually delete entries.
+            cmd = f"/bin/rm -rf '{full_path}'"
+            result = await asyncio.to_thread(sandbox.process.exec, cmd, timeout=30)
+            if result.exit_code != 0:
+                logger.error(f"delete_sandbox_path returned non-zero: {result.exit_code} {result.result}")
+                return {"success": False, "error": f"Failed to delete path: exit {result.exit_code}"}
+
+            logger.info(f"Deleted sandbox path: {full_path}")
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Failed to delete sandbox path {full_path}: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
     async def get_sandbox_file_content(self, workspace_id: str, relative_path: str) -> str:
         """
         Download the content of a single file from the sandbox.

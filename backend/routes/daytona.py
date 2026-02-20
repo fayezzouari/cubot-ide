@@ -125,6 +125,20 @@ async def get_sandbox_file_content(workspace_id: str, path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/daytona/workspaces/{workspace_id}/files")
+async def delete_sandbox_path(workspace_id: str, path: str):
+    """Delete a file or directory inside a Daytona workspace (recursive)."""
+    try:
+        result = await daytona_service.delete_sandbox_path(workspace_id, path)
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to delete path"))
+        return {"status": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/daytona/execute", response_model=CodeExecutionResponse)
 async def execute_code(request: CodeExecutionRequest):
     """Execute code in a Daytona workspace"""

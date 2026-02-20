@@ -88,7 +88,7 @@ def get_tool_config() -> Dict[str, Any]:
             {
                 "toolSpec": {
                     "name": "list_files",
-                    "description": "List all files in the project. Use this to understand the project structure.",
+                    "description": "List all files in the project. Returns a list of files and a deduplicated `directories` array to understand the project structure. Call this before creating new files so you place them under existing packages (e.g., 'src/pkg_name/scripts').",
                     "inputSchema": {
                         "json": {
                             "type": "object",

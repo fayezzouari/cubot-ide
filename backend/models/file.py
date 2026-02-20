@@ -53,6 +53,7 @@ class FileBase(BaseModel):
     path: str = Field(..., description="Virtual path in the project, e.g., 'src/main.c'")
     content: str = Field(default="")
     file_type: FileType = Field(default=FileType.OTHER)
+    origin: Optional[str] = Field(default=None, description="Optional origin/source of the file, e.g. 'daytona'")
     
 
 class FileCreate(FileBase):
@@ -83,6 +84,7 @@ class FileInDB(FileBase):
 
 class FileResponse(FileBase):
     """File response model"""
+    origin: Optional[str] = None
     id: str
     project_id: str
     created_at: datetime
