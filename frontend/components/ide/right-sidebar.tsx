@@ -1,11 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { MessageSquare, Terminal as TerminalIcon } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ChatSidebar from './chat-sidebar';
-import SandboxTerminal from './sandbox-terminal';
 import type { ChatMessage } from '@/lib/mock-data';
+import type { CodeContext } from './chat-sidebar';
 
 interface RightSidebarProps {
   messages: ChatMessage[];
@@ -13,6 +10,8 @@ interface RightSidebarProps {
   onChatInputChange: (value: string) => void;
   onSendMessage: () => void;
   isLoading?: boolean;
+  codeContexts?: CodeContext[];
+  onRemoveContext?: (id: string) => void;
 }
 
 export default function RightSidebar({
@@ -21,18 +20,20 @@ export default function RightSidebar({
   onChatInputChange,
   onSendMessage,
   isLoading = false,
+  codeContexts = [],
+  onRemoveContext,
 }: RightSidebarProps) {
-  const [workspaceId, setWorkspaceId] = useState<string | undefined>();
-
   return (
-    <div className="w-full h-full  flex flex-col bg-background">
-          <ChatSidebar
-            messages={messages}
-            chatInput={chatInput}
-            onChatInputChange={onChatInputChange}
-            onSendMessage={onSendMessage}
-            isLoading={isLoading}
-          />
+    <div className="w-full h-full flex flex-col bg-background">
+      <ChatSidebar
+        messages={messages}
+        chatInput={chatInput}
+        onChatInputChange={onChatInputChange}
+        onSendMessage={onSendMessage}
+        isLoading={isLoading}
+        codeContexts={codeContexts}
+        onRemoveContext={onRemoveContext}
+      />
     </div>
   );
 }

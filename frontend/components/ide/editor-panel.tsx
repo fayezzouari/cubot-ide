@@ -1,10 +1,23 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { File, Sparkles } from 'lucide-react';
+import { File, Sparkles, MessageSquarePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
+
+export interface EditorSelection {
+  fileName: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+}
+
+interface SelectionPos {
+  top: number;
+  left: number;
+}
 
 interface EditorPanelProps {
   currentFileName: string | null;
@@ -16,6 +29,7 @@ interface EditorPanelProps {
   editedContent: string;
   onChange: (value: string | undefined) => void;
   getLanguageFromFileName: (name?: string | null) => string;
+  onAddSelectionToChat?: (selection: EditorSelection) => void;
 }
 
 export default function EditorPanel({
@@ -28,7 +42,53 @@ export default function EditorPanel({
   editedContent,
   onChange,
   getLanguageFromFileName,
+  onAddSelectionToChat,
 }: EditorPanelProps) {
+  const editorRef = useRef<any>(null);
+  const [selectionPos, setSelectionPos] = useState<SelectionPos | null>(null);
+  const selectionRef = useRef<any>(null);
+
+  const updateFloatingButton = (editor: any) => {
+    const sel = editor.getSelection();
+    if (!sel || sel.isEmpty()) {
+      setSelectionPos(null);
+      selectionRef.current = null;
+      return;
+    }
+    selectionRef.current = sel;
+    // Use the start of the selection to anchor the button above it
+    const pos = editor.getScrolledVisiblePosition(sel.getStartPosition());
+    if (pos) {
+      // Place button above the selection line (offset by ~30px for button height + gap)
+      setSelectionPos({ top: Math.max(0, pos.top - 36), left: pos.left });
+    } else {
+      setSelectionPos(null);
+    }
+  };
+
+  const handleEditorMount = (editor: any) => {
+    editorRef.current = editor;
+    editor.onDidChangeCursorSelection(() => updateFloatingButton(editor));
+    editor.onDidScrollChange(() => {
+      if (selectionRef.current) updateFloatingButton(editor);
+    });
+  };
+
+  const handleAddToChat = () => {
+    if (!editorRef.current || !currentFileName || !onAddSelectionToChat) return;
+    const editor = editorRef.current;
+    const sel = editor.getSelection();
+    if (!sel || sel.isEmpty()) return;
+    const content = editor.getModel()?.getValueInRange(sel) ?? '';
+    onAddSelectionToChat({
+      fileName: currentFileName,
+      startLine: sel.startLineNumber,
+      endLine: sel.endLineNumber,
+      content,
+    });
+    setSelectionPos(null);
+  };
+
   return (
     <main className="h-full flex flex-col overflow-hidden bg-background">
       {currentFileName && (
@@ -66,6 +126,7 @@ export default function EditorPanel({
             <MonacoEditor
               value={editedContent}
               onChange={onChange}
+              onMount={handleEditorMount}
               language={getLanguageFromFileName(currentFileName)}
               theme="vs-dark"
               options={{
@@ -82,6 +143,22 @@ export default function EditorPanel({
                   'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)',
               }}
             />
+
+            {/* Floating "Add to chat" button above the selection */}
+            {selectionPos && onAddSelectionToChat && (
+              <button
+                onMouseDown={(e) => {
+                  // Prevent the editor from losing focus/selection
+                  e.preventDefault();
+                  handleAddToChat();
+                }}
+                style={{ top: selectionPos.top, left: selectionPos.left }}
+                className="absolute z-20 flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-200 bg-[#1a2540] border border-blue-500/30 rounded-md shadow-lg shadow-black/40 hover:bg-[#1e2d4d] hover:border-blue-400/50 transition-all pointer-events-auto select-none"
+              >
+                <MessageSquarePlus size={11} />
+                Add to chat
+              </button>
+            )}
           </div>
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-background">

@@ -8,8 +8,9 @@ import { useProject } from '@/contexts/project-context';
 import { mockMessages as initialMessages, type FileNode, type ChatMessage } from '@/lib/mock-data';
 import TopBar from '@/components/ide/top-bar';
 import VscodeFileExplorer from '@/components/ide/vscode-file-explorer';
-import EditorPanel from '@/components/ide/editor-panel';
+import EditorPanel, { type EditorSelection } from '@/components/ide/editor-panel';
 import RightSidebar from '@/components/ide/right-sidebar';
+import type { CodeContext } from '@/components/ide/chat-sidebar';
 import TerminalTabsManager from '@/components/ide/terminal-tabs-manager';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
@@ -43,6 +44,7 @@ export default function IDEPage() {
   const [isSerialConnecting, setIsSerialConnecting] = useState(false);
   const [isSerialConnected, setIsSerialConnected] = useState(false);
   const [serialError, setSerialError] = useState<string | null>(null);
+  const [codeContexts, setCodeContexts] = useState<CodeContext[]>([]);
   const serialSocketRef = useRef<WebSocket | null>(null);
   const hasLoadedProjectRef = useRef(false);
 
@@ -178,19 +180,33 @@ export default function IDEPage() {
     }
   }, [handleSandboxFileClick]);
 
+  const handleAddSelectionToChat = useCallback((selection: EditorSelection) => {
+    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    setCodeContexts((prev) => [
+      ...prev,
+      { id, ...selection },
+    ]);
+  }, []);
+
+  const handleRemoveContext = useCallback((id: string) => {
+    setCodeContexts((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
   const handleSendMessage = async () => {
     if (!chatInput.trim() || !currentProject) return;
     
     setIsChatLoading(true);
     const userMessage = chatInput.trim();
+    const contextSnapshot = [...codeContexts];
     const newUserMessage: ChatMessage = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role: 'user',
       content: userMessage,
     };
-    
+
     setMessages([...messages, newUserMessage]);
     setChatInput('');
+    setCodeContexts([]);
     
     // Add loading message
     const loadingMessage: ChatMessage = {
@@ -201,12 +217,21 @@ export default function IDEPage() {
     setMessages((prev) => [...prev, loadingMessage]);
     
     try {
-      // Prepare file context (current file if open)
-      const fileContext = selectedFile && currentFileContent
+      // Prepare file context (current file + any pinned code selections)
+      const baseFileContext = selectedFile && currentFileContent
         ? [{
             path: currentProject.files.find(f => f.id === selectedFile)?.path || '',
             content: editedContent || currentFileContent,
           }]
+        : [];
+
+      const selectionContext = contextSnapshot.map((ctx) => ({
+        path: `${ctx.fileName}:${ctx.startLine}-${ctx.endLine}`,
+        content: ctx.content,
+      }));
+
+      const fileContext = [...baseFileContext, ...selectionContext].length > 0
+        ? [...baseFileContext, ...selectionContext]
         : undefined;
       
       // Prepare conversation history
@@ -772,6 +797,7 @@ export default function IDEPage() {
                     editedContent={editedContent}
                     onChange={handleContentChange}
                     getLanguageFromFileName={getLanguageFromFileName}
+                    onAddSelectionToChat={handleAddSelectionToChat}
                   />
                 </ResizablePanel>
 
@@ -798,6 +824,7 @@ export default function IDEPage() {
                 editedContent={editedContent}
                 onChange={handleContentChange}
                 getLanguageFromFileName={getLanguageFromFileName}
+                onAddSelectionToChat={handleAddSelectionToChat}
               />
             )}
           </ResizablePanel>
@@ -811,6 +838,8 @@ export default function IDEPage() {
               onChatInputChange={setChatInput}
               onSendMessage={handleSendMessage}
               isLoading={isChatLoading}
+              codeContexts={codeContexts}
+              onRemoveContext={handleRemoveContext}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
