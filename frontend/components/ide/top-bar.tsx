@@ -36,16 +36,17 @@ export default function TopBar({
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1.5">
-        <button
-          onClick={onOpenCompile}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
-        >
-          <Play size={11} />
-          Compile
-        </button>
+  
 
         {isArduinoProject && projectType !== 'ros' && (
           <>
+            <button
+              onClick={onOpenCompile}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
+            >
+              <Play size={11} />
+              Compile
+            </button>
             <button
               onClick={onOpenSerial}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/50 hover:text-white font-medium text-xs rounded-lg transition-all cursor-pointer"
