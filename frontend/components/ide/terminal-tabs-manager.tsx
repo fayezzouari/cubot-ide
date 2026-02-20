@@ -46,13 +46,21 @@ export default function TerminalTabsManager({ workspaceId, onWorkspaceCreate, on
         onSplit={handleSplit}
       />
       <div className={`flex-1 flex ${splits.length > 0 ? 'gap-2' : ''}`}>
-        <div className="flex-1 min-w-0">
-          <SandboxTerminal
-            key={activeTabId}
-            workspaceId={workspaceId}
-            onWorkspaceCreate={onWorkspaceCreate}
-            onSyncComplete={onSyncComplete}
-          />
+        <div className="flex-1 min-w-0 relative">
+          {tabs.map(tab => (
+            <div
+              key={tab.id}
+              className="absolute inset-0"
+              style={{ display: tab.id === activeTabId ? 'block' : 'none' }}
+            >
+              <SandboxTerminal
+                workspaceId={workspaceId}
+                onWorkspaceCreate={onWorkspaceCreate}
+                onSyncComplete={onSyncComplete}
+                isActive={tab.id === activeTabId}
+              />
+            </div>
+          ))}
         </div>
         {splits.map(splitId => (
           <div className="flex-1 min-w-0 border-l border-[#2d2d2d] relative" key={splitId}>

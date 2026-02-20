@@ -13,11 +13,13 @@ interface SandboxTerminalProps {
   onWorkspaceCreate?: (workspaceId: string) => void;
   /** Called after a project→sandbox sync completes so the parent can pull new sandbox files back. */
   onSyncComplete?: (workspaceId: string) => void;
+  /** Whether this terminal is the currently visible tab. Used to re-fit on reveal. */
+  isActive?: boolean;
 }
 
 type InitStage = 'idle' | 'creating' | 'syncing' | 'ready';
 
-export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorkspaceCreate, onSyncComplete }: SandboxTerminalProps) {
+export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorkspaceCreate, onSyncComplete, isActive }: SandboxTerminalProps) {
   const { currentProject } = useProject();
   const isRosProject = currentProject?.project_type === 'ros';
 
@@ -53,6 +55,9 @@ export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorksp
       term = new Terminal({
         cursorBlink: true,
         scrollback: 5000,
+        scrollSensitivity: 3,
+        fastScrollSensitivity: 10,
+        fastScrollModifier: 'alt',
         theme: {
           background: '#1e1e1e',
           foreground: '#cccccc',
@@ -209,6 +214,15 @@ export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorksp
       setInitStage('idle');
     }
   }, [currentWorkspaceId, currentProject?.id, onWorkspaceCreate, isRosProject]);
+
+  // ── Re-fit when this tab becomes the active/visible one ──────────────────
+  useEffect(() => {
+    if (isActive && fitAddonRef.current) {
+      // Use rAF so the browser has painted the visible container first
+      const id = requestAnimationFrame(() => fitAddonRef.current?.fit());
+      return () => cancelAnimationFrame(id);
+    }
+  }, [isActive]);
 
   // ── 4. Auto-init: create workspace once terminal is ready ─────────────────
   useEffect(() => {
