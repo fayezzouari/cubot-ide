@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import FolderActionButton from './folder-action-button';
+import { Minus } from 'lucide-react';
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from 'lucide-react';
 import {
   ContextMenu,
@@ -70,13 +71,31 @@ export default function FileTreeItem({
                 <span className={`truncate ${isSandbox ? 'text-amber-100/70' : ''}`}>
                   {node.name}
                 </span>
-                {/* Add + button for creating files in this folder, visible only on hover */}
-                {onCreateFile && rowHovered && (
-                  <span className="ml-auto">
-                    <FolderActionButton
-                      onCreateFile={onCreateFile}
-                      folderPath={node.id.replace(/^(sandbox-folder:|folder-)/, '')}
-                    />
+                {/* Add + and − buttons for creating and deleting folders, visible only on hover (IDE folders only) */}
+                {rowHovered && (
+                  <span className="ml-auto flex items-center gap-1">
+                    {onCreateFile && (
+                      <FolderActionButton
+                        onCreateFile={onCreateFile}
+                        folderPath={node.id.replace(/^(sandbox-folder:|folder-)/, '')}
+                      />
+                    )}
+                    {/* Show dash for IDE folders only */}
+                    { isFolder && (
+                      <button
+                        className="ml-1 p-0.5 rounded hover:bg-destructive/20 text-destructive cursor-pointer"
+                        title="Delete folder"
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (window.confirm(`Delete folder \"${node.name}\" and all its contents? This cannot be undone.`)) {
+                            onDeleteFile(node.id);
+                          }
+                        }}
+                      >
+                        <Minus size={14} />
+                      </button>
+                    )}
+
                   </span>
                 )}
               </>
@@ -92,17 +111,19 @@ export default function FileTreeItem({
 
           </button>
         </ContextMenuTrigger>
-        {/* Only show context menu for IDE-managed files */}
-        {!isFolder && !isSandbox && (
+        {/* Context menu for IDE-managed files and folders */}
+        {!isSandbox && (
           <ContextMenuContent>
-            <ContextMenuItem onClick={() => onRenameFile(node.id)}>
-              Rename
-            </ContextMenuItem>
+            {!isFolder && (
+              <ContextMenuItem onClick={() => onRenameFile(node.id)}>
+                Rename
+              </ContextMenuItem>
+            )}
             <ContextMenuItem
               onClick={() => onDeleteFile(node.id)}
               className="text-destructive"
             >
-              Delete
+              Delete{isFolder ? ' Folder' : ''}
             </ContextMenuItem>
           </ContextMenuContent>
         )}

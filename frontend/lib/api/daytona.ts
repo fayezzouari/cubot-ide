@@ -124,4 +124,15 @@ export const daytonaApi = {
     if (!response.ok) throw new Error('Failed to fetch file content');
     return response.json();
   },
+
+  async deletePath(workspaceId: string, path: string): Promise<void> {
+    const encoded = encodeURIComponent(path);
+    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/files?path=${encoded}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Failed to delete sandbox path');
+    }
+  },
 };

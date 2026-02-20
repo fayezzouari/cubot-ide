@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { compileService, chatService, projectService, fileService } from '@/lib/api';
-import type { CompilerType } from '@/lib/api/types';
+import type { CompilerType, ProjectWithFiles } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
 import { mockMessages as initialMessages, type FileNode, type ChatMessage } from '@/lib/mock-data';
 import TopBar from '@/components/ide/top-bar';
@@ -426,10 +426,61 @@ export default function IDEPage() {
     }
   };
 
-  const handleDeleteFile = async (fileId: string) => {
+  // Handles both file and folder deletion
+  const handleDeleteFile = async (nodeId: string) => {
+    // If this is a folder node (UI id like 'folder-<name>'), delete all files under it using their real IDs.
+    // If it's a sandbox folder (id like 'sandbox-folder:...'), call the Daytona API to delete the path.
+    if (nodeId.startsWith('sandbox-folder:')) {
+      const folderPath = nodeId.replace(/^sandbox-folder:/, '');
+      if (!activeWorkspaceId) return;
+      if (!window.confirm(`Delete sandbox folder "${folderPath}" and all its contents? This cannot be undone.`)) return;
+      try {
+        await daytonaApi.deletePath(activeWorkspaceId, folderPath);
+        // Refresh the sandbox file list and import any new files back into project
+        if (activeWorkspaceId) await handleSyncComplete(activeWorkspaceId);
+      } catch (err) {
+        console.error('Failed to delete sandbox folder:', err);
+        alert('Failed to delete sandbox folder. See console for details.');
+      }
+      return;
+    }
+
+    if (nodeId.startsWith('folder-')) {
+      const folderName = nodeId.replace(/^folder-/, '');
+      if (!window.confirm(`Delete folder "${folderName}" and all its contents? This cannot be undone.`)) return;
+      const files = currentProject?.files || [];
+      const toDelete = files.filter(f => {
+        const fileDir = f.path ? f.path.replace(/^\//, '') : '';
+        return fileDir === folderName || fileDir.startsWith(folderName + '/');
+      });
+
+      // Batch-delete: avoid reloading project after each deletion to prevent
+      // inconsistent state. Delete all files, skipping refresh, then reload once.
+      for (const f of toDelete) {
+        try {
+          await deleteFile(f.id, true);
+        } catch (err) {
+          console.error(`Failed to delete file ${f.name}:`, err);
+        }
+      }
+
+      // Reload project to refresh file list once
+      if (currentProject) await loadProject(currentProject.id);
+      // Deselect selected file if it was inside deleted folder
+      if (selectedFile) {
+        const sel = currentProject?.files.find(f => f.id === selectedFile);
+        if (sel && (sel.path === folderName || sel.path?.startsWith(folderName + '/'))) {
+          setSelectedFile(null);
+          setEditedContent('');
+        }
+      }
+      return;
+    }
+
+    // Otherwise treat as a file ID and delete normally
     try {
-      await deleteFile(fileId);
-      if (selectedFile === fileId) {
+      await deleteFile(nodeId);
+      if (selectedFile === nodeId) {
         setSelectedFile(null);
         setEditedContent('');
       }
@@ -905,6 +956,7 @@ export default function IDEPage() {
                 {/* Sandbox Terminal - ROS Projects Only */}
                 <ResizablePanel defaultSize={35} minSize={20}>
                   <TerminalTabsManager
+                    workspaceId={activeWorkspaceId}
                     onWorkspaceCreate={handleWorkspaceCreate}
                     onSyncComplete={handleSyncComplete}
                   />
@@ -942,3 +994,7 @@ export default function IDEPage() {
     </div>
   );
 }
+function deleteFolderRecursively(arg0: { folderPath: string; currentProject: ProjectWithFiles | null; loadProject: (projectId: string) => Promise<void>; }) {
+  throw new Error('Function not implemented.');
+}
+

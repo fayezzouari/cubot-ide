@@ -45,6 +45,7 @@ export interface FileResponse {
   file_type: FileType;
   created_at: string;
   updated_at: string;
+  origin?: string;
 }
 
 export interface FileCreate {
@@ -53,6 +54,7 @@ export interface FileCreate {
   path: string;
   content: string;
   file_type: FileType;
+  origin?: string;
 }
 
 export interface FileUpdate {

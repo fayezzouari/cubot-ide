@@ -31,7 +31,23 @@ export async function importSandboxFile({
   const filePath = parts.slice(0, -1).join('/') || '/';
   const ext = fileName.split('.').pop()?.toLowerCase() || '';
   const fileType = FILE_TYPE_MAP[ext] || 'other';
-  const newFile = await createFile(fileName, filePath, content, fileType);
+  if (currentProject && Array.isArray(currentProject.files)) {
+    const relPath = entry.path; // sandbox relative path like 'src/foo/bar.c'
+    const existing = currentProject.files.find(f => {
+      const dir = f.path && f.path !== '/' && f.path !== '.'
+        ? f.path.replace(/^\//, '').replace(/\/$/, '') + '/'
+        : '';
+      return (dir + f.name) === relPath;
+    });
+    if (existing) {
+      setSelectedFile(existing.id);
+      setEditedContent(existing.content);
+      setFileContents(prev => ({ ...prev, [existing.id]: existing.content }));
+      return;
+    }
+  }
+
+  const newFile = await createFile(fileName, filePath, content, fileType, 'daytona');
   setSelectedFile(newFile.id);
   setEditedContent(content);
   setFileContents(prev => ({ ...prev, [newFile.id]: content }));
@@ -68,6 +84,7 @@ export async function syncSandboxToProject({
         path: filePath,
         content,
         file_type: (FILE_TYPE_MAP[ext] ?? 'other') as any,
+        origin: 'daytona',
       });
       imported++;
     } catch (err) {

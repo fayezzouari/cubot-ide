@@ -27,7 +27,7 @@ interface ProjectContextType {
   // File operations
   createFile: (name: string, path: string, content: string, fileType: string) => Promise<FileResponse>;
   updateFile: (fileId: string, data: FileUpdate) => Promise<FileResponse>;
-  deleteFile: (fileId: string) => Promise<void>;
+  deleteFile: (fileId: string, skipRefresh?: boolean) => Promise<void>;
   refreshFiles: () => Promise<void>;
   
   // Compilation
@@ -82,7 +82,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const createFile = useCallback(async (name: string, path: string, content: string, fileType: string) => {
+  const createFile = useCallback(async (name: string, path: string, content: string, fileType: string, origin?: string) => {
     if (!currentProject) throw new Error('No project selected');
     
     setIsLoading(true);
@@ -94,6 +94,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         path,
         content,
         file_type: fileType as any,
+        origin: origin,
       });
       
       // Refresh project to get updated files
@@ -131,16 +132,18 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }
   }, [currentProject]);
 
-  const deleteFile = useCallback(async (fileId: string) => {
+  const deleteFile = useCallback(async (fileId: string, skipRefresh: boolean = false) => {
     if (!currentProject) throw new Error('No project selected');
     
     setIsLoading(true);
     setError(null);
     try {
       await fileService.delete(fileId);
-      
-      // Refresh project
-      await loadProject(currentProject.id);
+
+      if (!skipRefresh) {
+        // Refresh project
+        await loadProject(currentProject.id);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to delete file');
       throw err;
