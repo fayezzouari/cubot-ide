@@ -1,23 +1,18 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Loader2, Plus } from 'lucide-react';
 import { daytonaApi, type SandboxFileEntry } from '@/lib/api/daytona';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
 import { compileService, chatService, projectService, fileService } from '@/lib/api';
 import type { CompilerType, ProjectWithFiles } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
 import { mockMessages as initialMessages, type FileNode, type ChatMessage } from '@/lib/mock-data';
 import TopBar from '@/components/ide/top-bar';
-import FileTreeItem from '@/components/ide/file-tree-item';
+import VscodeFileExplorer from '@/components/ide/vscode-file-explorer';
 import EditorPanel from '@/components/ide/editor-panel';
 import RightSidebar from '@/components/ide/right-sidebar';
 import TerminalTabsManager from '@/components/ide/terminal-tabs-manager';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
-import CreateFileDialog from '@/components/ide/create-file-dialog';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { buildProjectFileTree, buildSandboxFileTree, buildUnifiedFileTree } from './helpers/fileTreeHelpers';
 import { importSandboxFile, syncSandboxToProject } from './helpers/fileHandlers';
@@ -34,7 +29,6 @@ export default function IDEPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [isCompileModalOpen, setIsCompileModalOpen] = useState(false);
   const [selectedCompiler, setSelectedCompiler] = useState<CompilerType>('arduino' as CompilerType);
   const [compileLogs, setCompileLogs] = useState('');
@@ -51,12 +45,6 @@ export default function IDEPage() {
   const [serialError, setSerialError] = useState<string | null>(null);
   const serialSocketRef = useRef<WebSocket | null>(null);
   const hasLoadedProjectRef = useRef(false);
-  const [isCreateFileModalOpen, setIsCreateFileModalOpen] = useState(false);
-  const [newFileName, setNewFileName] = useState('');
-  const [newFilePath, setNewFilePath] = useState('');
-  const [isRenamingFile, setIsRenamingFile] = useState(false);
-  const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
-  const [newFileNameInput, setNewFileNameInput] = useState('');
 
   // Sandbox file tree state
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
@@ -364,65 +352,30 @@ export default function IDEPage() {
     return () => window.removeEventListener('keydown', handleGlobalSave);
   }, [hasUnsavedChanges, handleSaveFile]);
 
-  // Used for sidebar + button: open create file modal for a specific folder
-  const handleCreateNewFile = (folderPath?: string) => {
-    setIsCreateFileModalOpen(true);
-    if (folderPath !== undefined) {
-      setNewFilePath(folderPath);
-    } else {
-      setNewFilePath('');
-    }
-  };
-
-  const handleCreateFileSubmit = async () => {
-    if (!newFileName.trim() || !newFilePath.trim()) return;
-
-    // Determine file type from extension
-    const ext = newFileName.split('.').pop()?.toLowerCase() || '';
+  // Inline create: called by VscodeFileExplorer when user confirms a new filename
+  const handleInlineCreate = async (folderPath: string, fileName: string) => {
+    if (!fileName.trim() || !currentProject) return;
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
     const fileType = ext === 'c' ? 'c' : ext === 'cpp' ? 'cpp' : ext === 'h' ? 'h' : 'other';
-
-    if (currentProject) {
-      setIsCreatingFile(true);
-      try {
-        const newFile = await createFile(newFileName, newFilePath, '', fileType);
-        console.log('File created in MongoDB:', newFile);
-        // Select the new file
-        setSelectedFile(newFile.id);
-        setEditedContent('');
-        setFileContents(prev => ({ ...prev, [newFile.id]: '' }));
-        // Close modal and reset form
-        setIsCreateFileModalOpen(false);
-        setNewFileName('');
-        setNewFilePath('');
-      } catch (error) {
-        console.error('Failed to create file:', error);
-        alert('Failed to create file. Please try again.');
-      } finally {
-        setIsCreatingFile(false);
-      }
-    }
-  };
-
-  const handleRenameFile = (fileId: string) => {
-    const file = currentProject?.files.find(f => f.id === fileId);
-    if (file) {
-      setRenamingFileId(fileId);
-      setNewFileNameInput(file.name);
-      setIsRenamingFile(true);
-    }
-  };
-
-  const handleRenameFileSubmit = async () => {
-    if (!renamingFileId || !newFileNameInput.trim()) return;
-
     try {
-      await updateFile(renamingFileId, { name: newFileNameInput.trim() });
-      setIsRenamingFile(false);
-      setRenamingFileId(null);
-      setNewFileNameInput('');
+      const newFile = await createFile(fileName, folderPath, '', fileType);
+      setSelectedFile(newFile.id);
+      setEditedContent('');
+      setFileContents(prev => ({ ...prev, [newFile.id]: '' }));
+    } catch (error) {
+      console.error('Failed to create file:', error);
+      throw error; // re-throw so explorer can keep input open
+    }
+  };
+
+  // Inline rename: called by VscodeFileExplorer when user confirms a new name
+  const handleInlineRename = async (fileId: string, newName: string) => {
+    if (!newName.trim()) return;
+    try {
+      await updateFile(fileId, { name: newName.trim() });
     } catch (error) {
       console.error('Failed to rename file:', error);
-      alert('Failed to rename file. Please try again.');
+      throw error; // re-throw so explorer can keep input open
     }
   };
 
@@ -488,12 +441,6 @@ export default function IDEPage() {
       console.error('Failed to delete file:', error);
       alert('Failed to delete file. Please try again.');
     }
-  };
-
-  const handleRenameFileCancel = () => {
-    setIsRenamingFile(false);
-    setRenamingFileId(null);
-    setNewFileNameInput('');
   };
 
   const getLanguageFromFileName = (name?: string | null) => {
@@ -790,145 +737,22 @@ export default function IDEPage() {
         onDisconnect={handleDisconnectSerial}
       />
 
-      <CreateFileDialog
-        open={isCreateFileModalOpen}
-        onOpenChange={setIsCreateFileModalOpen}
-        newFileName={newFileName}
-        newFilePath={newFilePath}
-        onNewFileNameChange={setNewFileName}
-        onNewFilePathChange={setNewFilePath}
-        isCreatingFile={isCreatingFile}
-        onCreate={handleCreateFileSubmit}
-        onCancel={() => {
-          setIsCreateFileModalOpen(false);
-          setNewFileName('');
-          setNewFilePath('');
-        }}
-      />
-
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
           {/* File Sidebar */}
           <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
-            <aside className="w-full h-full border-r border-white/[0.06] flex flex-col bg-black">
-              <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
-                <span className="font-medium text-[10px] uppercase tracking-widest text-white/25 font-mono">
-                  {currentProject ? 'Explorer' : 'Files'}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 hover:bg-sidebar-accent"
-                  onClick={() => handleCreateNewFile()}
-                  disabled={isCreatingFile}
-                >
-                  {isCreatingFile ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                </Button>
-              </div>
-              {isLoading ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <Loader2 className="animate-spin" size={24} />
-                </div>
-              ) : (
-                <ScrollArea className="flex-1">
-                  <div className="py-2">
-                    {/* Sandbox is still connecting — show a brief spinner */}
-                    {isSandboxLoading ? (
-                      <div className="p-4 flex items-center gap-2 text-muted-foreground text-xs font-mono">
-                        <Loader2 size={12} className="animate-spin" />
-                        Syncing…
-                      </div>
-                    ) : (() => {
-                      // Use unified tree when workspace is active and has entries;
-                      // otherwise fall back to project file tree.
-                      // Always show the merged (unified) file tree if sandbox is active
-                      if (activeWorkspaceId) {
-                        return unifiedFileTree.length > 0 ? (
-                          unifiedFileTree.map((node) => (
-                            <FileTreeItem
-                              key={node.id}
-                              node={node}
-                              selectedFile={selectedFile}
-                              onSelectFile={handleUnifiedFileClick}
-                              onRenameFile={handleRenameFile}
-                              onDeleteFile={handleDeleteFile}
-                              onCreateFile={handleCreateNewFile}
-                              source={node.source || 'sandbox'}
-                            />
-                          ))
-                        ) : (
-                          <div className="p-4 text-center text-muted-foreground text-sm">
-                            No files in sandbox
-                          </div>
-                        );
-                      } else {
-                        return displayFileTree.length > 0 ? (
-                          displayFileTree.map((node) => (
-                            <FileTreeItem
-                              key={node.id}
-                              node={node}
-                              selectedFile={selectedFile}
-                              onSelectFile={handleFileSelect}
-                              onRenameFile={handleRenameFile}
-                              onDeleteFile={handleDeleteFile}
-                              onCreateFile={handleCreateNewFile}
-                              source="ide"
-                            />
-                          ))
-                        ) : (
-                          <div className="p-4 text-center text-muted-foreground text-sm">
-                            No files in project
-                          </div>
-                        );
-                      }
-                    })()}
-                    {/* Importing indicator */}
-                    {isImportingFile && (
-                      <div className="px-4 py-1 flex items-center gap-2 text-amber-500/60 text-xs font-mono">
-                        <Loader2 size={10} className="animate-spin" />
-                        Importing…
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              )}
-              {isRenamingFile && (
-                <div className="p-3 border-t border-white/[0.06] bg-black">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={newFileNameInput}
-                      onChange={(e) => setNewFileNameInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleRenameFileSubmit();
-                        } else if (e.key === 'Escape') {
-                          handleRenameFileCancel();
-                        }
-                      }}
-                      placeholder="New file name"
-                      className="flex-1 h-8 text-sm"
-                      autoFocus
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleRenameFileSubmit}
-                      className="h-8 px-3"
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleRenameFileCancel}
-                      className="h-8 px-3"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </aside>
+            <VscodeFileExplorer
+              nodes={activeWorkspaceId ? unifiedFileTree : displayFileTree}
+              selectedFile={selectedFile}
+              onSelectFile={activeWorkspaceId ? handleUnifiedFileClick : handleFileSelect}
+              onRenameFile={handleInlineRename}
+              onDeleteFile={handleDeleteFile}
+              onCreateFile={handleInlineCreate}
+              isLoading={isLoading}
+              isSandboxLoading={isSandboxLoading}
+              isImportingFile={isImportingFile}
+            />
           </ResizablePanel>
 
           <ResizableHandle withHandle className="w-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
@@ -993,8 +817,5 @@ export default function IDEPage() {
       </div>
     </div>
   );
-}
-function deleteFolderRecursively(arg0: { folderPath: string; currentProject: ProjectWithFiles | null; loadProject: (projectId: string) => Promise<void>; }) {
-  throw new Error('Function not implemented.');
 }
 
