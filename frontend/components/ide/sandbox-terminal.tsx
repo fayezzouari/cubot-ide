@@ -1,12 +1,18 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Terminal as TerminalIcon, FolderSync, RefreshCw, Trash2, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { FolderSync, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { Button } from '@/components/ui/button';
 import { daytonaApi } from '@/lib/api/daytona';
 import { useProject } from '@/contexts/project-context';
 import { toast } from 'sonner';
+
+export interface SandboxTerminalHandle {
+  resync: () => void;
+  reset: () => void;
+  clear: () => void;
+}
 
 interface SandboxTerminalProps {
   workspaceId?: string;
@@ -15,11 +21,18 @@ interface SandboxTerminalProps {
   onSyncComplete?: (workspaceId: string) => void;
   /** Whether this terminal is the currently visible tab. Used to re-fit on reveal. */
   isActive?: boolean;
+  /** When false, suppresses the built-in header (actions are owned by the parent). */
+  showHeader?: boolean;
+  /** Called whenever connection state, init stage, or workspace ID changes. */
+  onStateChange?: (state: { isConnected: boolean; initStage: InitStage; workspaceId?: string }) => void;
 }
 
 type InitStage = 'idle' | 'creating' | 'syncing' | 'ready';
 
-export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorkspaceCreate, onSyncComplete, isActive }: SandboxTerminalProps) {
+const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(function SandboxTerminal(
+  { workspaceId: workspaceIdProp, onWorkspaceCreate, onSyncComplete, isActive, showHeader = true, onStateChange },
+  ref,
+) {
   const { currentProject } = useProject();
   const isRosProject = currentProject?.project_type === 'ros';
 
@@ -244,8 +257,24 @@ export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorksp
       wsRef.current = null;
       resizeObserverRef.current?.disconnect();
       onDataDisposableRef.current?.dispose();
+      if (resetTimeoutRef.current) clearTimeout(resetTimeoutRef.current);
     };
   }, []);
+
+  // ── 7. Notify parent of state changes ────────────────────────────────────
+  const onStateChangeRef = useRef(onStateChange);
+  onStateChangeRef.current = onStateChange;
+  useEffect(() => {
+    onStateChangeRef.current?.({ isConnected, initStage, workspaceId: currentWorkspaceId });
+  }, [isConnected, initStage, currentWorkspaceId]);
+
+  // ── 8. Expose imperative actions (via ref so no ordering issues) ──────────
+  const actionsRef = useRef({ resync: () => {}, reset: () => {}, clear: () => {} });
+  useImperativeHandle(ref, () => ({
+    resync: () => actionsRef.current.resync(),
+    reset: () => actionsRef.current.reset(),
+    clear: () => actionsRef.current.clear(),
+  }));
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const resyncFiles = async () => {
@@ -272,6 +301,7 @@ export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorksp
 
   const clearTerminal = () => xtermRef.current?.clear();
 
+  const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resetSandbox = async () => {
     wsRef.current?.close();
     wsRef.current = null;
@@ -282,9 +312,12 @@ export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorksp
     setCurrentWorkspaceId(undefined);
     setInitStage('idle');
     xtermRef.current?.write('\r\n\x1b[33mSandbox reset. Reconnecting…\x1b[0m\r\n');
-    // Trigger recreation
-    setTimeout(() => ensureWorkspace(), 500);
+    if (resetTimeoutRef.current) clearTimeout(resetTimeoutRef.current);
+    resetTimeoutRef.current = setTimeout(() => ensureWorkspace(), 500);
   };
+
+  // Keep actionsRef in sync so useImperativeHandle always delegates to the latest versions
+  actionsRef.current = { resync: resyncFiles, reset: resetSandbox, clear: clearTerminal };
 
   const isInitializing = initStage === 'creating' || initStage === 'syncing';
 
@@ -298,70 +331,49 @@ export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorksp
 
   return (
     <div className="h-full flex flex-col bg-[#1e1e1e] font-mono">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] bg-[#252526] flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <TerminalIcon size={16} className="text-[#4ec9b0]" />
-            <span className="font-semibold text-sm text-[#cccccc]">Sandbox Terminal</span>
+      {showHeader && (
+        <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] bg-[#252526] flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm text-[#cccccc]">Sandbox Terminal</span>
+            </div>
+            {currentWorkspaceId && (
+              <>
+                <div className="h-4 w-px bg-[#3e3e42]" />
+                <span className="text-xs text-[#858585]">{currentWorkspaceId.slice(0, 12)}…</span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 font-medium rounded-sm ${
+                    isConnected ? 'bg-[#0e639c] text-white' : 'bg-[#3e3e42] text-[#858585]'
+                  }`}
+                >
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </>
+            )}
           </div>
-          {currentWorkspaceId && (
-            <>
-              <div className="h-4 w-px bg-[#3e3e42]" />
-              <span className="text-xs text-[#858585]">{currentWorkspaceId.slice(0, 12)}…</span>
-              <span
-                className={`text-[10px] px-2 py-0.5 font-medium rounded-sm ${
-                  isConnected ? 'bg-[#0e639c] text-white' : 'bg-[#3e3e42] text-[#858585]'
-                }`}
-              >
-                {isConnected ? 'Connected' : 'Disconnected'}
+          <div className="flex items-center gap-1">
+            {isInitializing && (
+              <span className="text-xs text-[#ce9178] flex items-center gap-1.5 px-2 py-1">
+                <Loader2 size={12} className="animate-spin" />
+                {initStage === 'creating' ? 'Creating…' : 'Syncing…'}
               </span>
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          {isInitializing && (
-            <span className="text-xs text-[#ce9178] flex items-center gap-1.5 px-2 py-1">
-              <Loader2 size={12} className="animate-spin" />
-              {initStage === 'creating' ? 'Creating…' : 'Syncing…'}
-            </span>
-          )}
-          {currentWorkspaceId && currentProject?.id && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white transition-colors"
-              onClick={resyncFiles}
-              disabled={isInitializing}
-              title="Re-sync project files"
-            >
-              <FolderSync size={14} />
+            )}
+            {currentWorkspaceId && currentProject?.id && (
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white transition-colors" onClick={resyncFiles} disabled={isInitializing} title="Re-sync project files">
+                <FolderSync size={14} />
+              </Button>
+            )}
+            {currentWorkspaceId && (
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white transition-colors" onClick={resetSandbox} disabled={isInitializing} title="Reset sandbox">
+                <RefreshCw size={14} />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-[#f48771] transition-colors" onClick={clearTerminal} title="Clear terminal">
+              <Trash2 size={14} />
             </Button>
-          )}
-          {currentWorkspaceId && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white transition-colors"
-              onClick={resetSandbox}
-              disabled={isInitializing}
-              title="Reset sandbox"
-            >
-              <RefreshCw size={14} />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-[#f48771] transition-colors"
-            onClick={clearTerminal}
-            title="Clear terminal"
-          >
-            <Trash2 size={14} />
-          </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* xterm.js mount point */}
       <div
@@ -371,4 +383,6 @@ export default function SandboxTerminal({ workspaceId: workspaceIdProp, onWorksp
       />
     </div>
   );
-}
+});
+
+export default SandboxTerminal;
