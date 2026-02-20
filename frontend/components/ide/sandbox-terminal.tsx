@@ -58,9 +58,10 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
     let fitAddon: any;
 
     (async () => {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { WebglAddon }] = await Promise.all([
         import('@xterm/xterm') as any,
         import('@xterm/addon-fit') as any,
+        import('@xterm/addon-webgl') as any,
       ]);
 
       if (disposed || !terminalDivRef.current) return;
@@ -102,6 +103,17 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
       fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(terminalDivRef.current);
+
+      // WebGL renderer — GPU-accelerated, dramatically faster for bursty output.
+      // Falls back silently to the default canvas renderer if WebGL is unavailable.
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => webglAddon.dispose());
+        term.loadAddon(webglAddon);
+      } catch {
+        // WebGL unavailable — default renderer is used automatically
+      }
+
       fitAddon.fit();
 
       xtermRef.current = term;
@@ -130,6 +142,20 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
+    // ── Write batching: accumulate incoming chunks and flush once per rAF ──
+    // Avoids a repaint for every individual WebSocket message during bursty output.
+    let pendingChunks: (string | Uint8Array)[] = [];
+    let rafId: number | null = null;
+    const flushWrites = () => {
+      rafId = null;
+      if (pendingChunks.length === 0) return;
+      const term = xtermRef.current;
+      if (!term) { pendingChunks = []; return; }
+      const chunks = pendingChunks;
+      pendingChunks = [];
+      for (const chunk of chunks) term.write(chunk);
+    };
+
     ws.onopen = () => {
       setIsConnected(true);
       // Fit once and send initial size
@@ -148,15 +174,20 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
         });
       }
 
-      // ResizeObserver → fit + send resize
+      // ResizeObserver → debounced fit + resize to avoid thrashing during panel drag
       if (terminalDivRef.current && fitAddon) {
         resizeObserverRef.current?.disconnect();
+        let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
         const observer = new ResizeObserver(() => {
-          fitAddon.fit();
-          const t = xtermRef.current;
-          if (t && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'resize', cols: t.cols, rows: t.rows }));
-          }
+          if (resizeDebounce) clearTimeout(resizeDebounce);
+          resizeDebounce = setTimeout(() => {
+            resizeDebounce = null;
+            fitAddon.fit();
+            const t = xtermRef.current;
+            if (t && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'resize', cols: t.cols, rows: t.rows }));
+            }
+          }, 50);
         });
         observer.observe(terminalDivRef.current);
         resizeObserverRef.current = observer;
@@ -164,17 +195,20 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
     };
 
     ws.onmessage = (event) => {
-      const term = xtermRef.current;
-      if (!term) return;
-      if (event.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(event.data));
-      } else {
-        term.write(event.data as string);
-      }
+      // Buffer the chunk and schedule a single rAF flush instead of writing immediately.
+      // This batches bursts of messages (e.g. build logs) into one render frame.
+      const chunk = event.data instanceof ArrayBuffer
+        ? new Uint8Array(event.data)
+        : (event.data as string);
+      pendingChunks.push(chunk);
+      if (rafId === null) rafId = requestAnimationFrame(flushWrites);
     };
 
     ws.onclose = () => {
       setIsConnected(false);
+      // Flush any remaining buffered output before showing the closed message
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+      flushWrites();
       xtermRef.current?.write('\r\n\x1b[33m[Connection closed]\x1b[0m\r\n');
       wsRef.current = null;
       resizeObserverRef.current?.disconnect();
@@ -182,6 +216,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
 
     ws.onerror = () => {
       setIsConnected(false);
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
       xtermRef.current?.write('\r\n\x1b[31m[WebSocket error]\x1b[0m\r\n');
     };
   }, []);
