@@ -13,6 +13,7 @@ import type {
   CompileExplainResponse,
   UploadRequest,
   UploadResponse,
+  SerialPortsResponse,
   ChatRequest,
   ChatResponse,
   ChatMessageInDB,
@@ -100,6 +101,9 @@ export const compileService = {
 
   upload: (data: UploadRequest) =>
     apiClient.post<UploadResponse>('/compile/upload', data),
+
+  listPorts: () =>
+    apiClient.get<SerialPortsResponse>('/compile/ports'),
 
   listCompilers: () =>
     apiClient.get<{
