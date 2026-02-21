@@ -386,6 +386,97 @@ class CompilerService:
         
         return "output.bin"
     
+    async def upload_firmware(
+        self,
+        request,  # UploadRequest — avoid circular import
+        files: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """
+        Compile the project and upload the resulting firmware to the board.
+
+        Uses the Arduino Docker image with USB device passthrough so that
+        arduino-cli can write directly to the board over the serial port.
+        """
+        if not await self.check_docker_available():
+            return {
+                "success": False,
+                "output": "Docker is not available. Please ensure Docker is running.",
+                "errors": ["Docker service unavailable"],
+            }
+
+        image_name = self._container_images.get(request.compiler)
+        if not image_name:
+            return {
+                "success": False,
+                "output": f"Unsupported compiler: {request.compiler}",
+                "errors": [f"No image configured for {request.compiler}"],
+            }
+
+        # Normalise Arduino sketch layout (same as compile_code)
+        files_to_write = files
+        sketch_dir = "sketch"
+        if request.compiler == CompilerType.ARDUINO:
+            sketch_file = f"{sketch_dir}/sketch.ino"
+            main_content = files.get(request.main_file)
+            if main_content is None:
+                return {
+                    "success": False,
+                    "output": f"Main file {request.main_file} not found",
+                    "errors": [f"Main file {request.main_file} not found"],
+                }
+            normalised: Dict[str, str] = {}
+            for path, content in files.items():
+                if path == request.main_file:
+                    continue
+                normalised[f"{sketch_dir}/{path}"] = content
+            normalised[sketch_file] = main_content
+            files_to_write = normalised
+
+        temp_dir = tempfile.mkdtemp(prefix="cubot_upload_")
+        try:
+            await self._write_files_to_temp(temp_dir, files_to_write)
+
+            fqbn = getattr(request, "fqbn", "arduino:avr:uno")
+            port = request.port
+            compile_cmd = (
+                f"arduino-cli compile --fqbn {fqbn} "
+                f"--output-dir /src/build /src/{sketch_dir}"
+            )
+            upload_cmd = (
+                f"arduino-cli upload --fqbn {fqbn} "
+                f"--port {port} --input-dir /src/build /src/{sketch_dir}"
+            )
+            full_cmd = f"{compile_cmd} && {upload_cmd}"
+
+            docker_args = [
+                "run",
+                "--rm",
+                "--privileged",
+                "--user", "root",
+                "--device", f"{port}:{port}",
+                "-v", f"{temp_dir}:/src",
+                "-w", "/src",
+                image_name,
+                "sh", "-lc",
+                full_cmd,
+            ]
+
+            exit_code, stdout, stderr = self._run_docker_cli(
+                docker_args, timeout=120
+            )
+            logs = "\n".join(t for t in [stdout, stderr] if t)
+
+            if exit_code == 0:
+                return {"success": True, "output": logs, "errors": []}
+            else:
+                errors = self._parse_errors(logs, request.compiler)
+                return {"success": False, "output": logs, "errors": errors}
+
+        except Exception as exc:
+            return {"success": False, "output": str(exc), "errors": [str(exc)]}
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
     def _parse_errors(self, logs: str, compiler: CompilerType) -> list:
         """Parse error messages from compiler output"""
         errors = []
