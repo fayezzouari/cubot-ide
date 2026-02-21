@@ -74,7 +74,9 @@ export default function UploadDialog({
   useEffect(() => {
     if (open && !scannedRef.current) {
       scannedRef.current = true;
-      scanPorts(true);
+      // Wait for the dialog open animation to finish before scanning
+      const timer = setTimeout(() => scanPorts(true), 300);
+      return () => clearTimeout(timer);
     }
     if (!open) {
       scannedRef.current = false;
