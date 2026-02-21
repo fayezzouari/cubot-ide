@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Response
 from typing import List, Optional
 
-from models.compilation import CompileRequest, CompilationResponse, CompileExplainRequest, CompileExplainResponse
+from models.compilation import CompileRequest, CompilationResponse, CompileExplainRequest, CompileExplainResponse, UploadRequest, UploadResponse
 from models.file import CompilerType
 from services.compiler_service import compiler_service
 from services.file_service import file_service
@@ -151,6 +151,48 @@ async def check_compiler_status():
         "docker_available": docker_available,
         "message": "Docker is running" if docker_available else "Docker is not available"
     }
+
+
+@router.post("/upload", response_model=UploadResponse)
+async def upload_firmware(request: UploadRequest):
+    """
+    Compile the project and upload the firmware to the connected Arduino board.
+
+    Requires:
+    - compiler: arduino (only Arduino is supported for direct upload)
+    - file_ids: list of file IDs to compile
+    - main_file: entry-point file path
+    - port: serial port the board is connected to (e.g. /dev/ttyACM0)
+    - fqbn: fully-qualified board name (default: arduino:avr:uno)
+    """
+    files_dict: dict = {}
+    for file_id in request.file_ids:
+        file = await file_service.get_file(file_id)
+        if not file:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File with id {file_id} not found",
+            )
+        files_dict[file.path] = file.content
+
+    if not files_dict:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No files provided for upload",
+        )
+
+    if request.main_file not in files_dict:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Main file {request.main_file} not found in provided files",
+        )
+
+    result = await compiler_service.upload_firmware(request, files_dict)
+    return UploadResponse(
+        success=result["success"],
+        output=result["output"],
+        errors=result["errors"],
+    )
 
 
 @router.post("/explain", response_model=CompileExplainResponse)
