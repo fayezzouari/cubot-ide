@@ -49,8 +49,6 @@ export default function IDEPage() {
 
   // Upload state
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [uploadPort, setUploadPort] = useState('/dev/ttyACM0');
-  const [uploadFqbn, setUploadFqbn] = useState('arduino:avr:uno');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState<boolean | null>(null);
   const [uploadLogs, setUploadLogs] = useState('');
@@ -529,7 +527,7 @@ export default function IDEPage() {
     setIsUploadModalOpen(true);
   };
 
-  const handleUpload = async () => {
+  const handleUpload = async (port: string, fqbn: string) => {
     if (!currentProject || currentProject.files.length === 0) {
       setUploadLogs('No project files found.');
       return;
@@ -554,8 +552,8 @@ export default function IDEPage() {
         compiler: 'arduino' as CompilerType,
         file_ids: currentProject.files.map(f => f.id),
         main_file: mainFilePath,
-        port: uploadPort,
-        fqbn: uploadFqbn,
+        port,
+        fqbn,
       });
       setUploadLogs(result.output || '');
       setUploadErrors(result.errors || []);
@@ -824,10 +822,6 @@ export default function IDEPage() {
       <UploadDialog
         open={isUploadModalOpen}
         onOpenChange={setIsUploadModalOpen}
-        port={uploadPort}
-        onPortChange={setUploadPort}
-        fqbn={uploadFqbn}
-        onFqbnChange={setUploadFqbn}
         isUploading={isUploading}
         uploadSuccess={uploadSuccess}
         uploadLogs={uploadLogs}
