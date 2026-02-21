@@ -142,6 +142,69 @@ async def list_compilers():
     }
 
 
+@router.get("/ports")
+async def list_serial_ports():
+    """
+    List available serial ports and rank them by likelihood of being an Arduino.
+
+    Uses pyserial's list_ports to inspect USB vendor/product IDs and
+    descriptions. Known Arduino VIDs are scored higher so the UI can
+    pre-select the most likely port.
+    """
+    import serial.tools.list_ports as lp
+    import sys
+
+    # Known USB Vendor IDs associated with Arduino-compatible boards
+    ARDUINO_VIDS = {
+        0x2341: "Arduino LLC",
+        0x1A86: "CH340 (clone)",  # very common on cheap Nanos
+        0x0403: "FTDI",           # older Arduinos / Pro Mini adapters
+        0x10C4: "CP210x",         # another common USB-serial chip
+        0x16C0: "Teensy / VUSB",
+    }
+
+    ports = []
+    for p in lp.comports():
+        vid = p.vid  # integer or None
+        score = 0
+        hint = ""
+
+        if vid in ARDUINO_VIDS:
+            score = 2
+            hint = ARDUINO_VIDS[vid]
+        elif p.description and any(
+            kw in p.description.lower()
+            for kw in ("arduino", "ch340", "ftdi", "cp210", "usb serial", "usb-serial")
+        ):
+            score = 1
+            hint = p.description
+
+        ports.append({
+            "port": p.device,
+            "description": p.description or "",
+            "manufacturer": p.manufacturer or "",
+            "hint": hint,
+            "score": score,
+        })
+
+    # Sort: highest score first, then alphabetically
+    ports.sort(key=lambda x: (-x["score"], x["port"]))
+
+    # Platform-specific fallback default
+    if sys.platform.startswith("win"):
+        fallback = "COM3"
+    elif sys.platform == "darwin":
+        fallback = "/dev/cu.usbmodem14101"
+    else:
+        fallback = "/dev/ttyACM0"
+
+    return {
+        "ports": ports,
+        "suggested": ports[0]["port"] if ports else fallback,
+        "fallback": fallback,
+    }
+
+
 @router.get("/status")
 async def check_compiler_status():
     """Check if Docker and compilers are available"""
