@@ -73,3 +73,20 @@ class CompileExplainRequest(BaseModel):
 class CompileExplainResponse(BaseModel):
     """Response with concise explanation"""
     explanation: str
+
+
+class UploadRequest(BaseModel):
+    """Request to compile and upload firmware to a board"""
+    compiler: CompilerType
+    file_ids: List[str]
+    main_file: str
+    port: str  # e.g. /dev/ttyACM0
+    fqbn: str = "arduino:avr:uno"  # Fully Qualified Board Name
+    build_flags: Optional[List[str]] = None
+
+
+class UploadResponse(BaseModel):
+    """Response after compile + upload"""
+    success: bool
+    output: str
+    errors: List[str]
