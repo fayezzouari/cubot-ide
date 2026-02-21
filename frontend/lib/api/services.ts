@@ -11,6 +11,8 @@ import type {
   CompilationResponse,
   CompileExplainRequest,
   CompileExplainResponse,
+  UploadRequest,
+  UploadResponse,
   ChatRequest,
   ChatResponse,
   ChatMessageInDB,
@@ -96,7 +98,10 @@ export const compileService = {
     return apiClient.download(`/compile/download-binary/${projectId}?${params}`);
   },
 
-  listCompilers: () => 
+  upload: (data: UploadRequest) =>
+    apiClient.post<UploadResponse>('/compile/upload', data),
+
+  listCompilers: () =>
     apiClient.get<{
       compilers: Array<{
         id: string;
