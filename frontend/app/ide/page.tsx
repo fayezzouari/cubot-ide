@@ -14,6 +14,7 @@ import type { CodeContext } from '@/components/ide/chat-sidebar';
 import TerminalTabsManager from '@/components/ide/terminal-tabs-manager';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
+import UploadDialog from '@/components/ide/upload-dialog';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { buildProjectFileTree, buildSandboxFileTree, buildUnifiedFileTree } from './helpers/fileTreeHelpers';
 import { importSandboxFile, syncSandboxToProject } from './helpers/fileHandlers';
@@ -45,6 +46,16 @@ export default function IDEPage() {
   const [isSerialConnected, setIsSerialConnected] = useState(false);
   const [serialError, setSerialError] = useState<string | null>(null);
   const [codeContexts, setCodeContexts] = useState<CodeContext[]>([]);
+
+  // Upload state
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [uploadPort, setUploadPort] = useState('/dev/ttyACM0');
+  const [uploadFqbn, setUploadFqbn] = useState('arduino:avr:uno');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState<boolean | null>(null);
+  const [uploadLogs, setUploadLogs] = useState('');
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+
   const serialSocketRef = useRef<WebSocket | null>(null);
   const hasLoadedProjectRef = useRef(false);
 
@@ -511,6 +522,53 @@ export default function IDEPage() {
     setIsSerialModalOpen(true);
   };
 
+  const handleOpenUploadModal = () => {
+    setUploadLogs('');
+    setUploadErrors([]);
+    setUploadSuccess(null);
+    setIsUploadModalOpen(true);
+  };
+
+  const handleUpload = async () => {
+    if (!currentProject || currentProject.files.length === 0) {
+      setUploadLogs('No project files found.');
+      return;
+    }
+
+    const mainFilePath =
+      currentProject.files.find(f => f.id === selectedFile)?.path
+      ?? currentProject.files[0]?.path;
+
+    if (mainFilePath == null) {
+      setUploadLogs('No main file selected.');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadErrors([]);
+    setUploadSuccess(null);
+    setUploadLogs('Compiling and uploading…\n');
+
+    try {
+      const result = await compileService.upload({
+        compiler: 'arduino' as CompilerType,
+        file_ids: currentProject.files.map(f => f.id),
+        main_file: mainFilePath,
+        port: uploadPort,
+        fqbn: uploadFqbn,
+      });
+      setUploadLogs(result.output || '');
+      setUploadErrors(result.errors || []);
+      setUploadSuccess(result.success);
+    } catch (err: any) {
+      setUploadLogs('Upload failed.');
+      setUploadErrors([err?.message || 'Unknown error']);
+      setUploadSuccess(false);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleDisconnectSerial = () => {
     if (serialSocketRef.current) {
       serialSocketRef.current.close();
@@ -731,6 +789,7 @@ export default function IDEPage() {
         projectType={currentProject?.project_type ?? null}
         onOpenCompile={handleOpenCompileModal}
         onOpenSerial={handleOpenSerialModal}
+        onOpenUpload={handleOpenUploadModal}
       />
 
       <CompileDialog
@@ -760,6 +819,20 @@ export default function IDEPage() {
         serialLogs={serialLogs}
         onConnect={handleConnectSerial}
         onDisconnect={handleDisconnectSerial}
+      />
+
+      <UploadDialog
+        open={isUploadModalOpen}
+        onOpenChange={setIsUploadModalOpen}
+        port={uploadPort}
+        onPortChange={setUploadPort}
+        fqbn={uploadFqbn}
+        onFqbnChange={setUploadFqbn}
+        isUploading={isUploading}
+        uploadSuccess={uploadSuccess}
+        uploadLogs={uploadLogs}
+        uploadErrors={uploadErrors}
+        onUpload={handleUpload}
       />
 
       {/* Main Content */}
@@ -806,7 +879,7 @@ export default function IDEPage() {
                 {/* Sandbox Terminal - ROS Projects Only */}
                 <ResizablePanel defaultSize={35} minSize={20}>
                   <TerminalTabsManager
-                    workspaceId={activeWorkspaceId}
+                    workspaceId={activeWorkspaceId ?? undefined}
                     onWorkspaceCreate={handleWorkspaceCreate}
                     onSyncComplete={handleSyncComplete}
                   />

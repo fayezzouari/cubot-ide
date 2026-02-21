@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Play, Settings, Home, TerminalSquare, Cpu } from 'lucide-react';
+import { Play, Settings, Home, TerminalSquare, Cpu, Usb } from 'lucide-react';
 
 interface TopBarProps {
   projectId: string | null;
@@ -9,6 +9,7 @@ interface TopBarProps {
   projectType: string | null;
   onOpenCompile: () => void;
   onOpenSerial: () => void;
+  onOpenUpload: () => void;
 }
 
 export default function TopBar({
@@ -17,6 +18,7 @@ export default function TopBar({
   projectType,
   onOpenCompile,
   onOpenSerial,
+  onOpenUpload,
 }: TopBarProps) {
   return (
     <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
@@ -46,6 +48,13 @@ export default function TopBar({
             >
               <Play size={11} />
               Compile
+            </button>
+            <button
+              onClick={onOpenUpload}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded-lg transition-all cursor-pointer"
+            >
+              <Usb size={11} />
+              Connect
             </button>
             <button
               onClick={onOpenSerial}
