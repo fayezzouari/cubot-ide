@@ -153,7 +153,7 @@ export default function EditorPanel({
                   handleAddToChat();
                 }}
                 style={{ top: selectionPos.top, left: selectionPos.left }}
-                className="absolute z-20 flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-200 bg-[#1a2540] border border-blue-500/30 rounded-md shadow-lg shadow-black/40 hover:bg-[#1e2d4d] hover:border-blue-400/50 transition-all pointer-events-auto select-none"
+                className="absolute z-20 flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white/80 bg-[#2a2a2a] border border-white/10 rounded-md shadow-lg shadow-black/40 hover:bg-[#333333] hover:border-white/20 transition-all pointer-events-auto select-none"
               >
                 <MessageSquarePlus size={11} />
                 Add to chat

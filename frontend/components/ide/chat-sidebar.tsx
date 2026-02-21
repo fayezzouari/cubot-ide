@@ -63,14 +63,14 @@ export default function ChatSidebar({
 
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-4">
-          {messages.map((message) => {
+          {messages.map((message, index) => {
             const isUser = message.role === 'user';
             const isAssistant = message.role === 'assistant';
             const isThinking = message.content === '...';
 
             return (
               <div
-                key={message.id}
+                key={`${message.id}-${index}`}
                 className={`flex gap-2 items-start ${isUser ? 'flex-row-reverse' : ''}`}
               >
                 <div
