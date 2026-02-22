@@ -51,7 +51,7 @@ export default function TopBar({
             </button>
             <button
               onClick={onOpenUpload}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded-lg transition-all cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-blue-500 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
             >
               <Usb size={11} />
               Connect
