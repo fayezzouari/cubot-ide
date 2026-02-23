@@ -20,20 +20,22 @@ export default function TerminalTabsHeader({
   rightSlot,
 }: TerminalTabsHeaderProps) {
   return (
-    <div className="flex items-center bg-[#252526] border-b border-[#2d2d2d] h-8 min-w-0">
+    <div className="flex items-center bg-black border-b border-white/[0.06] h-8 min-w-0 flex-shrink-0">
       <div className="flex items-center flex-1 min-w-0 overflow-x-auto">
         {tabs.map(tab => (
           <div
             key={tab.id}
-            className={`flex items-center px-3 h-full cursor-pointer text-xs font-mono border-r border-[#2d2d2d] shrink-0 ${
-              tab.id === activeTabId ? 'bg-[#1e1e1e] text-white' : 'text-[#cccccc] hover:bg-[#23272e]'
+            className={`flex items-center px-3 h-full cursor-pointer text-[11px] font-mono border-r border-white/[0.06] shrink-0 transition-colors ${
+              tab.id === activeTabId
+                ? 'bg-[#0e0e0e] text-white/70'
+                : 'text-white/30 hover:text-white/50 hover:bg-white/[0.03]'
             }`}
             onClick={() => onTabClick(tab.id)}
           >
             <span>{tab.title}</span>
             <button
               type="button"
-              className="ml-2 flex items-center text-[#858585] hover:text-[#f48771]"
+              className="ml-2 flex items-center text-white/20 hover:text-red-400/70 transition-colors cursor-pointer"
               onClick={e => {
                 e.stopPropagation();
                 onTabClose(tab.id);
@@ -46,23 +48,23 @@ export default function TerminalTabsHeader({
         ))}
         <button
           type="button"
-          className="ml-2 px-2 h-full flex items-center text-[#cccccc] hover:text-white hover:bg-[#23272e]"
+          className="ml-1 px-2 h-full flex items-center text-white/25 hover:text-white/60 hover:bg-white/[0.04] transition-colors cursor-pointer"
           onClick={onNewTab}
           title="New Terminal Tab"
         >
-          <Plus size={14} />
+          <Plus size={13} />
         </button>
         <button
           type="button"
-          className="ml-1 px-2 h-full flex items-center text-[#cccccc] hover:text-white hover:bg-[#23272e]"
+          className="px-2 h-full flex items-center text-white/25 hover:text-white/60 hover:bg-white/[0.04] transition-colors cursor-pointer"
           onClick={onSplit}
           title="Split Terminal"
         >
-          <Split size={14} />
+          <Split size={13} />
         </button>
       </div>
       {rightSlot && (
-        <div className="flex items-center gap-1 px-2 border-l border-[#2d2d2d] h-full flex-shrink-0">
+        <div className="flex items-center gap-1 px-2 border-l border-white/[0.06] h-full flex-shrink-0">
           {rightSlot}
         </div>
       )}

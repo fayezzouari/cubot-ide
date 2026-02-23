@@ -3,8 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Home, Download, Code2, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Home, Download, Box, Loader2, Cpu } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import CadViewer from '@/components/cad/cad-viewer';
 import CadChatPanel, { type CadChatMessage } from '@/components/cad/cad-chat-panel';
@@ -28,44 +27,31 @@ export default function CadPage() {
     const buffer = await blob.arrayBuffer();
     const bytes = new Uint8Array(buffer);
     let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     return btoa(binary);
   }, []);
 
-  // Load session history on mount and render latest model
   useEffect(() => {
     const loadHistory = async () => {
       try {
         const history = await cadService.getHistory(sessionId);
-        if (history.messages && history.messages.length > 0) {
-          const loadedMessages: CadChatMessage[] = history.messages.map(
-            (msg: any, idx: number) => ({
-              id: `history-${idx}`,
-              role: msg.role,
-              content: msg.content,
-              cadquery_code: msg.cadquery_code,
-              has_model: msg.has_model,
-            })
-          );
-          setMessages(loadedMessages);
+        if (history.messages?.length) {
+          setMessages(history.messages.map((msg: any, idx: number) => ({
+            id: `history-${idx}`,
+            role: msg.role,
+            content: msg.content,
+            cadquery_code: msg.cadquery_code,
+            has_model: msg.has_model,
+          })));
         }
-
         if (history.current_code) {
           setCurrentCode(history.current_code);
-          // Render the latest saved model
           try {
             const stlBlob = await cadService.exportStl(history.current_code);
-            const stlB64 = await blobToBase64(stlBlob);
-            setCurrentStl(stlB64);
-          } catch (err) {
-            console.error('Failed to render saved model:', err);
-          }
+            setCurrentStl(await blobToBase64(stlBlob));
+          } catch {}
         }
-      } catch {
-        // Session doesn't exist yet — that's fine
-      }
+      } catch {}
     };
     loadHistory();
   }, [sessionId, blobToBase64]);
@@ -74,60 +60,42 @@ export default function CadPage() {
     const trimmed = input.trim();
     if (!trimmed || isGenerating) return;
 
-    // Add user message
-    const userMsg: CadChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: trimmed,
-    };
-    setMessages((prev) => [...prev, userMsg]);
+    const userMsg: CadChatMessage = { id: `user-${Date.now()}`, role: 'user', content: trimmed };
+    setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsGenerating(true);
 
     try {
-      // Build conversation history for context
-      const conversationHistory = messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
       const response = await cadService.generate(sessionId, {
         message: trimmed,
         current_code: currentCode || undefined,
-        conversation_history: conversationHistory,
+        conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
       });
 
-      const assistantMsg: CadChatMessage = {
+      setMessages(prev => [...prev, {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
         content: response.message,
         cadquery_code: response.cadquery_code,
         has_model: !!response.stl_base64,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      }]);
 
-      if (response.cadquery_code) {
-        setCurrentCode(response.cadquery_code);
-      }
-      if (response.stl_base64) {
-        setCurrentStl(response.stl_base64);
-      }
+      if (response.cadquery_code) setCurrentCode(response.cadquery_code);
+      if (response.stl_base64) setCurrentStl(response.stl_base64);
 
       if (response.error && !response.stl_base64) {
-        const errorMsg: CadChatMessage = {
+        setMessages(prev => [...prev, {
           id: `error-${Date.now()}`,
           role: 'assistant',
-          content: `⚠️ CadQuery execution error:\n${response.error}`,
-        };
-        setMessages((prev) => [...prev, errorMsg]);
+          content: `CadQuery error:\n${response.error}`,
+        }]);
       }
     } catch (err: any) {
-      const errorMsg: CadChatMessage = {
+      setMessages(prev => [...prev, {
         id: `error-${Date.now()}`,
         role: 'assistant',
         content: `Failed to generate model: ${err.message || 'Unknown error'}`,
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      }]);
     } finally {
       setIsGenerating(false);
     }
@@ -154,46 +122,42 @@ export default function CadPage() {
   }, [currentCode]);
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground font-sans">
-      {/* Top bar */}
-      <div className="h-12 border-b border-border flex items-center px-4 justify-between bg-card">
+    <div className="h-screen flex flex-col bg-black text-foreground font-sans">
+
+      {/* Top bar — matches IDE top bar */}
+      <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              title="Back to dashboard"
-            >
-              <Home size={16} />
-            </Button>
+          <Link href="/dashboard" className="flex items-center gap-2 group">
+            <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center">
+              <Cpu size={12} className="text-black" />
+            </div>
+            <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">cubot</span>
           </Link>
-          <div className="flex items-center gap-2">
-            <Code2 size={18} className="text-primary" />
-            <span className="font-semibold text-sm">CAD Assistant</span>
-          </div>
+          <span className="text-white/[0.12]">·</span>
+          <span className="text-xs text-white/30 font-mono">CAD</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
+        <div className="flex items-center gap-1.5">
+          <button
             onClick={handleExportSTL}
             disabled={!currentCode || isExporting}
-            size="sm"
-            className="h-8 px-4 font-medium text-xs flex items-center gap-2"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 font-medium text-xs rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
           >
-            {isExporting ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Download size={14} />
-            )}
+            {isExporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
             Export STL
-          </Button>
+          </button>
+          <span className="w-px h-4 bg-white/[0.08] mx-1" />
+          <Link
+            href="/dashboard"
+            className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
+          >
+            <Home size={13} />
+          </Link>
         </div>
-      </div>
+      </header>
 
       {/* Main content */}
-      <ResizablePanelGroup direction="horizontal" className="flex-1">
-        {/* Chat panel — left side */}
+      <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
         <ResizablePanel defaultSize={30} minSize={20} maxSize={50}>
           <CadChatPanel
             messages={messages}
@@ -203,10 +167,7 @@ export default function CadPage() {
             onSend={handleSend}
           />
         </ResizablePanel>
-
-        <ResizableHandle withHandle />
-
-        {/* 3D Viewer — right side */}
+        <ResizableHandle className="bg-white/[0.04] hover:bg-white/[0.08] transition-colors w-px" />
         <ResizablePanel defaultSize={70}>
           <CadViewer stlBase64={currentStl} />
         </ResizablePanel>

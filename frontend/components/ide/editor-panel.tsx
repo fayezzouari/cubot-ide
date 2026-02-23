@@ -2,8 +2,7 @@
 
 import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { File, Sparkles, MessageSquarePlus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { File, MessageSquarePlus, Code2 } from 'lucide-react';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 
@@ -56,10 +55,8 @@ export default function EditorPanel({
       return;
     }
     selectionRef.current = sel;
-    // Use the start of the selection to anchor the button above it
     const pos = editor.getScrolledVisiblePosition(sel.getStartPosition());
     if (pos) {
-      // Place button above the selection line (offset by ~30px for button height + gap)
       setSelectionPos({ top: Math.max(0, pos.top - 36), left: pos.left });
     } else {
       setSelectionPos(null);
@@ -80,42 +77,36 @@ export default function EditorPanel({
     const sel = editor.getSelection();
     if (!sel || sel.isEmpty()) return;
     const content = editor.getModel()?.getValueInRange(sel) ?? '';
-    onAddSelectionToChat({
-      fileName: currentFileName,
-      startLine: sel.startLineNumber,
-      endLine: sel.endLineNumber,
-      content,
-    });
+    onAddSelectionToChat({ fileName: currentFileName, startLine: sel.startLineNumber, endLine: sel.endLineNumber, content });
     setSelectionPos(null);
   };
 
   return (
-    <main className="h-full flex flex-col overflow-hidden bg-background">
+    <main className="h-full flex flex-col overflow-hidden bg-[#0e0e0e]">
+
+      {/* Tab bar */}
       {currentFileName && (
-        <div className="h-10 border-b border-border flex items-center justify-between px-4 bg-card">
-          <div className="flex items-center gap-2">
-            <File size={14} className="text-muted-foreground" />
-            <span className="text-sm font-medium text-foreground">
+        <div className="h-9 border-b border-white/[0.06] flex items-center justify-between px-3 bg-black flex-shrink-0">
+          <div className="flex items-center gap-1.5">
+            <File size={12} className="text-white/25 flex-shrink-0" />
+            <span className="text-xs font-mono text-white/60">
               {currentFileName}
-              {hasUnsavedChanges && <span className="ml-1.5 text-accent">●</span>}
             </span>
+            {hasUnsavedChanges && (
+              <span className="w-1.5 h-1.5 rounded-full bg-white/30 flex-shrink-0" title="Unsaved changes" />
+            )}
           </div>
           <div className="flex items-center gap-3">
             {currentProjectName && (
-              <span className="text-xs text-muted-foreground font-medium flex items-center gap-2">
-                <span className="inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-                {currentProjectName}
-              </span>
+              <span className="text-[11px] text-white/20 font-mono hidden sm:block">{currentProjectName}</span>
             )}
-            <Button
+            <button
               onClick={onSave}
-              size="sm"
-              variant="default"
-              className="h-7 px-3 font-medium"
               disabled={!hasUnsavedChanges || isSaving}
+              className="inline-flex items-center px-2.5 py-1 text-[11px] font-medium bg-white/[0.06] hover:bg-white/[0.10] disabled:opacity-25 text-white/60 hover:text-white rounded-md transition-all cursor-pointer disabled:cursor-default"
             >
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
+              {isSaving ? 'Saving…' : 'Save'}
+            </button>
           </div>
         </div>
       )}
@@ -144,16 +135,12 @@ export default function EditorPanel({
               }}
             />
 
-            {/* Floating "Add to chat" button above the selection */}
+            {/* Floating "Add to chat" button */}
             {selectionPos && onAddSelectionToChat && (
               <button
-                onMouseDown={(e) => {
-                  // Prevent the editor from losing focus/selection
-                  e.preventDefault();
-                  handleAddToChat();
-                }}
+                onMouseDown={e => { e.preventDefault(); handleAddToChat(); }}
                 style={{ top: selectionPos.top, left: selectionPos.left }}
-                className="absolute z-20 flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white/80 bg-[#2a2a2a] border border-white/10 rounded-md shadow-lg shadow-black/40 hover:bg-[#333333] hover:border-white/20 transition-all pointer-events-auto select-none"
+                className="absolute z-20 flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-white/70 bg-[#1e1e1e] border border-white/[0.10] rounded-md shadow-lg shadow-black/50 hover:bg-[#2a2a2a] hover:border-white/20 hover:text-white transition-all pointer-events-auto select-none"
               >
                 <MessageSquarePlus size={11} />
                 Add to chat
@@ -161,21 +148,16 @@ export default function EditorPanel({
             )}
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-background">
-            <div className="text-center max-w-md">
-              <div className="w-24 h-24 mx-auto mb-6 bg-primary/10 border border-border rounded-lg flex items-center justify-center">
-                <span className="text-primary text-5xl">⚙</span>
+          /* Empty state */
+          <div className="w-full h-full flex items-center justify-center bg-[#0e0e0e]">
+            <div className="text-center">
+              <div className="w-10 h-10 rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center mx-auto mb-3">
+                <Code2 size={18} className="text-white/15" />
               </div>
-              <h2 className="text-xl font-semibold mb-2 text-foreground">
-                {currentProjectName || 'Cubot IDE'}
-              </h2>
-              <div className="flex items-center justify-center gap-2 text-sm font-medium text-muted-foreground">
-                <Sparkles size={14} />
-                Select a file to start editing
-              </div>
-              <p className="text-muted-foreground text-sm mt-4 italic">
-                Great projects start with a single file.
+              <p className="text-xs font-medium text-white/25">
+                {currentProjectName || 'No project loaded'}
               </p>
+              <p className="text-[11px] text-white/15 mt-1">Select a file to start editing</p>
             </div>
           </div>
         )}
