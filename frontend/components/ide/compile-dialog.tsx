@@ -1,8 +1,7 @@
 'use client';
 
 import ReactMarkdown from 'react-markdown';
-import { Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Loader2, Play, Sparkles, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
@@ -27,6 +26,12 @@ interface CompileDialogProps {
   explanation: string;
 }
 
+const COMPILERS = [
+  { value: 'arduino', label: 'Arduino' },
+  { value: 'ti_arm',  label: 'TI ARM'  },
+  { value: 'esp32',   label: 'ESP32'   },
+];
+
 export default function CompileDialog({
   open,
   onOpenChange,
@@ -40,101 +45,138 @@ export default function CompileDialog({
   compileErrors,
   explanation,
 }: CompileDialogProps) {
+  const hasLogs   = compileLogs.trim().length > 0;
+  const hasErrors = compileErrors.length > 0;
+  const isSuccess = hasLogs && !hasErrors && !isCompiling;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl border-4 border-foreground bg-background">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-black text-foreground">
-            COMPILE PROJECT
-          </DialogTitle>
-          <DialogDescription className="text-foreground/70 font-bold">
-            Choose a compiler and view logs in real time
-          </DialogDescription>
+      <DialogContent className="max-w-lg bg-[#0e0e0e] border border-white/[0.08] rounded-xl p-0 gap-0 shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/[0.06]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
+              <Play size={13} className="text-white/70" />
+            </div>
+            <div>
+              <DialogTitle className="text-sm font-semibold text-white leading-none">
+                Compile Project
+              </DialogTitle>
+              <DialogDescription className="text-xs text-white/40 mt-0.5">
+                Build your project and inspect the output
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-black">COMPILER</label>
+        <div className="px-5 py-4 space-y-4">
+
+          {/* Compiler selector */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-white/40 uppercase tracking-wider">Compiler</label>
             <select
               value={selectedCompiler}
-              onChange={(e) => onSelectCompiler(e.target.value as CompilerType)}
-              className="border-2 border-foreground px-3 py-2 font-bold bg-background"
+              onChange={e => onSelectCompiler(e.target.value as CompilerType)}
               disabled={isCompiling}
+              className="w-full bg-[#161616] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white/80 font-medium appearance-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:border-blue-500/50 transition-colors"
             >
-              <option value="arduino">Arduino</option>
-              <option value="ti_arm">TI ARM</option>
-              <option value="esp32">ESP32</option>
+              {COMPILERS.map(c => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={onCompile}
-              className="px-4 py-2 bg-foreground text-background font-black text-sm hover:bg-muted hover:text-foreground transition-all"
-              disabled={isCompiling}
-            >
-              {isCompiling ? (
-                <>
-                  <Loader2 size={14} className="mr-2 animate-spin" />
-                  COMPILING...
-                </>
-              ) : (
-                'RUN COMPILE'
+          {/* Log terminal */}
+          <div className="bg-black border border-white/[0.06] rounded-lg overflow-hidden">
+            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/[0.04]">
+              <span className="w-2 h-2 rounded-full bg-white/10" />
+              <span className="w-2 h-2 rounded-full bg-white/10" />
+              <span className="w-2 h-2 rounded-full bg-white/10" />
+              <span className="ml-1 text-[11px] text-white/20 font-mono">output</span>
+              {isSuccess && (
+                <div className="ml-auto flex items-center gap-1 text-green-400 text-[11px] font-medium">
+                  <CheckCircle2 size={11} />
+                  Build passed
+                </div>
               )}
-            </Button>
-            <Button
-              onClick={onExplainLogs}
-              className="px-4 py-2 bg-primary border-2 border-foreground text-primary-foreground font-black text-sm hover:bg-muted hover:text-black transition-all"
-              disabled={isCompiling || isExplaining}
-            >
-              {isExplaining ? (
-                <>
-                  <Loader2 size={14} className="mr-2 animate-spin" />
-                  EXPLAINING...
-                </>
-              ) : (
-                'EXPLAIN'
+              {hasErrors && !isCompiling && (
+                <div className="ml-auto flex items-center gap-1 text-red-400 text-[11px] font-medium">
+                  <XCircle size={11} />
+                  Build failed
+                </div>
               )}
-            </Button>
-            <Button
-              variant="outline"
-              className="border-2 border-foreground font-black"
-              onClick={() => onOpenChange(false)}
-              disabled={isCompiling}
-            >
-              CLOSE
-            </Button>
-          </div>
-
-          <div className="border-2 border-foreground bg-muted p-3 min-h-[200px]">
+            </div>
             <ScrollArea className="h-48">
-              <pre className="text-xs font-mono whitespace-pre-wrap">
-                {compileLogs || 'Logs will appear here...'}
+              <pre className="px-3 py-2.5 text-[11px] font-mono leading-relaxed text-white/50 whitespace-pre-wrap">
+                {compileLogs || <span className="text-white/20">Logs will appear here…</span>}
               </pre>
             </ScrollArea>
           </div>
 
-          {compileErrors.length > 0 && (
-            <div className="border-2 border-red-600 bg-red-50 p-3">
-              <p className="text-xs font-black text-red-700 mb-2">ERRORS</p>
-              <ul className="text-xs font-mono text-red-700 list-disc pl-4 space-y-1">
+          {/* Errors */}
+          {hasErrors && (
+            <div className="bg-red-950/20 border border-red-500/20 rounded-lg p-3 space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <AlertCircle size={12} className="text-red-400 flex-shrink-0" />
+                <span className="text-[11px] font-semibold text-red-400 uppercase tracking-wider">Errors</span>
+              </div>
+              <ul className="space-y-1 pl-1">
                 {compileErrors.map((err, idx) => (
-                  <li key={`${err}-${idx}`}>{err}</li>
+                  <li key={`${err}-${idx}`} className="text-[11px] font-mono text-red-300/80 leading-relaxed">{err}</li>
                 ))}
               </ul>
             </div>
           )}
 
+          {/* AI explanation */}
           {explanation && (
-            <div className="border-2 border-foreground bg-background p-3">
-              <p className="text-xs font-black mb-2">AI EXPLANATION</p>
-              <ScrollArea className="h-48">
-                <div className="prose prose-sm max-w-none text-foreground">
+            <div className="bg-blue-950/10 border border-blue-500/15 rounded-lg overflow-hidden">
+              <div className="flex items-center gap-1.5 px-3 py-2 border-b border-blue-500/10">
+                <Sparkles size={11} className="text-blue-400" />
+                <span className="text-[11px] font-semibold text-blue-400 uppercase tracking-wider">AI Explanation</span>
+              </div>
+              <ScrollArea className="h-40">
+                <div className="px-3 py-2.5 prose prose-sm prose-invert max-w-none text-white/60 text-xs leading-relaxed">
                   <ReactMarkdown>{explanation}</ReactMarkdown>
                 </div>
               </ScrollArea>
             </div>
           )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={onCompile}
+              disabled={isCompiling}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 font-medium text-xs rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              {isCompiling ? (
+                <><Loader2 size={12} className="animate-spin" />Compiling…</>
+              ) : (
+                <><Play size={12} />Compile</>
+              )}
+            </button>
+            <button
+              onClick={onExplainLogs}
+              disabled={isCompiling || isExplaining || !hasLogs}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-30 border border-blue-500/20 hover:border-blue-500/30 text-blue-400 font-medium text-xs rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              {isExplaining ? (
+                <><Loader2 size={12} className="animate-spin" />Explaining…</>
+              ) : (
+                <><Sparkles size={12} />Explain</>
+              )}
+            </button>
+            <button
+              onClick={() => onOpenChange(false)}
+              disabled={isCompiling}
+              className="inline-flex items-center gap-1.5 px-4 py-2 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] disabled:opacity-30 text-white/50 hover:text-white font-medium text-xs rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              Close
+            </button>
+          </div>
+
         </div>
       </DialogContent>
     </Dialog>
