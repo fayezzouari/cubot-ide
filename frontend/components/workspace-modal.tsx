@@ -4,8 +4,6 @@ import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft, Cpu, CheckCircle2 }
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/contexts/project-context';
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { compileService } from '@/lib/api';
 import type { ProjectType } from '@/lib/api/types';
 import {
@@ -21,17 +19,16 @@ interface WorkspaceModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-// Default starter code for Arduino
 const STARTER_CODE = `// Arduino Starter Code
 // Created with CuBot IDE
 
 void setup() {
   // Initialize serial communication
   Serial.begin(9600);
-  
+
   // Set pin 13 as output (built-in LED)
   pinMode(13, OUTPUT);
-  
+
   Serial.println("CuBot IDE - Ready!");
 }
 
@@ -39,11 +36,61 @@ void loop() {
   // Blink the LED
   digitalWrite(13, HIGH);
   delay(1000);
-  
+
   digitalWrite(13, LOW);
   delay(1000);
 }
 `;
+
+const WORKSPACE_OPTIONS = [
+  {
+    id: 'ide' as const,
+    label: 'Code IDE',
+    icon: Code2,
+    description: 'Write C/C++ with AI assistance, syntax highlighting, and an integrated chat.',
+  },
+  {
+    id: 'blocks' as const,
+    label: 'Block Workspace',
+    icon: Blocks,
+    description: 'Visual no-code programming with drag-and-drop blocks for beginners.',
+  },
+  {
+    id: 'cad' as const,
+    label: 'CAD Assistant',
+    icon: Box,
+    description: 'AI-powered 3D modeling. Describe parts in plain language, export to STL.',
+  },
+];
+
+const PROJECT_TYPES = [
+  {
+    id: 'embedded' as const,
+    label: 'Embedded',
+    description: 'Arduino, ESP32, TI ARM and other microcontroller projects.',
+    badge: 'Code Editor',
+  },
+  {
+    id: 'ros' as const,
+    label: 'ROS / ROS2',
+    description: 'Robotics projects with full Daytona terminal access for running nodes.',
+    badge: '✦ Sandbox Terminal',
+  },
+];
+
+const STEP_TITLES: Record<string, string> = {
+  select:      'New project',
+  projectType: 'Project type',
+  name:        'Name your project',
+  compiler:    'Compiler target',
+};
+
+const STEP_DESCRIPTIONS: Record<string, string> = {
+  select:      'Choose a workspace to get started',
+  projectType: 'Choose between embedded systems or robotics development',
+  name:        'Give your project a descriptive name',
+  compiler:    'Pick the compiler target for your project',
+};
 
 export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalProps) {
   const router = useRouter();
@@ -65,401 +112,261 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
   };
 
   useEffect(() => {
-    const loadCompilers = async () => {
-      try {
-        const data = await compileService.listCompilers();
-        if (data?.compilers?.length) {
-          setCompilers(data.compilers.map((c) => ({
-            id: c.id,
-            name: c.name,
-            description: c.description,
-          })));
-          if (!selectedCompiler) {
-            setSelectedCompiler(data.compilers[0].id);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load compilers:', err);
+    if (!open) return;
+    compileService.listCompilers().then(data => {
+      if (data?.compilers?.length) {
+        setCompilers(data.compilers.map(c => ({ id: c.id, name: c.name, description: c.description })));
       }
-    };
-
-    if (open) {
-      loadCompilers();
-    }
-  }, [open, selectedCompiler]);
+    }).catch(() => {});
+  }, [open]);
 
   const handleSelectWorkspace = (type: 'ide' | 'blocks' | 'cad') => {
     setSelectedType(type);
-    const defaultName = `My ${type === 'ide' ? 'Code' : type === 'blocks' ? 'Block' : 'CAD'} Project`;
-    setProjectName(defaultName);
-    // For IDE projects, show project type selection; otherwise go to name
-    if (type === 'ide') {
-      setStep('projectType');
-    } else {
-      setStep('name');
-    }
+    setProjectName(`My ${type === 'ide' ? 'Code' : type === 'blocks' ? 'Block' : 'CAD'} Project`);
+    setStep(type === 'ide' ? 'projectType' : 'name');
   };
 
   const handleCreateProject = async () => {
     if (!selectedType) return;
     setIsCreating(true);
-    // Keep track of the new project ID so the catch block can still navigate
-    // to the correct project even if a non-critical step (e.g. file creation) fails.
     let newProjectId: string | null = null;
     try {
-      // Create a new project
       const project = await createProject(
         projectName.trim() || `My ${selectedType === 'ide' ? 'Code' : selectedType === 'blocks' ? 'Block' : 'CAD'} Project`,
         `Created on ${new Date().toLocaleDateString()}`,
         selectedType === 'ide' ? selectedCompiler : 'arduino',
-        selectedType === 'ide' ? (selectedProjectType as ProjectType) : undefined
+        selectedType === 'ide' ? (selectedProjectType as ProjectType) : undefined,
       );
       newProjectId = project.id;
-
-      // Save project ID and workspace type to localStorage
       localStorage.setItem('cubot-ide-last-project', project.id);
       localStorage.setItem(`cubot-ide-project-workspace-${project.id}`, selectedType);
 
-      // Load the project to set it as current (IDE/Blocks only)
-      if (selectedType !== 'cad') {
-        await loadProject(project.id);
-      }
+      if (selectedType !== 'cad') await loadProject(project.id);
 
-      // Create a starter file only for embedded IDE projects.
-      // ROS projects get their scaffold files from the sandbox (via auto-sync).
       if (selectedType === 'ide' && selectedProjectType !== 'ros') {
-        try {
-          await createFile('main.ino', 'main.ino', STARTER_CODE, 'ino');
-          console.log('Created initial file for project');
-        } catch (fileError) {
-          console.error('Failed to create initial file:', fileError);
-        }
+        try { await createFile('main.ino', 'main.ino', STARTER_CODE, 'ino'); } catch {}
       }
 
       onOpenChange(false);
-
-      // Navigate with project ID
-      if (selectedType === 'ide') {
-        router.push(`/ide?project=${project.id}`);
-      } else if (selectedType === 'blocks') {
-        router.push(`/blocks?project=${project.id}`);
-      } else {
-        router.push(`/cad?project=${project.id}`);
-      }
-    } catch (error) {
-      console.error('Failed to create project:', error);
+      if (selectedType === 'ide') router.push(`/ide?project=${project.id}`);
+      else if (selectedType === 'blocks') router.push(`/blocks?project=${project.id}`);
+      else router.push(`/cad?project=${project.id}`);
+    } catch {
       onOpenChange(false);
-      // If the project was created before the error, navigate to it.
-      // Otherwise fall back to the dashboard so the user doesn't land
-      // on a stale/wrong project.
-      if (selectedType === 'ide') {
-        router.push(newProjectId ? `/ide?project=${newProjectId}` : '/dashboard');
-      } else if (selectedType === 'blocks') {
-        router.push(newProjectId ? `/blocks?project=${newProjectId}` : '/dashboard');
-      } else {
-        router.push(newProjectId ? `/cad?project=${newProjectId}` : '/dashboard');
-      }
+      if (selectedType === 'ide') router.push(newProjectId ? `/ide?project=${newProjectId}` : '/dashboard');
+      else if (selectedType === 'blocks') router.push(newProjectId ? `/blocks?project=${newProjectId}` : '/dashboard');
+      else router.push(newProjectId ? `/cad?project=${newProjectId}` : '/dashboard');
     } finally {
       setIsCreating(false);
       resetModal();
     }
   };
 
+  const fallbackCompilers = [
+    { id: 'arduino', name: 'Arduino', description: 'AVR-based boards (Uno, Nano, Pro Mini)' },
+    { id: 'ti_arm',  name: 'TI ARM',  description: 'Texas Instruments ARM toolchain' },
+    { id: 'esp32',   name: 'ESP32',   description: 'Espressif ESP32 / ESP-IDF' },
+  ];
+  const compilerList = compilers.length ? compilers : fallbackCompilers;
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          resetModal();
-        }
-        onOpenChange(nextOpen);
-      }}
-    >
-      <DialogContent className="max-w-4xl border border-border p-0 gap-0">
-        <DialogHeader className="p-6 pb-4 border-b border-border">
-          <DialogTitle className="text-xl font-semibold text-foreground">
-            {step === 'select'
-              ? 'Choose Your Workspace'
-              : step === 'projectType'
-              ? 'Choose Project Type'
-              : step === 'name'
-              ? 'Name Your Project'
-              : 'Choose Compiler'}
-          </DialogTitle>
-          <DialogDescription className="text-muted-foreground">
-            {step === 'select'
-              ? 'Select how you want to build your project'
-              : step === 'projectType'
-              ? 'Choose between embedded systems or robotics (ROS) development'
-              : step === 'name'
-              ? 'Give your project a descriptive name'
-              : 'Pick the compiler target for your IDE project'}
-          </DialogDescription>
+    <Dialog open={open} onOpenChange={nextOpen => { if (!nextOpen) resetModal(); onOpenChange(nextOpen); }}>
+      <DialogContent className="max-w-lg bg-[#0e0e0e] border border-white/[0.08] rounded-xl p-0 gap-0 shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between">
+            <div>
+              <DialogTitle className="text-sm font-semibold text-white leading-none">
+                {STEP_TITLES[step]}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-white/40 mt-0.5">
+                {STEP_DESCRIPTIONS[step]}
+              </DialogDescription>
+            </div>
+            {/* Step dots */}
+            <div className="flex items-center gap-1.5">
+              {(['select', 'projectType', 'name', 'compiler'] as const).map((s, i) => {
+                const steps = ['select', 'projectType', 'name', 'compiler'];
+                const current = steps.indexOf(step);
+                const isDone = i < current;
+                const isActive = i === current;
+                return (
+                  <span key={s} className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                    isActive ? 'bg-white' : isDone ? 'bg-white/40' : 'bg-white/[0.12]'
+                  }`} />
+                );
+              })}
+            </div>
+          </div>
         </DialogHeader>
 
-        {step === 'select' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-6">
-          {/* IDE Option */}
-          <button
-            onClick={() => handleSelectWorkspace('ide')}
-            disabled={isCreating}
-            className="group border border-border rounded-lg p-5 text-left hover:border-primary/50 hover:bg-muted/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                {isCreating ? <Loader2 size={20} className="animate-spin" /> : <Code2 size={20} />}
-              </div>
-              <h3 className="font-semibold text-base">Code IDE</h3>
-            </div>
-            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-              Write C/C++ code with AI assistance. Full-featured code editor with syntax highlighting, autocomplete, and integrated chat.
-            </p>
-            <div className="flex items-center gap-2 font-medium text-sm text-primary">
-              <span>{isCreating ? 'Creating...' : 'Open IDE'}</span>
-              <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
-
-          {/* Block Workspace Option */}
-          <button
-            onClick={() => handleSelectWorkspace('blocks')}
-            disabled={isCreating}
-            className="group border border-border rounded-lg p-5 text-left hover:border-primary/50 hover:bg-muted/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                {isCreating ? <Loader2 size={20} className="animate-spin" /> : <Blocks size={20} />}
-              </div>
-              <h3 className="font-semibold text-base">Block Workspace</h3>
-            </div>
-            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-              Visual no-code programming with drag-and-drop blocks. Perfect for beginners learning embedded concepts.
-            </p>
-            <div className="flex items-center gap-2 font-medium text-sm text-primary">
-              <span>{isCreating ? 'Creating...' : 'Open Blocks'}</span>
-              <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
-
-          {/* CAD Assistant Option */}
-          <button
-            onClick={() => handleSelectWorkspace('cad')}
-            disabled={isCreating}
-            className="group border border-border rounded-lg p-5 text-left hover:border-primary/50 hover:bg-muted/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
-                <Box size={20} />
-              </div>
-              <h3 className="font-semibold text-base">CAD Assistant</h3>
-            </div>
-            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-              AI-powered 3D modeling assistant. Describe components in plain language and get CAD models instantly. Export to STL.
-            </p>
-            <div className="flex items-center gap-2 font-medium text-sm text-primary">
-              <span>Open CAD</span>
-              <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
-          </div>
-        ) : step === 'projectType' ? (
-          <div className="p-6">
-            <div className="space-y-4">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-4">
-                Select project category
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                {/* Embedded Project */}
+        {/* ── Step: select workspace ── */}
+        {step === 'select' && (
+          <div className="p-4 grid grid-cols-3 gap-2.5">
+            {WORKSPACE_OPTIONS.map(opt => {
+              const Icon = opt.icon;
+              return (
                 <button
-                  onClick={() => {
-                    setSelectedProjectType('embedded');
-                    setStep('name');
-                  }}
+                  key={opt.id}
+                  onClick={() => handleSelectWorkspace(opt.id)}
                   disabled={isCreating}
-                  className={`border rounded-lg p-5 text-left transition-all cursor-pointer ${
-                    selectedProjectType === 'embedded'
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                  }`}
+                  className="group flex flex-col gap-3 p-4 rounded-xl border border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03] text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="font-semibold text-base">Embedded</h3>
-                    {selectedProjectType === 'embedded' && <CheckCircle2 size={18} />}
+                  <div className="w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.04] flex items-center justify-center">
+                    <Icon size={15} className="text-white/60 group-hover:text-white/90 transition-colors" />
                   </div>
-                  <p className={`text-sm mb-3 leading-relaxed ${
-                    selectedProjectType === 'embedded' ? 'text-primary-foreground/90' : 'text-muted-foreground'
-                  }`}>
-                    Arduino, ESP32, TI ARM projects. Traditional embedded systems programming.
-                  </p>
-                  <div className={`text-xs font-medium ${
-                    selectedProjectType === 'embedded' ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                  }`}>
-                    Code Editor Only
+                  <div>
+                    <p className="text-xs font-semibold text-white/80 group-hover:text-white transition-colors leading-tight">
+                      {opt.label}
+                    </p>
+                    <p className="text-[11px] text-white/30 mt-1 leading-relaxed">{opt.description}</p>
+                  </div>
+                  <div className="mt-auto flex items-center gap-1 text-[11px] text-white/25 group-hover:text-white/50 transition-colors">
+                    Select <ArrowRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
                   </div>
                 </button>
+              );
+            })}
+          </div>
+        )}
 
-                {/* ROS Project */}
-                <button
-                  onClick={() => {
-                    setSelectedProjectType('ros');
-                    setStep('name');
-                  }}
-                  disabled={isCreating}
-                  className={`border rounded-lg p-5 text-left transition-all cursor-pointer ${
-                    selectedProjectType === 'ros'
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="font-semibold text-base">ROS/ROS2</h3>
-                    {selectedProjectType === 'ros' && <CheckCircle2 size={18} />}
-                  </div>
-                  <p className={`text-sm mb-3 leading-relaxed ${
-                    selectedProjectType === 'ros' ? 'text-primary-foreground/90' : 'text-muted-foreground'
-                  }`}>
-                    Robotics projects with ROS support. Full Daytona terminal access for running nodes.
-                  </p>
-                  <div className={`text-xs font-medium ${
-                    selectedProjectType === 'ros' ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                  }`}>
-                    ✨ With Sandbox Terminal
-                  </div>
-                </button>
-              </div>
-              <div className="flex items-center justify-between pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setStep('select')}
-                  disabled={isCreating}
-                >
-                  <ArrowLeft size={16} className="mr-2" />
-                  Back
-                </Button>
-              </div>
-            </div>
-          </div>
-        ) : step === 'name' ? (
-          <div className="p-6">
-            <div className="space-y-4">
-              <label className="text-sm font-medium text-muted-foreground">
-                Project name
-              </label>
-              <Input
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="My CAD Project"
-                className="border border-input"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && projectName.trim() && !isCreating) {
-                    handleCreateProject();
-                  }
-                }}
-              />
-              <div className="flex items-center justify-between pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setStep(selectedType === 'ide' ? 'projectType' : 'select')}
-                  disabled={isCreating}
-                >
-                  <ArrowLeft size={16} className="mr-2" />
-                  Back
-                </Button>
-                {selectedType === 'ide' ? (
-                  <Button
-                    onClick={() => setStep('compiler')}
-                    disabled={isCreating || !projectName.trim()}
-                  >
-                    Next
-                    <ArrowRight size={16} className="ml-2" />
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleCreateProject}
-                    disabled={isCreating || !projectName.trim()}
-                  >
-                    {isCreating ? (
-                      <>
-                        <Loader2 size={16} className="mr-2 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        Create Project
-                        <ArrowRight size={16} className="ml-2" />
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <Cpu size={16} />
-                Compiler target
-              </div>
-              <div className="grid grid-cols-1 gap-3">
-                {(compilers.length ? compilers : [
-                  { id: 'arduino', name: 'Arduino', description: 'AVR-based boards' },
-                  { id: 'ti_arm', name: 'TI ARM', description: 'TI ARM toolchain' },
-                  { id: 'esp32', name: 'ESP32', description: 'Espressif ESP32' },
-                ]).map((compiler) => (
+        {/* ── Step: project type ── */}
+        {step === 'projectType' && (
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 gap-2.5">
+              {PROJECT_TYPES.map(pt => {
+                const selected = selectedProjectType === pt.id;
+                return (
                   <button
-                    key={compiler.id}
-                    onClick={() => setSelectedCompiler(compiler.id)}
-                    className={`border rounded-lg p-4 text-left transition-all cursor-pointer ${
-                      selectedCompiler === compiler.id
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                    key={pt.id}
+                    onClick={() => { setSelectedProjectType(pt.id); setStep('name'); }}
+                    disabled={isCreating}
+                    className={`flex flex-col gap-2 p-4 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 ${
+                      selected
+                        ? 'border-white/30 bg-white/[0.06]'
+                        : 'border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03]'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-semibold">{compiler.name}</div>
-                        <div className={`text-xs ${selectedCompiler === compiler.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                          {compiler.description}
-                        </div>
-                      </div>
-                      {selectedCompiler === compiler.id && (
-                        <CheckCircle2 size={18} />
-                      )}
+                    <div className="flex items-start justify-between">
+                      <p className="text-xs font-semibold text-white/80">{pt.label}</p>
+                      {selected && <CheckCircle2 size={13} className="text-white/60 flex-shrink-0" />}
                     </div>
+                    <p className="text-[11px] text-white/30 leading-relaxed">{pt.description}</p>
+                    <span className="text-[10px] font-medium text-white/25 px-1.5 py-0.5 rounded border border-white/[0.06] bg-white/[0.03] w-fit">
+                      {pt.badge}
+                    </span>
                   </button>
-                ))}
-              </div>
-              <div className="flex items-center justify-between pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setStep('name')}
-                  disabled={isCreating}
-                >
-                  <ArrowLeft size={16} className="mr-2" />
-                  Back
-                </Button>
-                <Button
-                  onClick={handleCreateProject}
-                  disabled={isCreating}
-                >
-                  {isCreating ? (
-                    <>
-                      <Loader2 size={16} className="mr-2 animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      Create Project
-                      <ArrowRight size={16} className="ml-2" />
-                    </>
-                  )}
-                </Button>
-              </div>
+                );
+              })}
+            </div>
+            <div className="pt-1">
+              <button
+                onClick={() => setStep('select')}
+                disabled={isCreating}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
+              >
+                <ArrowLeft size={12} /> Back
+              </button>
             </div>
           </div>
         )}
+
+        {/* ── Step: name ── */}
+        {step === 'name' && (
+          <div className="p-4 space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-white/40 uppercase tracking-wider">Project name</label>
+              <input
+                value={projectName}
+                onChange={e => setProjectName(e.target.value)}
+                placeholder="My Project"
+                autoFocus
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && projectName.trim() && !isCreating) {
+                    if (selectedType === 'ide') setStep('compiler');
+                    else handleCreateProject();
+                  }
+                }}
+                className="w-full bg-[#161616] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-blue-500/50 transition-colors"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <button
+                onClick={() => setStep(selectedType === 'ide' ? 'projectType' : 'select')}
+                disabled={isCreating}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
+              >
+                <ArrowLeft size={12} /> Back
+              </button>
+              {selectedType === 'ide' ? (
+                <button
+                  onClick={() => setStep('compiler')}
+                  disabled={isCreating || !projectName.trim()}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  Next <ArrowRight size={12} />
+                </button>
+              ) : (
+                <button
+                  onClick={handleCreateProject}
+                  disabled={isCreating || !projectName.trim()}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isCreating ? <><Loader2 size={12} className="animate-spin" />Creating…</> : <>Create <ArrowRight size={12} /></>}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Step: compiler ── */}
+        {step === 'compiler' && (
+          <div className="p-4 space-y-4">
+            <div className="space-y-2">
+              {compilerList.map(compiler => {
+                const selected = selectedCompiler === compiler.id;
+                return (
+                  <button
+                    key={compiler.id}
+                    onClick={() => setSelectedCompiler(compiler.id)}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-all cursor-pointer ${
+                      selected
+                        ? 'border-white/30 bg-white/[0.06]'
+                        : 'border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03]'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-semibold text-white/80">{compiler.name}</p>
+                      <p className="text-[11px] text-white/30 mt-0.5">{compiler.description}</p>
+                    </div>
+                    {selected && <CheckCircle2 size={14} className="text-white/60 flex-shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <button
+                onClick={() => setStep('name')}
+                disabled={isCreating}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
+              >
+                <ArrowLeft size={12} /> Back
+              </button>
+              <button
+                onClick={handleCreateProject}
+                disabled={isCreating}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isCreating
+                  ? <><Loader2 size={12} className="animate-spin" />Creating…</>
+                  : <>Create project <ArrowRight size={12} /></>
+                }
+              </button>
+            </div>
+          </div>
+        )}
+
       </DialogContent>
     </Dialog>
   );
