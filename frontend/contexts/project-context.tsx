@@ -158,16 +158,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [currentProject, loadProject]);
 
   const compileProject = useCallback(async (mainFile: string, fileIds: string[], compiler: string) => {
+    if (!currentProject) throw new Error('No project selected');
     setIsLoading(true);
     setError(null);
     try {
       const request: CompileRequest = {
-        project_id: currentProject!.id,
+        project_id: currentProject.id,
         compiler: compiler as any,
         file_ids: fileIds,
         main_file: mainFile,
       };
-      
+
       const result = await compileService.compile(request);
       return result;
     } catch (err: any) {
@@ -176,7 +177,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentProject]);
 
   const sendChatMessage = useCallback(async (message: string, fileContext?: any[]) => {
     if (!currentProject) throw new Error('No project selected');
