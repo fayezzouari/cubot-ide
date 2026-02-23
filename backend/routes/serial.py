@@ -50,9 +50,12 @@ async def serial_monitor(websocket: WebSocket):
             await websocket.send_text(text)
 
     async def read_ws():
-        while True:
-            message = await websocket.receive_text()
-            ser.write((message + "\n").encode())
+        try:
+            while True:
+                message = await websocket.receive_text()
+                ser.write((message + "\n").encode())
+        except WebSocketDisconnect:
+            pass
 
     serial_task = asyncio.create_task(read_serial())
     ws_task = asyncio.create_task(read_ws())
@@ -60,10 +63,8 @@ async def serial_monitor(websocket: WebSocket):
     try:
         await asyncio.wait(
             [serial_task, ws_task],
-            return_when=asyncio.FIRST_EXCEPTION,
+            return_when=asyncio.FIRST_COMPLETED,
         )
-    except WebSocketDisconnect:
-        pass
     finally:
         serial_task.cancel()
         ws_task.cancel()
@@ -71,4 +72,7 @@ async def serial_monitor(websocket: WebSocket):
             ser.close()
         except Exception:
             pass
-        await websocket.close()
+        try:
+            await websocket.close()
+        except Exception:
+            pass
