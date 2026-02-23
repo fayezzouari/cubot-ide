@@ -1,8 +1,7 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
-import { Bot, User, Send, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Bot, User, Send, Loader2, Box, Sparkles } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import MarkdownRenderer from '@/components/ui/markdown-renderer';
 
@@ -22,6 +21,12 @@ interface CadChatPanelProps {
   onSend: () => void;
 }
 
+const SUGGESTIONS = [
+  'Create a gear with 20 teeth',
+  'Make a box with rounded edges',
+  'Design an L-bracket with mounting holes',
+];
+
 export default function CadChatPanel({
   messages,
   input,
@@ -32,98 +37,93 @@ export default function CadChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
   return (
-    <div className="flex flex-col h-full bg-card">
+    <div className="flex flex-col h-full bg-[#0b0b0b] border-r border-white/[0.06]">
+
       {/* Header */}
-      <div className="px-4 py-2 border-b border-border flex items-center gap-2">
-        <div className="p-1 bg-primary/10 rounded">
-          <Bot size={16} className="text-primary" />
+      <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center gap-2 flex-shrink-0">
+        <div className="w-6 h-6 rounded-md bg-white/[0.06] flex items-center justify-center">
+          <Box size={13} className="text-white/60" />
         </div>
-        <span className="font-semibold text-sm">CAD Assistant</span>
+        <span className="text-xs font-semibold text-white/70">CAD Assistant</span>
+        {isGenerating && (
+          <Loader2 size={12} className="animate-spin ml-auto text-white/30" />
+        )}
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="p-4 bg-primary/10 rounded-full mb-4">
-              <Bot size={32} className="text-primary" />
+          <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8">
+            <div className="w-10 h-10 rounded-xl border border-white/[0.08] bg-white/[0.04] flex items-center justify-center mb-4">
+              <Box size={18} className="text-white/30" />
             </div>
-            <p className="font-semibold text-foreground text-sm mb-2">
-              CAD Assistant Ready
+            <p className="text-xs font-semibold text-white/60 mb-1">CAD Assistant</p>
+            <p className="text-[11px] text-white/25 leading-relaxed max-w-[220px]">
+              Describe a 3D component and I&apos;ll generate it using CadQuery.
             </p>
-            <p className="text-xs text-muted-foreground mt-2 max-w-[260px]">
-              Describe a 3D component and I&apos;ll generate it using CadQuery. You can refine it through conversation.
-            </p>
-            <div className="mt-6 space-y-2 text-left w-full max-w-[280px]">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                Try saying:
-              </p>
-              {[
-                'Create a gear with 20 teeth',
-                'Make a box with rounded edges',
-                'Design an L-bracket with mounting holes',
-              ].map((suggestion, i) => (
+            <div className="mt-5 w-full space-y-1.5">
+              <p className="text-[10px] font-medium text-white/20 uppercase tracking-wider mb-2">Try saying</p>
+              {SUGGESTIONS.map((s, i) => (
                 <button
                   key={i}
-                  onClick={() => {
-                    onInputChange(suggestion);
-                  }}
-                  className="w-full text-left text-xs px-3 py-2 border border-border rounded hover:border-primary/50 hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => onInputChange(s)}
+                  className="w-full text-left text-[11px] px-3 py-2 border border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03] text-white/35 hover:text-white/60 rounded-lg transition-all cursor-pointer"
                 >
-                  &quot;{suggestion}&quot;
+                  &ldquo;{s}&rdquo;
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {messages.map((message) => (
+        {messages.map(message => (
           <div
             key={message.id}
-            className={`w-full flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+            className={`flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
           >
-            <div
-              className={`w-7 h-7 flex-shrink-0 flex items-center justify-center rounded ${
-                message.role === 'assistant' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-              }`}
-            >
-              {message.role === 'assistant' ? (
-                <Bot size={14} />
-              ) : (
-                <User size={14} />
-              )}
+            {/* Avatar */}
+            <div className={`w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md ${
+              message.role === 'assistant'
+                ? 'bg-blue-500/10 text-blue-400'
+                : 'bg-white/[0.06] text-white/40'
+            }`}>
+              {message.role === 'assistant' ? <Bot size={12} /> : <User size={12} />}
             </div>
-            <div
-              className={`flex-1 w-full min-w-0 p-3 rounded-lg border text-sm ${
-                message.role === 'user' ? 'bg-muted/50 border-border' : 'bg-background border-border'
-              }`}
-            >
+
+            {/* Bubble */}
+            <div className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl text-xs leading-relaxed ${
+              message.role === 'user'
+                ? 'bg-white/[0.06] text-white/70'
+                : 'bg-transparent text-white/60'
+            }`}>
               {message.role === 'assistant' ? (
                 <MarkdownRenderer content={message.content} />
               ) : (
                 <p className="whitespace-pre-wrap">{message.content}</p>
               )}
+
               {message.cadquery_code && (
                 <details className="mt-2">
-                  <summary className="text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground">
+                  <summary className="text-[10px] font-medium text-white/25 hover:text-white/50 cursor-pointer transition-colors">
                     View code
                   </summary>
-                  <pre className="mt-2 p-2 bg-muted text-xs overflow-x-auto border border-border rounded font-mono">
+                  <pre className="mt-1.5 p-2.5 bg-black border border-white/[0.06] rounded-lg text-[10px] font-mono text-white/40 overflow-x-auto leading-relaxed">
                     {message.cadquery_code}
                   </pre>
                 </details>
               )}
+
               {message.has_model && (
-                <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-primary">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />
-                  Model updated
+                <div className="mt-2 flex items-center gap-1.5 text-[10px] font-medium text-green-400/70">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400/60 inline-block" />
+                  Model updated in viewport
                 </div>
               )}
             </div>
@@ -131,14 +131,14 @@ export default function CadChatPanel({
         ))}
 
         {isGenerating && (
-          <div className="w-full flex gap-2">
-            <div className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded bg-primary text-primary-foreground">
-              <Bot size={14} />
+          <div className="flex gap-2">
+            <div className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md bg-blue-500/10 text-blue-400">
+              <Bot size={12} />
             </div>
-            <div className="flex-1 w-full min-w-0 p-3 rounded-lg border border-border bg-background">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 size={14} className="animate-spin" />
-                Generating model...
+            <div className="flex-1 min-w-0 px-3 py-2.5 rounded-xl">
+              <div className="flex items-center gap-2 text-[11px] text-white/30">
+                <Sparkles size={11} className="animate-pulse" />
+                Generating model…
               </div>
             </div>
           </div>
@@ -146,35 +146,34 @@ export default function CadChatPanel({
       </div>
 
       {/* Input */}
-      <div className="p-3 border-t border-border">
-        <div className="flex gap-2">
+      <div className="p-3 border-t border-white/[0.06] flex-shrink-0">
+        <div className="flex items-center gap-2 bg-[#161616] border border-white/[0.08] rounded-xl px-3 py-2 focus-within:border-white/20 transition-colors">
           <input
             type="text"
             value={input}
-            onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={(e) => {
+            onChange={e => onInputChange(e.target.value)}
+            onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey && !isGenerating) {
                 e.preventDefault();
                 onSend();
               }
             }}
             disabled={isGenerating}
-            placeholder="Describe a 3D model..."
-            className="flex-1 px-3 py-2 border border-input bg-background text-sm rounded placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            placeholder="Describe a 3D model…"
+            className="flex-1 bg-transparent text-xs text-white/70 placeholder:text-white/20 focus:outline-none disabled:opacity-40"
           />
-          <Button
+          <button
             onClick={onSend}
-            size="icon"
-            className="h-9 w-9"
             disabled={isGenerating || !input.trim()}
+            className="w-6 h-6 flex items-center justify-center text-white/30 hover:text-white/70 disabled:opacity-20 transition-colors cursor-pointer disabled:cursor-not-allowed flex-shrink-0"
           >
-            {isGenerating ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              <Send size={16} />
-            )}
-          </Button>
+            {isGenerating
+              ? <Loader2 size={13} className="animate-spin" />
+              : <Send size={13} />
+            }
+          </button>
         </div>
+        <p className="text-[10px] text-white/15 mt-1.5 text-center">Enter to send · refine through conversation</p>
       </div>
     </div>
   );

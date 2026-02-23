@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { RotateCcw, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { RotateCcw, ZoomIn, ZoomOut, Box } from 'lucide-react';
 
 interface CadViewerProps {
   stlBase64: string | null;
@@ -20,10 +19,8 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
   const [threeLoaded, setThreeLoaded] = useState(false);
   const threeRef = useRef<any>(null);
 
-  // Dynamically load Three.js modules
   useEffect(() => {
     let cancelled = false;
-
     async function loadThree() {
       try {
         const [THREE, { OrbitControls }, { STLLoader }] = await Promise.all([
@@ -31,53 +28,38 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
           import('three/examples/jsm/controls/OrbitControls.js'),
           import('three/examples/jsm/loaders/STLLoader.js'),
         ]);
-
         if (cancelled) return;
-
         threeRef.current = { THREE, OrbitControls, STLLoader };
         setThreeLoaded(true);
       } catch (err) {
         console.error('Failed to load Three.js:', err);
       }
     }
-
     loadThree();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // Initialize the 3D scene
   useEffect(() => {
     if (!threeLoaded || !containerRef.current || !threeRef.current) return;
 
     const { THREE } = threeRef.current;
     const container = containerRef.current;
 
-    // Scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a2e);
+    scene.background = new THREE.Color(0x080808);
     sceneRef.current = scene;
 
-    // Grid helper
-    const gridHelper = new THREE.GridHelper(200, 20, 0x444466, 0x333355);
+    // Subtle grid
+    const gridHelper = new THREE.GridHelper(200, 20, 0x1a1a1a, 0x141414);
     scene.add(gridHelper);
 
-    // Axes helper
-    const axesHelper = new THREE.AxesHelper(50);
+    const axesHelper = new THREE.AxesHelper(30);
     scene.add(axesHelper);
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(
-      50,
-      container.clientWidth / container.clientHeight,
-      0.1,
-      2000
-    );
+    const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 2000);
     camera.position.set(100, 80, 100);
     cameraRef.current = camera;
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -85,7 +67,6 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Controls
     const { OrbitControls } = threeRef.current;
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -93,20 +74,15 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
     controls.screenSpacePanning = true;
     controlsRef.current = controls;
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dl1 = new THREE.DirectionalLight(0xffffff, 0.8);
+    dl1.position.set(100, 100, 50);
+    dl1.castShadow = true;
+    scene.add(dl1);
+    const dl2 = new THREE.DirectionalLight(0xffffff, 0.3);
+    dl2.position.set(-100, 50, -50);
+    scene.add(dl2);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(100, 100, 50);
-    directionalLight.castShadow = true;
-    scene.add(directionalLight);
-
-    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
-    directionalLight2.position.set(-100, 50, -50);
-    scene.add(directionalLight2);
-
-    // Animation loop
     function animate() {
       frameIdRef.current = requestAnimationFrame(animate);
       controls.update();
@@ -114,7 +90,6 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
     }
     animate();
 
-    // Resize handler
     const handleResize = () => {
       if (!container) return;
       camera.aspect = container.clientWidth / container.clientHeight;
@@ -122,29 +97,25 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
       renderer.setSize(container.clientWidth, container.clientHeight);
     };
     window.addEventListener('resize', handleResize);
-    const resizeObserver = new ResizeObserver(handleResize);
-    resizeObserver.observe(container);
+    const ro = new ResizeObserver(handleResize);
+    ro.observe(container);
 
     return () => {
       cancelAnimationFrame(frameIdRef.current);
       window.removeEventListener('resize', handleResize);
-      resizeObserver.disconnect();
+      ro.disconnect();
       controls.dispose();
       renderer.dispose();
-      if (container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement);
-      }
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
   }, [threeLoaded]);
 
-  // Load STL when data changes
   useEffect(() => {
     if (!stlBase64 || !sceneRef.current || !threeRef.current) return;
 
     const { THREE, STLLoader } = threeRef.current;
     const scene = sceneRef.current;
 
-    // Remove previous mesh
     if (meshRef.current) {
       scene.remove(meshRef.current);
       meshRef.current.geometry.dispose();
@@ -153,17 +124,11 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
     }
 
     try {
-      // Decode base64 to binary
       const binaryString = atob(stlBase64);
       const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
 
-      const loader = new STLLoader();
-      const geometry = loader.parse(bytes.buffer);
-
-      // Center the geometry
+      const geometry = new STLLoader().parse(bytes.buffer);
       geometry.computeBoundingBox();
       const center = new THREE.Vector3();
       geometry.boundingBox!.getCenter(center);
@@ -171,8 +136,8 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
 
       const material = new THREE.MeshPhongMaterial({
         color: 0x4fc3f7,
-        specular: 0x222222,
-        shininess: 60,
+        specular: 0x111111,
+        shininess: 80,
         flatShading: false,
       });
 
@@ -182,13 +147,11 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
       scene.add(mesh);
       meshRef.current = mesh;
 
-      // Fit camera to model
       const boundingBox = new THREE.Box3().setFromObject(mesh);
       const size = boundingBox.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
       const fov = cameraRef.current.fov * (Math.PI / 180);
-      let cameraZ = maxDim / (2 * Math.tan(fov / 2));
-      cameraZ *= 2.0;
+      const cameraZ = (maxDim / (2 * Math.tan(fov / 2))) * 2;
 
       cameraRef.current.position.set(cameraZ, cameraZ * 0.7, cameraZ);
       cameraRef.current.lookAt(0, 0, 0);
@@ -215,54 +178,40 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
   };
 
   return (
-    <div className="relative w-full h-full">
-      {/* Viewer controls */}
-      <div className="absolute top-3 right-3 z-10 flex gap-1">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => handleZoom(0.8)}
-          className="w-8 h-8 bg-background/80 backdrop-blur-sm border-2 border-foreground"
-          title="Zoom in"
-        >
-          <ZoomIn size={14} />
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => handleZoom(1.25)}
-          className="w-8 h-8 bg-background/80 backdrop-blur-sm border-2 border-foreground"
-          title="Zoom out"
-        >
-          <ZoomOut size={14} />
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleResetView}
-          className="w-8 h-8 bg-background/80 backdrop-blur-sm border-2 border-foreground"
-          title="Reset view"
-        >
-          <RotateCcw size={14} />
-        </Button>
+    <div className="relative w-full h-full bg-[#080808]">
+
+      {/* Viewport controls */}
+      <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
+        {[
+          { icon: ZoomIn,    title: 'Zoom in',    action: () => handleZoom(0.8)  },
+          { icon: ZoomOut,   title: 'Zoom out',   action: () => handleZoom(1.25) },
+          { icon: RotateCcw, title: 'Reset view', action: handleResetView        },
+        ].map(({ icon: Icon, title, action }) => (
+          <button
+            key={title}
+            onClick={action}
+            title={title}
+            className="w-7 h-7 flex items-center justify-center bg-black/60 backdrop-blur-sm border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.06] text-white/40 hover:text-white/80 rounded-lg transition-all cursor-pointer"
+          >
+            <Icon size={13} />
+          </button>
+        ))}
       </div>
 
-      {/* Instructions overlay */}
+      {/* Empty state */}
       {!stlBase64 && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-          <div className="text-center p-6">
-            <Maximize2 size={48} className="mx-auto mb-4 text-muted-foreground/40" />
-            <p className="text-lg font-black text-muted-foreground/60">
-              CAD VIEWPORT
-            </p>
-            <p className="text-sm font-bold text-muted-foreground/40 mt-2">
-              Describe a 3D model in the chat to see it here
-            </p>
+          <div className="text-center">
+            <div className="w-12 h-12 rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center mx-auto mb-3">
+              <Box size={20} className="text-white/15" />
+            </div>
+            <p className="text-xs font-medium text-white/25">CAD Viewport</p>
+            <p className="text-[11px] text-white/15 mt-1">Describe a model in the chat</p>
           </div>
         </div>
       )}
 
-      {/* Three.js canvas container */}
+      {/* Three.js canvas */}
       <div ref={containerRef} className="w-full h-full" />
     </div>
   );
