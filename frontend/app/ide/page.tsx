@@ -522,12 +522,13 @@ export default function IDEPage() {
       return { hexOutput: '', logs: '', errors: ['No project files found.'] };
     }
 
-    const mainFilePath =
-      currentProject.files.find(f => f.id === selectedFile)?.path ||
-      currentProject.files.find(f => f.path?.endsWith('.ino'))?.path ||
-      currentProject.files[0]?.path;
+    const getPath = (f: { path: string; name: string }) => f.path || f.name;
+    const inoFile = currentProject.files.find(f => getPath(f).endsWith('.ino'));
+    const fallbackFile = currentProject.files.find(f => f.id === selectedFile) ?? currentProject.files[0];
+    const mainFile = inoFile ?? fallbackFile;
+    const mainFilePath = mainFile ? getPath(mainFile) : undefined;
 
-    if (mainFilePath == null) {
+    if (!mainFilePath) {
       return { hexOutput: '', logs: '', errors: ['No main file selected.'] };
     }
 
@@ -600,9 +601,9 @@ export default function IDEPage() {
       return;
     }
 
-    const mainFilePath =
-      currentProject.files.find(f => f.id === selectedFile)?.path ||
-      currentProject.files[0]?.path;
+    const getPath = (f: { path: string; name: string }) => f.path || f.name;
+    const mainFile = currentProject.files.find(f => f.id === selectedFile) ?? currentProject.files[0];
+    const mainFilePath = mainFile ? getPath(mainFile) : undefined;
 
     if (!mainFilePath) {
       setCompileLogs('No main file selected.');

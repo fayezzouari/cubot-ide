@@ -31,7 +31,7 @@ async def compile_project(request: CompileRequest):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"File with id {file_id} not found"
             )
-        files_dict[file.path] = file.content
+        files_dict[file.path or file.name] = file.content
     
     if not files_dict:
         raise HTTPException(
