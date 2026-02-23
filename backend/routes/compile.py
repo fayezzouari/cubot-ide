@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Response
 from typing import List, Optional
 
-from models.compilation import CompileRequest, CompilationResponse, CompileExplainRequest, CompileExplainResponse, UploadRequest, UploadResponse
+from models.compilation import CompileRequest, CompilationResponse, CompileExplainRequest, CompileExplainResponse
 from models.file import CompilerType
 from services.compiler_service import compiler_service
 from services.file_service import file_service
@@ -142,68 +142,6 @@ async def list_compilers():
     }
 
 
-@router.get("/ports")
-async def list_serial_ports():
-    """
-    List available serial ports and rank them by likelihood of being an Arduino.
-
-    Uses pyserial's list_ports to inspect USB vendor/product IDs and
-    descriptions. Known Arduino VIDs are scored higher so the UI can
-    pre-select the most likely port.
-    """
-    import serial.tools.list_ports as lp
-    import sys
-
-    # Known USB Vendor IDs associated with Arduino-compatible boards
-    ARDUINO_VIDS = {
-        0x2341: "Arduino LLC",
-        0x1A86: "CH340 (clone)",  # very common on cheap Nanos
-        0x0403: "FTDI",           # older Arduinos / Pro Mini adapters
-        0x10C4: "CP210x",         # another common USB-serial chip
-        0x16C0: "Teensy / VUSB",
-    }
-
-    ports = []
-    for p in lp.comports():
-        vid = p.vid  # integer or None
-        score = 0
-        hint = ""
-
-        if vid in ARDUINO_VIDS:
-            score = 2
-            hint = ARDUINO_VIDS[vid]
-        elif p.description and any(
-            kw in p.description.lower()
-            for kw in ("arduino", "ch340", "ftdi", "cp210", "usb serial", "usb-serial")
-        ):
-            score = 1
-            hint = p.description
-
-        ports.append({
-            "port": p.device,
-            "description": p.description or "",
-            "manufacturer": p.manufacturer or "",
-            "hint": hint,
-            "score": score,
-        })
-
-    # Sort: highest score first, then alphabetically
-    ports.sort(key=lambda x: (-x["score"], x["port"]))
-
-    # Platform-specific fallback default
-    if sys.platform.startswith("win"):
-        fallback = "COM3"
-    elif sys.platform == "darwin":
-        fallback = "/dev/cu.usbmodem14101"
-    else:
-        fallback = "/dev/ttyACM0"
-
-    return {
-        "ports": ports,
-        "suggested": ports[0]["port"] if ports else fallback,
-        "fallback": fallback,
-    }
-
 
 @router.get("/status")
 async def check_compiler_status():
@@ -215,47 +153,6 @@ async def check_compiler_status():
         "message": "Docker is running" if docker_available else "Docker is not available"
     }
 
-
-@router.post("/upload", response_model=UploadResponse)
-async def upload_firmware(request: UploadRequest):
-    """
-    Compile the project and upload the firmware to the connected Arduino board.
-
-    Requires:
-    - compiler: arduino (only Arduino is supported for direct upload)
-    - file_ids: list of file IDs to compile
-    - main_file: entry-point file path
-    - port: serial port the board is connected to (e.g. /dev/ttyACM0)
-    - fqbn: fully-qualified board name (default: arduino:avr:uno)
-    """
-    files_dict: dict = {}
-    for file_id in request.file_ids:
-        file = await file_service.get_file(file_id)
-        if not file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"File with id {file_id} not found",
-            )
-        files_dict[file.path] = file.content
-
-    if not files_dict:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No files provided for upload",
-        )
-
-    if request.main_file not in files_dict:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Main file {request.main_file} not found in provided files",
-        )
-
-    result = await compiler_service.upload_firmware(request, files_dict)
-    return UploadResponse(
-        success=result["success"],
-        output=result["output"],
-        errors=result["errors"],
-    )
 
 
 @router.post("/explain", response_model=CompileExplainResponse)
