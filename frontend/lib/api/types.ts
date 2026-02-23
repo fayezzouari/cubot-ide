@@ -112,35 +112,6 @@ export interface CompilationResponse {
   hex_output?: string;
 }
 
-export interface SerialPortInfo {
-  port: string;
-  description: string;
-  manufacturer: string;
-  hint: string;
-  score: number;
-}
-
-export interface SerialPortsResponse {
-  ports: SerialPortInfo[];
-  suggested: string;
-  fallback: string;
-}
-
-export interface UploadRequest {
-  compiler: CompilerType;
-  file_ids: string[];
-  main_file: string;
-  port: string;
-  fqbn?: string;
-  build_flags?: string[];
-}
-
-export interface UploadResponse {
-  success: boolean;
-  output: string;
-  errors: string[];
-}
-
 export interface CompileExplainRequest {
   project_id: string;
   compiler?: CompilerType;

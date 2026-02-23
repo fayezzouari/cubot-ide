@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Usb, RefreshCw, Cpu } from 'lucide-react';
+import { useState } from 'react';
+import { Loader2, Usb, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -12,246 +11,186 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { compileService } from '@/lib/api';
-import type { SerialPortInfo } from '@/lib/api/types';
+import { requestSerialPort, openPort, flashHex } from '@/lib/stk500';
 
-const COMMON_FQBNS = [
-  { label: 'Arduino Uno',          value: 'arduino:avr:uno' },
-  { label: 'Arduino Nano',         value: 'arduino:avr:nano' },
-  { label: 'Arduino Mega 2560',    value: 'arduino:avr:mega' },
-  { label: 'Arduino Leonardo',     value: 'arduino:avr:leonardo' },
-  { label: 'Arduino Pro Mini',     value: 'arduino:avr:pro' },
+const BOARDS = [
+  { label: 'Arduino Uno',       value: 'arduino:avr:uno' },
+  { label: 'Arduino Nano',      value: 'arduino:avr:nano' },
+  { label: 'Arduino Pro Mini',  value: 'arduino:avr:pro' },
 ];
 
-const FALLBACK_PORT = '/dev/ttyACM0';
+const BAUD_RATES = [115200, 57600, 38400, 19200, 9600];
+
+type Phase = 'idle' | 'compiling' | 'flashing' | 'done' | 'error';
 
 export interface UploadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  isUploading: boolean;
-  uploadSuccess: boolean | null;
-  uploadLogs: string;
-  uploadErrors: string[];
-  /** Called with the port + fqbn the user selected when they click Upload */
-  onUpload: (port: string, fqbn: string) => void;
+  onCompile: (fqbn: string) => Promise<{ hexOutput: string; logs: string; errors: string[] }>;
 }
 
-export default function UploadDialog({
-  open,
-  onOpenChange,
-  isUploading,
-  uploadSuccess,
-  uploadLogs,
-  uploadErrors,
-  onUpload,
-}: UploadDialogProps) {
-  // All config state lives here — never touches the parent on every keystroke
-  const [port, setPort]             = useState(FALLBACK_PORT);
-  const [fqbn, setFqbn]             = useState('arduino:avr:uno');
-  const [detectedPorts, setDetectedPorts] = useState<SerialPortInfo[]>([]);
-  const [isScanning, setIsScanning] = useState(false);
-  const [useCustomPort, setUseCustomPort] = useState(false);
+export default function UploadDialog({ open, onOpenChange, onCompile }: UploadDialogProps) {
+  const [fqbn, setFqbn] = useState('arduino:avr:uno');
+  const [baud, setBaud] = useState(115200);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [logs, setLogs] = useState('');
+  const [errors, setErrors] = useState<string[]>([]);
+  const busy = phase === 'compiling' || phase === 'flashing';
 
-  // Track whether we've scanned for this open session
-  const scannedRef = useRef(false);
+  const appendLog = (msg: string) => setLogs(prev => prev + msg + '\n');
 
-  const scanPorts = useCallback(async (autoSelect: boolean) => {
-    setIsScanning(true);
+  const handleFlash = async () => {
+    setLogs('');
+    setErrors([]);
+
+    // Step 1 — select port (requires user gesture, does NOT open it)
+    let port: unknown;
     try {
-      const result = await compileService.listPorts();
-      setDetectedPorts(result.ports);
-      if (autoSelect && result.suggested) {
-        setPort(result.suggested);
-        setUseCustomPort(false);
+      port = await requestSerialPort();
+    } catch (err: any) {
+      setErrors([err?.message ?? 'Port selection cancelled']);
+      return;
+    }
+
+    // Step 2 — compile (port is not open, no stale buffer)
+    setPhase('compiling');
+    appendLog('Compiling…');
+    let hexOutput: string;
+    try {
+      const result = await onCompile(fqbn);
+      appendLog(result.logs);
+      if (result.errors.length > 0) {
+        setErrors(result.errors);
+        setPhase('error');
+        return;
       }
-    } catch {
-      // keep current port value
-    } finally {
-      setIsScanning(false);
+      if (!result.hexOutput) {
+        setErrors(['Compilation succeeded but no hex output was returned.']);
+        setPhase('error');
+        return;
+      }
+      hexOutput = result.hexOutput;
+    } catch (err: any) {
+      setErrors([err?.message ?? 'Compilation failed']);
+      setPhase('error');
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    if (open && !scannedRef.current) {
-      scannedRef.current = true;
-      // Wait for the dialog open animation to finish before scanning
-      const timer = setTimeout(() => scanPorts(true), 300);
-      return () => clearTimeout(timer);
+    // Step 3 — open port right before flashing (open() needs no gesture)
+    setPhase('flashing');
+    try {
+      await openPort(port, baud);
+    } catch (err: any) {
+      setErrors([err?.message ?? 'Failed to open port']);
+      setPhase('error');
+      return;
     }
-    if (!open) {
-      scannedRef.current = false;
-    }
-  }, [open, scanPorts]);
 
-  const selectedPortInfo = detectedPorts.find((p) => p.port === port);
+    // Step 4 — flash
+    try {
+      await flashHex(hexOutput, port, appendLog);
+      setPhase('done');
+    } catch (err: any) {
+      setErrors([err?.message ?? 'Flash failed']);
+      setPhase('error');
+    }
+  };
+
+  const webSerialSupported = typeof window !== 'undefined' && 'serial' in navigator;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={v => { if (!busy) onOpenChange(v); }}>
       <DialogContent className="max-w-2xl border-4 border-foreground bg-background">
         <DialogHeader>
           <DialogTitle className="text-2xl font-black text-foreground flex items-center gap-2">
             <Usb size={20} />
-            CONNECT &amp; UPLOAD
+            FLASH FIRMWARE
           </DialogTitle>
           <DialogDescription className="text-foreground/70 font-bold">
-            Compile and flash your code to the connected Arduino board
+            Compile and flash directly to your Arduino from the browser
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* ── Port ── */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-black">PORT</label>
-              <button
-                onClick={() => scanPorts(false)}
-                disabled={isScanning || isUploading}
-                className="flex items-center gap-1 text-xs text-foreground/40 hover:text-foreground transition-colors disabled:opacity-30"
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-black">BOARD</label>
+              <select
+                value={fqbn}
+                onChange={e => setFqbn(e.target.value)}
+                className="border-2 border-foreground px-3 py-2 font-bold bg-background text-foreground"
+                disabled={busy}
               >
-                <RefreshCw size={11} className={isScanning ? 'animate-spin' : ''} />
-                {isScanning ? 'Scanning…' : 'Rescan'}
-              </button>
+                {BOARDS.map(b => (
+                  <option key={b.value} value={b.value}>{b.label}</option>
+                ))}
+              </select>
             </div>
-
-            {isScanning ? (
-              <div className="flex items-center gap-2 border-2 border-foreground px-3 py-2 text-xs text-foreground/40">
-                <Loader2 size={12} className="animate-spin" />
-                Detecting connected boards…
-              </div>
-            ) : detectedPorts.length > 0 && !useCustomPort ? (
-              <>
-                <select
-                  value={port}
-                  onChange={(e) => {
-                    if (e.target.value === '__custom__') {
-                      setUseCustomPort(true);
-                      setPort('');
-                    } else {
-                      setPort(e.target.value);
-                    }
-                  }}
-                  className="w-full border-2 border-foreground px-3 py-2 font-bold bg-background text-foreground text-sm"
-                  disabled={isUploading}
-                >
-                  {detectedPorts.map((p) => (
-                    <option key={p.port} value={p.port}>
-                      {p.port}
-                      {p.hint ? ` — ${p.hint}` : ''}
-                      {p.score === 2 ? ' ★' : ''}
-                    </option>
-                  ))}
-                  <option value="__custom__">Enter manually…</option>
-                </select>
-
-                {selectedPortInfo?.score === 2 && (
-                  <div className="flex items-center gap-1.5 text-xs text-green-500 font-bold">
-                    <Cpu size={11} />
-                    Arduino detected — {selectedPortInfo.hint}
-                  </div>
-                )}
-                {selectedPortInfo?.score === 1 && (
-                  <div className="text-xs text-yellow-500 font-bold">
-                    Possible Arduino — {selectedPortInfo.description}
-                  </div>
-                )}
-                {selectedPortInfo?.score === 0 && (
-                  <div className="text-xs text-foreground/30">
-                    No Arduino signature found on this port
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <Input
-                  value={port}
-                  onChange={(e) => setPort(e.target.value)}
-                  className="border-2 border-foreground font-bold"
-                  placeholder="/dev/ttyACM0"
-                  disabled={isUploading}
-                />
-                {detectedPorts.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setUseCustomPort(false);
-                      setPort(detectedPorts[0].port);
-                    }}
-                    className="text-xs text-foreground/40 hover:text-foreground transition-colors self-start"
-                  >
-                    ← Back to detected ports
-                  </button>
-                )}
-                <p className="text-xs text-foreground/30">
-                  Linux: /dev/ttyACM0 · macOS: /dev/cu.usbmodem… · Windows: COM3
-                </p>
-              </>
-            )}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-black">BAUD RATE</label>
+              <select
+                value={baud}
+                onChange={e => setBaud(Number(e.target.value))}
+                className="border-2 border-foreground px-3 py-2 font-bold bg-background text-foreground"
+                disabled={busy}
+              >
+                {BAUD_RATES.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* ── Board ── */}
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-black">BOARD</label>
-            <select
-              value={fqbn}
-              onChange={(e) => setFqbn(e.target.value)}
-              className="border-2 border-foreground px-3 py-2 font-bold bg-background text-foreground"
-              disabled={isUploading}
-            >
-              {COMMON_FQBNS.map((b) => (
-                <option key={b.value} value={b.value}>{b.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* ── Actions ── */}
           <div className="flex items-center gap-2 flex-wrap">
             <Button
-              onClick={() => onUpload(port, fqbn)}
+              onClick={handleFlash}
               className="px-4 py-2 bg-foreground text-background font-black text-sm hover:bg-muted hover:text-foreground transition-all"
-              disabled={isUploading || !port.trim()}
+              disabled={busy || !webSerialSupported}
             >
-              {isUploading ? (
-                <>
-                  <Loader2 size={14} className="mr-2 animate-spin" />
-                  UPLOADING…
-                </>
+              {phase === 'compiling' ? (
+                <><Loader2 size={14} className="mr-2 animate-spin" />COMPILING…</>
+              ) : phase === 'flashing' ? (
+                <><Loader2 size={14} className="mr-2 animate-spin" />FLASHING…</>
               ) : (
-                <>
-                  <Usb size={14} className="mr-2" />
-                  CONNECT &amp; UPLOAD
-                </>
+                <><Zap size={14} className="mr-2" />COMPILE &amp; FLASH</>
               )}
             </Button>
             <Button
               variant="outline"
               className="border-2 border-foreground font-black"
               onClick={() => onOpenChange(false)}
-              disabled={isUploading}
+              disabled={busy}
             >
               CLOSE
             </Button>
-            {uploadSuccess !== null && !isUploading && (
-              <span className={`text-sm font-black ${uploadSuccess ? 'text-green-500' : 'text-destructive'}`}>
-                {uploadSuccess ? '✓ UPLOADED' : '✗ FAILED'}
-              </span>
+            {phase === 'done' && (
+              <span className="text-sm font-black text-green-500">✓ FLASHED</span>
+            )}
+            {phase === 'error' && (
+              <span className="text-sm font-black text-destructive">✗ FAILED</span>
             )}
           </div>
 
-          {/* ── Logs ── */}
+          {!webSerialSupported && (
+            <p className="text-xs text-yellow-500 font-bold">
+              Web Serial is not supported in this browser. Use Chrome or Edge to flash firmware.
+            </p>
+          )}
+
           <div className="border-2 border-foreground bg-muted p-3 min-h-[160px]">
             <ScrollArea className="h-40">
               <pre className="text-xs font-mono whitespace-pre-wrap">
-                {uploadLogs || 'Output will appear here after upload…'}
+                {logs || 'Output will appear here…'}
               </pre>
             </ScrollArea>
           </div>
 
-          {/* ── Errors ── */}
-          {uploadErrors.length > 0 && (
+          {errors.length > 0 && (
             <div className="border-2 border-red-600 bg-red-50 p-3">
               <p className="text-xs font-black text-red-700 mb-2">ERRORS</p>
               <ul className="text-xs font-mono text-red-700 list-disc pl-4 space-y-1">
-                {uploadErrors.map((err, idx) => (
-                  <li key={`${err}-${idx}`}>{err}</li>
+                {errors.map((err, i) => (
+                  <li key={i}>{err}</li>
                 ))}
               </ul>
             </div>

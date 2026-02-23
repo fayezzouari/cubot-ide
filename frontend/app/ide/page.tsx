@@ -47,12 +47,7 @@ export default function IDEPage() {
   const [serialError, setSerialError] = useState<string | null>(null);
   const [codeContexts, setCodeContexts] = useState<CodeContext[]>([]);
 
-  // Upload state
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadSuccess, setUploadSuccess] = useState<boolean | null>(null);
-  const [uploadLogs, setUploadLogs] = useState('');
-  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
 
   const serialSocketRef = useRef<WebSocket | null>(null);
   const hasLoadedProjectRef = useRef(false);
@@ -520,50 +515,36 @@ export default function IDEPage() {
     setIsSerialModalOpen(true);
   };
 
-  const handleOpenUploadModal = () => {
-    setUploadLogs('');
-    setUploadErrors([]);
-    setUploadSuccess(null);
-    setIsUploadModalOpen(true);
-  };
+  const handleOpenUploadModal = () => setIsUploadModalOpen(true);
 
-  const handleUpload = async (port: string, fqbn: string) => {
+  const handleCompileForUpload = async (_fqbn: string) => {
     if (!currentProject || currentProject.files.length === 0) {
-      setUploadLogs('No project files found.');
-      return;
+      return { hexOutput: '', logs: '', errors: ['No project files found.'] };
     }
 
     const mainFilePath =
-      currentProject.files.find(f => f.id === selectedFile)?.path
-      ?? currentProject.files[0]?.path;
+      currentProject.files.find(f => f.id === selectedFile)?.path ||
+      currentProject.files.find(f => f.path?.endsWith('.ino'))?.path ||
+      currentProject.files[0]?.path;
 
     if (mainFilePath == null) {
-      setUploadLogs('No main file selected.');
-      return;
+      return { hexOutput: '', logs: '', errors: ['No main file selected.'] };
     }
 
-    setIsUploading(true);
-    setUploadErrors([]);
-    setUploadSuccess(null);
-    setUploadLogs('Compiling and uploading…\n');
-
     try {
-      const result = await compileService.upload({
+      const result = await compileService.compile({
         compiler: 'arduino' as CompilerType,
         file_ids: currentProject.files.map(f => f.id),
         main_file: mainFilePath,
-        port,
-        fqbn,
+        project_id: currentProject.id,
       });
-      setUploadLogs(result.output || '');
-      setUploadErrors(result.errors || []);
-      setUploadSuccess(result.success);
+      return {
+        hexOutput: result.hex_output ?? '',
+        logs: result.output ?? '',
+        errors: result.errors ?? [],
+      };
     } catch (err: any) {
-      setUploadLogs('Upload failed.');
-      setUploadErrors([err?.message || 'Unknown error']);
-      setUploadSuccess(false);
-    } finally {
-      setIsUploading(false);
+      return { hexOutput: '', logs: '', errors: [err?.message ?? 'Compilation failed'] };
     }
   };
 
@@ -822,11 +803,7 @@ export default function IDEPage() {
       <UploadDialog
         open={isUploadModalOpen}
         onOpenChange={setIsUploadModalOpen}
-        isUploading={isUploading}
-        uploadSuccess={uploadSuccess}
-        uploadLogs={uploadLogs}
-        uploadErrors={uploadErrors}
-        onUpload={handleUpload}
+        onCompile={handleCompileForUpload}
       />
 
       {/* Main Content */}

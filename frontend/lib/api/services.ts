@@ -11,9 +11,6 @@ import type {
   CompilationResponse,
   CompileExplainRequest,
   CompileExplainResponse,
-  UploadRequest,
-  UploadResponse,
-  SerialPortsResponse,
   ChatRequest,
   ChatResponse,
   ChatMessageInDB,
@@ -98,12 +95,6 @@ export const compileService = {
     }
     return apiClient.download(`/compile/download-binary/${projectId}?${params}`);
   },
-
-  upload: (data: UploadRequest) =>
-    apiClient.post<UploadResponse>('/compile/upload', data),
-
-  listPorts: () =>
-    apiClient.get<SerialPortsResponse>('/compile/ports'),
 
   listCompilers: () =>
     apiClient.get<{
