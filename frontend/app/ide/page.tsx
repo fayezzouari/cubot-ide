@@ -5,7 +5,7 @@ import { daytonaApi, type SandboxFileEntry } from '@/lib/api/daytona';
 import { compileService, chatService, projectService, fileService } from '@/lib/api';
 import type { CompilerType, ProjectWithFiles } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
-import { mockMessages as initialMessages, parsePlanSteps, type FileNode, type ChatMessage, type ChatMode } from '@/lib/mock-data';
+import { mockVibeModeMessages, mockPlanModeMessages, parsePlanSteps, type FileNode, type ChatMessage, type ChatMode } from '@/lib/mock-data';
 import TopBar from '@/components/ide/top-bar';
 import VscodeFileExplorer from '@/components/ide/vscode-file-explorer';
 import EditorPanel, { type EditorSelection } from '@/components/ide/editor-panel';
@@ -24,7 +24,17 @@ export default function IDEPage() {
   const { currentProject, updateFile, deleteFile, loadProject, createFile, compileProject, isLoading } = useProject();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [enableWebsearch, setEnableWebsearch] = useState(false);
+  const [chatMode, setChatMode] = useState<ChatMode>('vibe');
+
+  // Separate message history for each mode
+  const [vibeMessages, setVibeMessages] = useState<ChatMessage[]>(mockVibeModeMessages);
+  const [planMessages, setPlanMessages] = useState<ChatMessage[]>(mockPlanModeMessages);
+
+  // Current messages (switches based on mode)
+  const messages = chatMode === 'vibe' ? vibeMessages : planMessages;
+  const setMessages = chatMode === 'vibe' ? setVibeMessages : setPlanMessages;
+
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [editedContent, setEditedContent] = useState<string>('');
@@ -46,7 +56,6 @@ export default function IDEPage() {
   const [isSerialConnected, setIsSerialConnected] = useState(false);
   const [serialError, setSerialError] = useState<string | null>(null);
   const [codeContexts, setCodeContexts] = useState<CodeContext[]>([]);
-  const [chatMode, setChatMode] = useState<ChatMode>('vibe');
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
@@ -255,6 +264,7 @@ export default function IDEPage() {
         workspace_id: activeWorkspaceId ?? undefined,
         file_context: fileCtx,
         compiler: currentProject.target_compiler,
+        enable_websearch: enableWebsearch,
       });
 
       // Mark step as done with result
@@ -318,6 +328,23 @@ export default function IDEPage() {
         return { ...m, planSteps: updatedSteps };
       })
     );
+  };
+
+  const handleClearChat = async () => {
+    if (chatMode === 'vibe') {
+      setVibeMessages([...mockVibeModeMessages]);
+    } else {
+      setPlanMessages([...mockPlanModeMessages]);
+    }
+    setChatInput('');
+    setCodeContexts([]);
+    if (currentProject) {
+      try {
+        await chatService.clearHistory(currentProject.id);
+      } catch (err) {
+        console.error('Failed to clear chat history on server:', err);
+      }
+    }
   };
 
   /** Execute all remaining pending steps sequentially. */
@@ -397,6 +424,7 @@ export default function IDEPage() {
         compiler: currentProject.target_compiler,
         conversation_history: conversationHistory,
         plan_mode: isPlanMode,
+        enable_websearch: enableWebsearch,
       } as any);
 
       // Parse plan steps in plan mode
@@ -1017,6 +1045,9 @@ export default function IDEPage() {
               onAcceptStep={handleAcceptStep}
               onAcceptAllSteps={handleAcceptAllSteps}
               onDiscardStep={handleDiscardStep}
+              enableWebsearch={enableWebsearch}
+              onWebsearchChange={setEnableWebsearch}
+              onClearChat={handleClearChat}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
