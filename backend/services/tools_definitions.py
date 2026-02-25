@@ -6,15 +6,42 @@ These define the tools available to the AI assistant
 from typing import Dict, Any
 
 
-def get_tool_config() -> Dict[str, Any]:
+_EXECUTE_IN_SANDBOX_TOOL = {
+    "toolSpec": {
+        "name": "execute_in_sandbox",
+        "description": "Execute a shell command in the Daytona sandbox workspace. Use this to run builds, install packages, run tests, or verify code. Returns stdout, stderr, and exit code.",
+        "inputSchema": {
+            "json": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute (e.g., 'colcon build', 'python3 script.py', 'pip install rclpy')"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (default: 60, max: 120)",
+                        "default": 60
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    }
+}
+
+
+def get_tool_config(include_sandbox: bool = False) -> Dict[str, Any]:
     """
-    Get tool configuration for Bedrock Converse API
-    
+    Get tool configuration for Bedrock Converse API.
+
+    Args:
+        include_sandbox: When True, adds the execute_in_sandbox tool.
+
     Returns:
         Dictionary containing tool specifications
     """
-    return {
-        "tools": [
+    tools = [
             {
                 "toolSpec": {
                     "name": "create_file",
@@ -99,7 +126,9 @@ def get_tool_config() -> Dict[str, Any]:
                 }
             }
         ]
-    }
+    if include_sandbox:
+        tools.append(_EXECUTE_IN_SANDBOX_TOOL)
+    return {"tools": tools}
 
 
 # Tool metadata for documentation
