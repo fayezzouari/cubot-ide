@@ -42,9 +42,36 @@ class ChatRequest(BaseModel):
     file_context: Optional[List[FileContext]] = None
     compiler: Optional[str] = None
     conversation_history: Optional[List[dict]] = None
+    plan_mode: bool = False
 
 
 class ChatResponse(BaseModel):
     """Chat response to frontend"""
     message: str
     file_operations: List[dict] = []
+
+
+class StepExecutionRequest(BaseModel):
+    """Request to execute a single plan step with the agent"""
+    step_title: str
+    step_body: str
+    workspace_id: Optional[str] = None
+    file_context: Optional[List[FileContext]] = None
+    compiler: Optional[str] = None
+
+
+class ExecutionLogEntry(BaseModel):
+    """Record of a single sandbox command run during step execution"""
+    command: str
+    stdout: str
+    stderr: str
+    exit_code: int
+    success: bool
+
+
+class StepExecutionResponse(BaseModel):
+    """Response after the agent executes a plan step"""
+    message: str
+    file_operations: List[dict] = []
+    execution_logs: List[ExecutionLogEntry] = []
+    success: bool = True
