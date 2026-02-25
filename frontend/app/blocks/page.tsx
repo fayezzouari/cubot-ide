@@ -12,9 +12,6 @@ import {
   addEdge,
   Connection,
   Node,
-  Handle,
-  Position,
-  NodeProps,
   MiniMap,
   useReactFlow,
 } from '@xyflow/react';
@@ -28,7 +25,6 @@ import {
   RotateCcw,
   GripVertical,
   Save,
-  X,
   Download,
   Upload,
   Search,
@@ -55,368 +51,19 @@ const ArmVisualization = dynamic(
   { ssr: false }
 );
 
-// Custom node components
-interface NodeDeleteButtonProps {
-  nodeId: string;
-  onDelete: (nodeId: string) => void;
-}
-
-function NodeDeleteButton({ nodeId, onDelete }: NodeDeleteButtonProps) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onDelete(nodeId);
-      }}
-      className="absolute -top-2 -right-2 w-5 h-5 bg-[#0a0a0a] border border-white/[0.10] hover:border-red-500/50 text-white/20 hover:text-red-400 rounded-full flex items-center justify-center transition-all z-10"
-      title="Delete block"
-    >
-      <X size={12} />
-    </button>
-  );
-}
-
-function StartNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative px-6 py-4 bg-[#0e0e0e] border border-blue-500/30 border-l-[3px] border-l-blue-500 text-blue-400 font-bold text-sm min-w-[140px] text-center rounded-lg transition-all">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <div className="flex items-center justify-center gap-2">
-        <span className="text-lg">▶</span>
-        <span>{data.label as string}</span>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="w-3 h-3 bg-blue-500 border border-white/20"
-      />
-    </div>
-  );
-}
-
-function EndNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative px-6 py-4 bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-white/30 text-white/60 font-bold text-sm min-w-[140px] text-center rounded-lg transition-all">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-white/30 border border-white/20"
-      />
-      <div className="flex items-center justify-center gap-2 mt-1">
-        <span className="text-lg">⏹</span>
-        <span>{data.label as string}</span>
-      </div>
-    </div>
-  );
-}
-
-function ForNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-amber-400 text-white/60 min-w-[150px] rounded-lg">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-amber-400 border border-white/20"
-      />
-      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
-        {data.label as string}
-      </div>
-      <div className="px-4 py-2 text-xs font-medium">
-        <div className="flex items-center gap-2">
-          <span>i = 0 to</span>
-          <input
-            type="number"
-            defaultValue={10}
-            className="w-12 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="w-3 h-3 bg-amber-400 border border-white/20"
-      />
-    </div>
-  );
-}
-
-function WhileNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-amber-400 text-white/60 min-w-[150px] rounded-lg">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-amber-400 border border-white/20"
-      />
-      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
-        {data.label as string}
-      </div>
-      <div className="px-4 py-2 text-xs font-medium">
-        <div className="flex items-center gap-2">
-          <span>condition:</span>
-          <input
-            type="text"
-            defaultValue="true"
-            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="w-3 h-3 bg-amber-400 border border-white/20"
-      />
-    </div>
-  );
-}
-
-function IfNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-cyan-400 text-white/60 min-w-[150px] rounded-lg">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-cyan-400 border border-white/20"
-      />
-      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
-        {data.label as string}
-      </div>
-      <div className="px-4 py-2 text-xs font-medium">
-        <div className="flex items-center gap-2">
-          <span>if</span>
-          <input
-            type="text"
-            defaultValue="x > 0"
-            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="true"
-        className="w-3 h-3 bg-cyan-400 border border-white/20"
-        style={{ left: '30%' }}
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="false"
-        className="w-3 h-3 bg-cyan-400 border border-white/20"
-        style={{ left: '70%' }}
-      />
-    </div>
-  );
-}
-
-function MovePositionNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-violet-400 text-white/60 min-w-[180px] rounded-lg">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-violet-400 border border-white/20"
-      />
-      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
-        {data.label as string}
-      </div>
-      <div className="px-4 py-2 text-xs font-medium space-y-1.5">
-        <div className="flex items-center gap-2">
-          <span className="w-6">X:</span>
-          <input
-            type="number"
-            defaultValue={0}
-            step="0.01"
-            min="-5"
-            max="5"
-            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-6">Y:</span>
-          <input
-            type="number"
-            defaultValue={0}
-            step="0.01"
-            min="-5"
-            max="5"
-            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-6">Z:</span>
-          <input
-            type="number"
-            defaultValue={0}
-            step="0.01"
-            min="-5"
-            max="5"
-            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-        <div className="text-[9px] text-white/40 mt-1">
-          Uses IK to move arm
-        </div>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="w-3 h-3 bg-violet-400 border border-white/20"
-      />
-    </div>
-  );
-}
-
-function MoveJointNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-violet-400 text-white/60 min-w-[180px] rounded-lg">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-violet-400 border border-white/20"
-      />
-      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
-        {data.label as string}
-      </div>
-      <div className="px-4 py-2 text-xs font-medium space-y-1.5">
-        <div className="flex items-center gap-2">
-          <span>JOINT:</span>
-          <select
-            defaultValue="1"
-            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <option value="1">Joint 1</option>
-            <option value="2">Joint 2</option>
-            <option value="3">Joint 3</option>
-            <option value="4">Joint 4</option>
-            <option value="5">Joint 5</option>
-            <option value="6">Joint 6</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <span>ANGLE:</span>
-          <input
-            type="number"
-            defaultValue={0}
-            step="1"
-            min="-180"
-            max="180"
-            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <span className="text-[10px]">°</span>
-        </div>
-        <div className="text-[9px] text-white/40 mt-1">
-          Range: -180° to +180°
-        </div>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="w-3 h-3 bg-violet-400 border border-white/20"
-      />
-    </div>
-  );
-}
-
-function GetPositionNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-violet-400 text-white/60 min-w-[180px] rounded-lg">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-violet-400 border border-white/20"
-      />
-      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
-        {data.label as string}
-      </div>
-      <div className="px-4 py-2 text-xs font-medium">
-        <div className="flex items-center gap-2">
-          <span>Returns current X, Y, Z position</span>
-        </div>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="w-3 h-3 bg-violet-400 border border-white/20"
-      />
-    </div>
-  );
-}
-
-function DelayNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-emerald-400 text-white/60 min-w-[150px] rounded-lg">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-emerald-400 border border-white/20"
-      />
-      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
-        {data.label as string}
-      </div>
-      <div className="px-4 py-2 text-xs font-medium">
-        <div className="flex items-center gap-2">
-          <span>MS:</span>
-          <input
-            type="number"
-            defaultValue={1000}
-            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="w-3 h-3 bg-emerald-400 border border-white/20"
-      />
-    </div>
-  );
-}
-
-function DefaultNode({ data, id }: NodeProps) {
-  const onDelete = data.onDelete as ((id: string) => void) | undefined;
-  return (
-    <div className="relative px-6 py-3 bg-[#0e0e0e] border border-white/[0.10] text-white/60 font-bold text-sm min-w-[120px] text-center rounded-lg">
-      {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="w-3 h-3 bg-white/30 border border-white/20"
-      />
-      <div>{data.label as string}</div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="w-3 h-3 bg-white/30 border border-white/20"
-      />
-    </div>
-  );
-}
+// Import node components
+import {
+  StartNode,
+  EndNode,
+  ForNode,
+  WhileNode,
+  IfNode,
+  MovePositionNode,
+  MoveJointNode,
+  GetPositionNode,
+  DelayNode,
+  DefaultNode,
+} from '@/components/blocks/nodes';
 
 const nodeTypes = {
   start: StartNode,
@@ -916,7 +563,6 @@ export default function BlocksPage() {
             <div className="h-full flex flex-col bg-[#0a0a0a]">
               <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">🦾</span>
                   <span className="font-black text-sm">ARM STATE</span>
                 </div>
                 <div className="flex items-center gap-2">
