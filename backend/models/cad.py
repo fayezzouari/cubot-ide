@@ -37,6 +37,31 @@ class CadExportRequest(BaseModel):
     cadquery_code: str
 
 
+class CadPlanStep(BaseModel):
+    """A single part/component in a CAD build plan"""
+    id: str
+    name: str
+    filename: str
+    description: str
+    dependencies: List[str] = []
+    approach_hint: str = ""
+
+
+class CadPlan(BaseModel):
+    """Structured decomposition of a CAD request into ordered parts"""
+    parts: List[CadPlanStep]
+
+
+class CadPartResult(BaseModel):
+    """Result of executing one part in the plan"""
+    part_id: str
+    success: bool
+    code: Optional[str] = None
+    stl_b64: Optional[str] = None
+    error: Optional[str] = None
+    attempts: int = 1
+
+
 class CadSessionInDB(BaseModel):
     """CAD session stored in MongoDB"""
     id: str = Field(alias="_id")
