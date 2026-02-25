@@ -103,7 +103,8 @@ class AIService:
                 file_operations = []
             else:
                 # Get tool configuration and run agentic loop
-                tool_config = get_tool_config()
+                logger.info(f"Chat request: plan_mode=False, enable_websearch={request.enable_websearch}")
+                tool_config = get_tool_config(include_websearch=request.enable_websearch)
                 response_text, file_operations, _ = await self._converse_with_tools(
                     messages=messages,
                     system_prompt=system_prompt,
@@ -331,6 +332,8 @@ class AIService:
                 else:
                     # Model finished
                     response_text = message.get("content", "")
+                    # Remove reasoning/thinking tags that some models include
+                    response_text = self._strip_reasoning_tags(response_text)
                     return response_text.strip(), file_operations, execution_logs
                     
             except ClientError as e:
@@ -475,6 +478,8 @@ class AIService:
                     for content_block in content:
                         if content_block.get("type") == "text":
                             response_text += content_block.get("text", "")
+                    # Remove reasoning/thinking tags that some models include
+                    response_text = self._strip_reasoning_tags(response_text)
                     return response_text.strip(), file_operations, execution_logs
 
                 else:
@@ -508,11 +513,13 @@ class AIService:
         """
         try:
             has_sandbox = bool(request.workspace_id)
+            logger.info(f"Execute step: title={request.step_title}, enable_websearch={request.enable_websearch}")
             system_prompt = self._build_step_execution_prompt(
                 request.step_title,
                 request.step_body,
                 request.compiler,
                 has_sandbox=has_sandbox,
+                has_websearch=request.enable_websearch,
             )
 
             user_content = (
@@ -528,7 +535,10 @@ class AIService:
                 user_content = context_section + user_content
 
             messages = [{"role": "user", "content": [{"text": user_content}]}]
-            tool_config = get_tool_config(include_sandbox=has_sandbox)
+            tool_config = get_tool_config(
+                include_sandbox=has_sandbox,
+                include_websearch=request.enable_websearch,
+            )
 
             response_text, file_operations, execution_logs_raw = await self._converse_with_tools(
                 messages=messages,
@@ -557,6 +567,17 @@ class AIService:
                 success=False,
             )
 
+    def _strip_reasoning_tags(self, text: str) -> str:
+        """Remove reasoning/thinking tags that some models include in their responses."""
+        import re
+        # Remove <reasoning>, <thinking>, <analysis>, etc. tags
+        text = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<analysis>.*?</analysis>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<reflection>.*?</reflection>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        # Also handle markdown-style code blocks that might contain reasoning
+        return text.strip()
+
     def _build_plan_system_prompt(self, compiler: Optional[str] = None) -> str:
         """System prompt for plan-mode — produces a structured numbered plan without executing anything."""
         compiler_info = f"\nYou are working with the {compiler} compiler/platform.\n" if compiler else ""
@@ -584,6 +605,7 @@ Use exactly this format for every step (no deviations):
         step_body: str,
         compiler: Optional[str] = None,
         has_sandbox: bool = False,
+        has_websearch: bool = False,
     ) -> str:
         """System prompt for executing a single plan step with tools."""
         compiler_info = f"\nYou are working with the {compiler} compiler/platform.\n" if compiler else ""
@@ -591,6 +613,26 @@ Use exactly this format for every step (no deviations):
 - execute_in_sandbox: Run a shell command in the live sandbox (build, test, install packages, etc.)
   Always call list_files first to know the project structure, then execute commands from the right directory.
 """ if has_sandbox else ""
+
+        websearch_section = """
+- search_web: Search the web for up-to-date information (libraries, APIs, documentation, recent releases).
+  **Use this FIRST** if you need current information beyond your training data.
+""" if has_websearch else ""
+
+        workflow_step = """
+1. If web search is available and you need current information, search the web first.
+2. Call list_files to understand the project structure.
+3. Read any relevant existing files before modifying them.
+4. Create or update files as needed to complete the step.
+5. If a sandbox is available, run a build or test command to verify the result.
+6. Provide a brief summary of what you did.
+""" if has_websearch else """
+1. Call list_files to understand the project structure.
+2. Read any relevant existing files before modifying them.
+3. Create or update files as needed to complete the step.
+4. If a sandbox is available, run a build or test command to verify the result.
+5. Provide a brief summary of what you did.
+"""
 
         return f"""You are CuBot, an AI agent executing a specific implementation step for an embedded/robotics project.{compiler_info}
 
@@ -605,14 +647,10 @@ Execute ONLY the step described below. Do not go beyond its scope.
 - list_files: See all project files and their paths
 - read_file: Read a file before modifying it
 - create_file: Create a new file
-- update_file: Overwrite an existing file{sandbox_section}
+- update_file: Overwrite an existing file{sandbox_section}{websearch_section}
 
 ## WORKFLOW
-1. Call list_files to understand the project structure.
-2. Read any relevant existing files before modifying them.
-3. Create or update files as needed to complete the step.
-4. If a sandbox is available, run a build or test command to verify the result.
-5. Provide a brief summary of what you did.
+{workflow_step}
 
 ## RULES
 - Complete the step fully — don't leave it half-done.
@@ -707,6 +745,11 @@ Whenever the user asks you to create, write, generate, or modify ANY file or cod
             ))
         
         return messages
+
+    async def clear_chat_history(self, project_id: str) -> None:
+        """Delete all chat messages for a project"""
+        collection = get_collection(self.COLLECTION_NAME)
+        await collection.delete_many({"project_id": project_id})
     
     async def apply_file_operations(
         self,
@@ -848,12 +891,15 @@ Whenever the user asks you to create, write, generate, or modify ANY file or cod
                 for content_block in content:
                     if content_block.get("type") == "text":
                         response_text += content_block.get("text", "")
+                response_text = self._strip_reasoning_tags(response_text)
                 return response_text.strip()
             else:
                 # OpenAI format
                 choices = response_body.get("choices", [])
                 if choices:
-                    return choices[0].get("message", {}).get("content", "").strip()
+                    response_text = choices[0].get("message", {}).get("content", "")
+                    response_text = self._strip_reasoning_tags(response_text)
+                    return response_text.strip()
                 return ""
             
         except Exception as e:
