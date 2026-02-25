@@ -1,5 +1,7 @@
+import json
+
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from models.cad import CadChatRequest, CadChatResponse, CadExportRequest
 from services.cad_service import cad_service
@@ -17,6 +19,28 @@ async def generate_cad(session_id: str, request: CadChatRequest):
     """
     response = await cad_service.generate(session_id, request)
     return response
+
+
+@router.post("/{session_id}/generate-planned")
+async def generate_planned(session_id: str, request: CadChatRequest):
+    """
+    Generate a CAD model using the layered planning pipeline.
+    Streams Server-Sent Events (SSE) with planning + per-part execution progress.
+    """
+    async def event_stream():
+        async for event in cad_service.generate_planned_stream(session_id, request):
+            yield f"data: {json.dumps(event)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.post("/export-stl")
