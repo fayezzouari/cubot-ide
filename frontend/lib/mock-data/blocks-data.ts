@@ -19,41 +19,41 @@ export const blockCategories: BlockCategory[] = [
     id: 'control',
     name: 'CONTROL',
     blocks: [
-      { type: 'start', label: 'START', color: 'bg-emerald-100 dark:bg-emerald-900/50 border-emerald-600 dark:border-emerald-400 text-emerald-800 dark:text-emerald-200' },
-      { type: 'end', label: 'END', color: 'bg-rose-100 dark:bg-rose-900/50 border-rose-600 dark:border-rose-400 text-rose-800 dark:text-rose-200' },
+      { type: 'start', label: 'START', color: 'bg-white/[0.03] border border-blue-500/30 border-l-[3px] border-l-blue-500 text-blue-400' },
+      { type: 'end', label: 'END', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-white/30 text-white/60' },
     ],
   },
   {
     id: 'loops',
     name: 'LOOPS',
     blocks: [
-      { type: 'for', label: 'FOR LOOP', color: 'bg-amber-100 dark:bg-amber-900/50 border-amber-600 dark:border-amber-400 text-amber-800 dark:text-amber-200' },
-      { type: 'while', label: 'WHILE', color: 'bg-amber-100 dark:bg-amber-900/50 border-amber-600 dark:border-amber-400 text-amber-800 dark:text-amber-200' },
+      { type: 'for', label: 'FOR LOOP', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-amber-400 text-white/60' },
+      { type: 'while', label: 'WHILE', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-amber-400 text-white/60' },
     ],
   },
   {
     id: 'logic',
     name: 'LOGIC',
     blocks: [
-      { type: 'if', label: 'IF', color: 'bg-sky-100 dark:bg-sky-900/50 border-sky-600 dark:border-sky-400 text-sky-800 dark:text-sky-200' },
-      { type: 'ifelse', label: 'IF/ELSE', color: 'bg-sky-100 dark:bg-sky-900/50 border-sky-600 dark:border-sky-400 text-sky-800 dark:text-sky-200' },
+      { type: 'if', label: 'IF', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-cyan-400 text-white/60' },
+      { type: 'ifelse', label: 'IF/ELSE', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-cyan-400 text-white/60' },
     ],
   },
   {
     id: 'robotics',
     name: 'ROBOTICS',
     blocks: [
-      { type: 'move_position', label: 'MOVE POSITION', color: 'bg-violet-100 dark:bg-violet-900/50 border-violet-600 dark:border-violet-400 text-violet-800 dark:text-violet-200' },
-      { type: 'move_joint', label: 'MOVE JOINT', color: 'bg-violet-100 dark:bg-violet-900/50 border-violet-600 dark:border-violet-400 text-violet-800 dark:text-violet-200' },
-      { type: 'get_position', label: 'GET POSITION', color: 'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-600 dark:border-indigo-400 text-indigo-800 dark:text-indigo-200' },
+      { type: 'move_position', label: 'MOVE POSITION', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-violet-400 text-white/60' },
+      { type: 'move_joint', label: 'MOVE JOINT', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-violet-400 text-white/60' },
+      { type: 'get_position', label: 'GET POSITION', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-violet-400 text-white/60' },
     ],
   },
   {
     id: 'delay',
     name: 'TIMING',
     blocks: [
-      { type: 'delay', label: 'DELAY', color: 'bg-lime-100 dark:bg-lime-900/50 border-lime-600 dark:border-lime-400 text-lime-800 dark:text-lime-200' },
-      { type: 'millis', label: 'MILLIS', color: 'bg-lime-100 dark:bg-lime-900/50 border-lime-600 dark:border-lime-400 text-lime-800 dark:text-lime-200' },
+      { type: 'delay', label: 'DELAY', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-emerald-400 text-white/60' },
+      { type: 'millis', label: 'MILLIS', color: 'bg-white/[0.03] border border-white/[0.08] border-l-[3px] border-l-emerald-400 text-white/60' },
     ],
   },
 ];
