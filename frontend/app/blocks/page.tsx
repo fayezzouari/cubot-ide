@@ -15,6 +15,8 @@ import {
   Handle,
   Position,
   NodeProps,
+  MiniMap,
+  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
@@ -27,6 +29,10 @@ import {
   GripVertical,
   Save,
   X,
+  Download,
+  Upload,
+  Search,
+  MapPin,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -62,10 +68,10 @@ function NodeDeleteButton({ nodeId, onDelete }: NodeDeleteButtonProps) {
         e.stopPropagation();
         onDelete(nodeId);
       }}
-      className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-10"
+      className="absolute -top-2.5 -right-2.5 w-6 h-6 bg-red-500 hover:bg-red-600 active:scale-90 text-white rounded-full flex items-center justify-center shadow-lg border-2 border-background transition-all z-10"
       title="Delete block"
     >
-      <X size={12} />
+      <X size={14} />
     </button>
   );
 }
@@ -73,13 +79,16 @@ function NodeDeleteButton({ nodeId, onDelete }: NodeDeleteButtonProps) {
 function StartNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative px-6 py-3 bg-emerald-100 dark:bg-emerald-900/50 border-2 border-emerald-600 dark:border-emerald-400 text-emerald-800 dark:text-emerald-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+    <div className="relative px-6 py-4 bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-900/70 dark:to-emerald-900/40 border-2 border-emerald-500 dark:border-emerald-400 text-emerald-900 dark:text-emerald-100 font-bold text-sm min-w-[140px] text-center shadow-lg hover:shadow-xl transition-all rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
-      <div>{data.label as string}</div>
+      <div className="flex items-center justify-center gap-2">
+        <span className="text-lg">▶</span>
+        <span>{data.label as string}</span>
+      </div>
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-emerald-600 dark:bg-emerald-400 border-2 border-background"
+        className="w-3 h-3 bg-emerald-600 dark:bg-emerald-400 border-2 border-background hover:w-4 hover:h-4 transition-all"
       />
     </div>
   );
@@ -88,14 +97,17 @@ function StartNode({ data, id }: NodeProps) {
 function EndNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative px-6 py-3 bg-rose-100 dark:bg-rose-900/50 border-2 border-rose-600 dark:border-rose-400 text-rose-800 dark:text-rose-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+    <div className="relative px-6 py-4 bg-gradient-to-b from-rose-50 to-rose-100 dark:from-rose-900/70 dark:to-rose-900/40 border-2 border-rose-500 dark:border-rose-400 text-rose-900 dark:text-rose-100 font-bold text-sm min-w-[140px] text-center shadow-lg hover:shadow-xl transition-all rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-rose-600 dark:bg-rose-400 border-2 border-background"
+        className="w-3 h-3 bg-rose-600 dark:bg-rose-400 border-2 border-background hover:w-4 hover:h-4 transition-all"
       />
-      <div>{data.label as string}</div>
+      <div className="flex items-center justify-center gap-2 mt-1">
+        <span className="text-lg">⏹</span>
+        <span>{data.label as string}</span>
+      </div>
     </div>
   );
 }
@@ -431,6 +443,7 @@ export default function BlocksPage() {
   });
   const [currentProgramId, setCurrentProgramId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [blockSearch, setBlockSearch] = useState('');
 
   // Delete node handler
   const deleteNode = useCallback((nodeId: string) => {
@@ -721,44 +734,65 @@ export default function BlocksPage() {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
       {/* Top Bar */}
-      <header className="h-14 border-b-4 border-foreground flex items-center justify-between px-4">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary border-2 border-foreground flex items-center justify-center">
-              <span className="text-primary-foreground font-black text-sm">⚙</span>
+      <header className="h-14 border-b border-white/[0.08] flex items-center justify-between px-4 bg-[#0a0a0a]">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <div className="w-8 h-8 bg-white/5 border border-white/10 flex items-center justify-center rounded">
+              <span className="text-foreground font-black text-sm">⚙</span>
             </div>
-            <span className="font-serif text-xl font-black">CUBOT BLOCKS</span>
+            <span className="font-black text-sm">BLOCKS</span>
           </Link>
         </div>
+
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="border-2 border-foreground font-black" onClick={runProgram}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs font-black border border-white/20"
+            onClick={runProgram}
+          >
             <Play size={14} />
             RUN
           </Button>
-          <Button variant="outline" size="sm" className="border-2 border-foreground font-black" onClick={stopProgram}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs font-black border border-white/20"
+            onClick={stopProgram}
+          >
             <Square size={14} />
             STOP
           </Button>
-          <Button variant="outline" size="sm" className="border-2 border-foreground font-black" onClick={resetCanvas}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs font-black border border-white/20"
+            onClick={resetCanvas}
+          >
             <RotateCcw size={14} />
             RESET
           </Button>
-          <Button variant="outline" size="sm" className="border-2 border-foreground font-black" onClick={clearCanvas}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs font-black border border-white/20"
+            onClick={clearCanvas}
+          >
             <Trash2 size={14} />
             CLEAR
           </Button>
           {isSaving && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <span className="text-[10px] text-white/40 flex items-center gap-1">
               <Save size={12} className="animate-pulse" />
-              Saving...
+              Saving
             </span>
           )}
-          <Button variant="ghost" size="icon">
-            <Settings size={18} />
+          <Button variant="ghost" size="icon" className="text-white/40 hover:text-white/60">
+            <Settings size={16} />
           </Button>
           <Link href="/">
-            <Button variant="ghost" size="icon">
-              <Home size={18} />
+            <Button variant="ghost" size="icon" className="text-white/40 hover:text-white/60">
+              <Home size={16} />
             </Button>
           </Link>
         </div>
@@ -767,40 +801,58 @@ export default function BlocksPage() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Block Categories Sidebar */}
-        <aside className="w-64 border-r-4 border-foreground flex flex-col">
-          <div className="p-3 border-b-2 border-foreground">
-            <span className="font-black text-sm">BLOCKS</span>
+        <aside className="w-64 border-r border-white/[0.08] flex flex-col bg-[#0a0a0a]">
+          <div className="p-3 border-b border-white/[0.08] space-y-2">
+            <span className="font-black text-xs block text-white/60">BLOCKS</span>
+            <div className="relative">
+              <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-white/20" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={blockSearch}
+                onChange={(e) => setBlockSearch(e.target.value.toLowerCase())}
+                className="w-full pl-8 pr-2 py-1.5 text-xs bg-white/[0.03] border border-white/[0.08] rounded focus:outline-none focus:border-white/20 text-foreground placeholder:text-white/20"
+              />
+            </div>
           </div>
           <ScrollArea className="flex-1">
-            <div className="py-2">
-              {blockCategories.map((category) => (
-                <div key={category.id} className="border-b border-muted">
-                  <button
-                    onClick={() => toggleCategory(category.id)}
-                    className="w-full px-4 py-3 flex items-center justify-between font-black text-sm hover:bg-muted transition-colors"
-                  >
-                    <span>{category.name}</span>
-                    <span className="text-muted-foreground">
-                      {expandedCategories.includes(category.id) ? '−' : '+'}
-                    </span>
-                  </button>
-                  {expandedCategories.includes(category.id) && (
-                    <div className="px-3 pb-3 space-y-2">
-                      {category.blocks.map((block) => (
-                        <div
-                          key={block.type}
-                          draggable
-                          onDragStart={(e) => onDragStart(e, block.type, block.label)}
-                          className={`${block.color} border-2 px-3 py-2 flex items-center gap-2 cursor-grab active:cursor-grabbing font-medium text-sm shadow-sm hover:shadow-md transition-all`}
-                        >
-                          <GripVertical size={14} className="opacity-60" />
-                          <span>{block.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="py-1">
+              {blockCategories.map((category) => {
+                const filteredBlocks = blockSearch
+                  ? category.blocks.filter(b => b.label.toLowerCase().includes(blockSearch))
+                  : category.blocks;
+
+                if (blockSearch && filteredBlocks.length === 0) return null;
+
+                return (
+                  <div key={category.id} className="border-b border-white/[0.04]">
+                    <button
+                      onClick={() => toggleCategory(category.id)}
+                      className="w-full px-3 py-2 flex items-center justify-between font-black text-xs hover:bg-white/[0.03] transition-colors text-white/60"
+                    >
+                      <span>{category.name}</span>
+                      <span className="text-white/30">
+                        {expandedCategories.includes(category.id) ? '−' : '+'}
+                      </span>
+                    </button>
+                    {expandedCategories.includes(category.id) && (
+                      <div className="px-2 pb-2 space-y-1.5">
+                        {filteredBlocks.map((block) => (
+                          <div
+                            key={block.type}
+                            draggable
+                            onDragStart={(e) => onDragStart(e, block.type, block.label)}
+                            className={`${block.color} px-2 py-1.5 flex items-center gap-1.5 cursor-grab active:cursor-grabbing text-xs font-semibold hover:opacity-80 transition-opacity rounded border border-white/10`}
+                          >
+                            <GripVertical size={12} className="opacity-40" />
+                            <span>{block.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </ScrollArea>
         </aside>
@@ -823,12 +875,37 @@ export default function BlocksPage() {
                 snapToGrid
                 snapGrid={[15, 15]}
                 defaultEdgeOptions={{
-                  style: { strokeWidth: 2, stroke: 'var(--muted-foreground)' },
-                  type: 'smoothstep',
+                  style: {
+                    strokeWidth: 2.5,
+                    stroke: 'var(--primary)',
+                    opacity: 0.8,
+                  },
+                  type: 'bezier',
+                  animated: true,
+                  markerEnd: { type: 'arrow' },
                 }}
               >
-                <Controls className="border border-border bg-background shadow-sm" />
-                <Background gap={20} size={1} color="var(--muted-foreground)" style={{ opacity: 0.3 }} />
+                <Controls className="border-2 border-foreground bg-background shadow-lg rounded-lg" />
+                <Background gap={20} size={1} color="var(--muted-foreground)" style={{ opacity: 0.2 }} />
+                <MiniMap
+                  nodeColor={(node) => {
+                    switch (node.type) {
+                      case 'start': return '#10b981';
+                      case 'end': return '#ef4444';
+                      case 'if':
+                      case 'ifelse': return '#0ea5e9';
+                      case 'for':
+                      case 'while': return '#f59e0b';
+                      case 'move_position':
+                      case 'move_joint':
+                      case 'get_position': return '#8b5cf6';
+                      case 'delay': return '#84cc16';
+                      default: return '#6b7280';
+                    }
+                  }}
+                  className="border-2 border-foreground bg-background shadow-lg rounded-lg"
+                  style={{ backgroundColor: 'var(--background)' }}
+                />
               </ReactFlow>
             </div>
           </ResizablePanel>
@@ -836,13 +913,17 @@ export default function BlocksPage() {
           {/* Arm Visualization Sidebar */}
           <ResizableHandle withHandle className="border-l-4 border-foreground" />
           <ResizablePanel defaultSize={35} minSize={20} maxSize={60}>
-            <div className="h-full flex flex-col">
-              <div className="p-3 border-b-2 border-foreground flex items-center justify-between">
-                <span className="font-black text-sm">ARM VISUALIZATION</span>
+            <div className="h-full flex flex-col bg-muted/30">
+              <div className="p-4 border-b-2 border-foreground flex items-center justify-between bg-gradient-to-r from-background to-background/95">
                 <div className="flex items-center gap-2">
-                  <span className={`text-xs px-2 py-1 rounded ${armState.is_moving ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                  <span className="text-lg">🦾</span>
+                  <span className="font-black text-sm">ARM STATE</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs ${armState.is_moving ? 'bg-amber-500/20 border border-amber-500/50 text-amber-600 dark:text-amber-400' : 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-600 dark:text-emerald-400'}`}>
+                    <span className={`w-2 h-2 rounded-full ${armState.is_moving ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></span>
                     {armState.is_moving ? 'MOVING' : 'READY'}
-                  </span>
+                  </div>
                 </div>
               </div>
               <div className="flex-1">
