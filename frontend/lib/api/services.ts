@@ -131,6 +131,9 @@ export const chatService = {
 
   executeStep: (projectId: string, data: StepExecutionRequest) =>
     apiClient.post<StepExecutionResponse>(`/chat/${projectId}/execute-step`, data),
+
+  clearHistory: (projectId: string) =>
+    apiClient.delete<{ success: boolean }>(`/chat/${projectId}/history`),
 };
 
 // Wiring Service
