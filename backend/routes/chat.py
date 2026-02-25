@@ -29,6 +29,13 @@ async def get_chat_history(project_id: str, limit: int = 50):
     return history
 
 
+@router.delete("/{project_id}/history")
+async def clear_chat_history(project_id: str):
+    """Delete all chat messages for a project"""
+    await ai_service.clear_chat_history(project_id)
+    return {"success": True}
+
+
 @router.post("/{project_id}/execute-step", response_model=StepExecutionResponse)
 async def execute_step(project_id: str, request: StepExecutionRequest):
     """
