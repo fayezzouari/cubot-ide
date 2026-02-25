@@ -221,6 +221,47 @@ export interface WiringResponse {
   llm_generated: boolean;
 }
 
+// CAD — Plan types
+export interface CadPlanStep {
+  id: string;
+  name: string;
+  filename: string;
+  description: string;
+  dependencies: string[];
+  approach_hint: string;
+}
+
+export type CadSSEEventType =
+  | 'planning'
+  | 'plan_ready'
+  | 'executing_part'
+  | 'reflecting'
+  | 'part_result'
+  | 'complete'
+  | 'error';
+
+export interface CadSSEEvent {
+  type: CadSSEEventType;
+  message?: string;
+  parts?: CadPlanStep[];
+  part_id?: string;
+  part_index?: number;
+  total?: number;
+  attempt?: number;
+  error?: string;
+  success?: boolean;
+  stl_base64?: string;
+  cadquery_code?: string;
+  attempts?: number;
+}
+
+export interface PlanStepState extends CadPlanStep {
+  status: 'pending' | 'running' | 'success' | 'failed';
+  attempts?: number;
+  stl_base64?: string;
+  error?: string;
+}
+
 // CAD
 export interface CadChatRequest {
   message: string;
