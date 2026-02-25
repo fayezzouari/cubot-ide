@@ -20,6 +20,7 @@ import type {
   CadChatRequest,
   CadChatResponse,
   CadSessionHistory,
+  CadSSEEvent,
   StepExecutionRequest,
   StepExecutionResponse,
 } from './types';
@@ -162,5 +163,46 @@ export const cadService = {
       throw new Error(errText || 'Export failed');
     }
     return response.blob();
+  },
+
+  generatePlanned: async (
+    sessionId: string,
+    data: CadChatRequest,
+    onEvent: (event: CadSSEEvent) => void,
+  ): Promise<void> => {
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+    const response = await fetch(`${API_BASE_URL}/cad/${sessionId}/generate-planned`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok || !response.body) {
+      const errText = await response.text().catch(() => 'Unknown error');
+      throw new Error(errText || 'Stream failed');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') return;
+        try {
+          const event: CadSSEEvent = JSON.parse(payload);
+          onEvent(event);
+        } catch {
+          // ignore malformed lines
+        }
+      }
+    }
   },
 };
