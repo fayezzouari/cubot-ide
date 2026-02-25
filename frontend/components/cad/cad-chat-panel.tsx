@@ -23,20 +23,14 @@ interface CadChatPanelProps {
   onSend: () => void;
   planSteps?: PlanStepState[];
   planPhase?: 'planning' | 'executing' | 'assembling' | 'complete' | null;
-  mode: 'part' | 'assembly';
-  onModeChange: (mode: 'part' | 'assembly') => void;
 }
 
-const PART_SUGGESTIONS = [
+const SUGGESTIONS = [
   'Create a gear with 20 teeth',
   'Make a box with rounded edges',
   'Design an L-bracket with mounting holes',
-];
-
-const ASSEMBLY_SUGGESTIONS = [
   'Build a two-finger gripper',
   'Design a bracket assembly',
-  'Create an electronics enclosure',
 ];
 
 export default function CadChatPanel({
@@ -47,8 +41,6 @@ export default function CadChatPanel({
   onSend,
   planSteps = [],
   planPhase = null,
-  mode,
-  onModeChange,
 }: CadChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -82,17 +74,13 @@ export default function CadChatPanel({
             <div className="w-10 h-10 rounded-xl border border-white/[0.08] bg-white/[0.04] flex items-center justify-center mb-4">
               <Box size={18} className="text-white/30" />
             </div>
-            <p className="text-xs font-semibold text-white/60 mb-1">
-              {mode === 'part' ? 'Part Generator' : 'Assembly Generator'}
-            </p>
+            <p className="text-xs font-semibold text-white/60 mb-1">CAD Assistant</p>
             <p className="text-[11px] text-white/25 leading-relaxed max-w-[220px]">
-              {mode === 'part'
-                ? "Describe a single 3D component — I'll generate it directly."
-                : "Describe a multi-part model — I'll plan and build each part."}
+              Describe a 3D component or assembly — I'll plan and build it using CadQuery.
             </p>
             <div className="mt-5 w-full space-y-1.5">
               <p className="text-[10px] font-medium text-white/20 uppercase tracking-wider mb-2">Try saying</p>
-              {(mode === 'part' ? PART_SUGGESTIONS : ASSEMBLY_SUGGESTIONS).map((s, i) => (
+              {SUGGESTIONS.map((s, i) => (
                 <button
                   key={i}
                   onClick={() => onInputChange(s)}
@@ -152,8 +140,8 @@ export default function CadChatPanel({
           </div>
         ))}
 
-        {/* Live plan panel — shown while generating in assembly mode */}
-        {showPlan && mode === 'assembly' && (
+        {/* Live plan panel — shown while generating */}
+        {showPlan && (
           <div className="-mx-3">
             <CadPlanPanel steps={planSteps} phase={planPhase} />
           </div>
@@ -177,31 +165,6 @@ export default function CadChatPanel({
 
       {/* Input */}
       <div className="p-3 border-t border-white/[0.06] flex-shrink-0">
-        {/* Mode toggle */}
-        <div className="flex items-center gap-0.5 bg-white/[0.04] border border-white/[0.06] rounded-lg p-0.5 mb-2 w-fit">
-          <button
-            onClick={() => onModeChange('part')}
-            disabled={isGenerating}
-            className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer disabled:cursor-not-allowed ${
-              mode === 'part'
-                ? 'bg-white/[0.1] text-white/80 border border-white/[0.12]'
-                : 'text-white/30 hover:text-white/50'
-            }`}
-          >
-            Part
-          </button>
-          <button
-            onClick={() => onModeChange('assembly')}
-            disabled={isGenerating}
-            className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer disabled:cursor-not-allowed ${
-              mode === 'assembly'
-                ? 'bg-white/[0.1] text-white/80 border border-white/[0.12]'
-                : 'text-white/30 hover:text-white/50'
-            }`}
-          >
-            Assembly
-          </button>
-        </div>
         <div className="flex items-center gap-2 bg-[#161616] border border-white/[0.08] rounded-xl px-3 py-2 focus-within:border-white/20 transition-colors">
           <input
             type="text"
@@ -214,7 +177,7 @@ export default function CadChatPanel({
               }
             }}
             disabled={isGenerating}
-            placeholder={mode === 'part' ? 'Describe a 3D part…' : 'Describe an assembly to build…'}
+            placeholder="Describe a 3D component or assembly…"
             className="flex-1 bg-transparent text-xs text-white/70 placeholder:text-white/20 focus:outline-none disabled:opacity-40"
           />
           <button
@@ -228,9 +191,7 @@ export default function CadChatPanel({
             }
           </button>
         </div>
-        <p className="text-[10px] text-white/15 mt-1.5 text-center">
-          {mode === 'part' ? 'Enter to send · single-pass generation' : 'Enter to send · parts built step by step'}
-        </p>
+        <p className="text-[10px] text-white/15 mt-1.5 text-center">Enter to send · intelligently planned and built</p>
       </div>
     </div>
   );

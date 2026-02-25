@@ -19,7 +19,6 @@ export default function CadPage() {
     searchParams.get('session') ||
     `cad-${Date.now()}`;
 
-  const [mode, setMode] = useState<'part' | 'assembly'>('part');
   const [messages, setMessages] = useState<CadChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -30,16 +29,6 @@ export default function CadPage() {
   // Plan state
   const [planSteps, setPlanSteps] = useState<PlanStepState[]>([]);
   const [planPhase, setPlanPhase] = useState<PlanPhase>(null);
-
-  const handleModeChange = useCallback((newMode: 'part' | 'assembly') => {
-    setMode(newMode);
-    if (newMode === 'part') {
-      setPlanSteps([]);
-      setPlanPhase(null);
-    } else {
-      setCurrentStl(null);
-    }
-  }, []);
 
   const blobToBase64 = useCallback(async (blob: Blob): Promise<string> => {
     const buffer = await blob.arrayBuffer();
@@ -171,35 +160,15 @@ export default function CadPage() {
     setPlanSteps([]);
 
     try {
-      if (mode === 'assembly') {
-        await cadService.generatePlanned(
-          sessionId,
-          {
-            message: trimmed,
-            current_code: currentCode || undefined,
-            conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
-          },
-          handleSSEEvent,
-        );
-      } else {
-        const result = await cadService.generate(sessionId, {
+      await cadService.generatePlanned(
+        sessionId,
+        {
           message: trimmed,
           current_code: currentCode || undefined,
           conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
-        });
-        if (result.cadquery_code) setCurrentCode(result.cadquery_code);
-        if (result.stl_base64) setCurrentStl(result.stl_base64);
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: result.message,
-            cadquery_code: result.cadquery_code,
-            has_model: !!result.stl_base64,
-          },
-        ]);
-      }
+        },
+        handleSSEEvent,
+      );
     } catch (err: any) {
       setMessages(prev => [
         ...prev,
@@ -280,21 +249,14 @@ export default function CadPage() {
             onSend={handleSend}
             planSteps={planSteps}
             planPhase={planPhase}
-            mode={mode}
-            onModeChange={handleModeChange}
           />
         </ResizablePanel>
         <ResizableHandle className="bg-white/[0.04] hover:bg-white/[0.08] transition-colors w-px" />
         <ResizablePanel defaultSize={70}>
           <CadViewer
-            stlBase64={mode === 'part' ? currentStl : null}
-            assemblyParts={
-              mode === 'assembly'
-                ? planSteps
-                    .filter(s => s.status === 'success' && s.stl_base64)
-                    .map(s => ({ id: s.id, name: s.name, stl_base64: s.stl_base64! }))
-                : []
-            }
+            assemblyParts={planSteps
+              .filter(s => s.status === 'success' && s.stl_base64)
+              .map(s => ({ id: s.id, name: s.name, stl_base64: s.stl_base64! }))}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

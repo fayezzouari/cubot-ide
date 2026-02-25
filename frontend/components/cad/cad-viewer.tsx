@@ -21,20 +21,17 @@ interface AssemblyPart {
 }
 
 interface CadViewerProps {
-  stlBase64: string | null;
   assemblyParts?: AssemblyPart[];
 }
 
-export default function CadViewer({ stlBase64, assemblyParts = [] }: CadViewerProps) {
+export default function CadViewer({ assemblyParts = [] }: CadViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<any>(null);
   const sceneRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
   const controlsRef = useRef<any>(null);
-  const meshRef = useRef<any>(null);
   const partMeshesRef = useRef<any[]>([]);
   const frameIdRef = useRef<number>(0);
-  const [isLoaded, setIsLoaded] = useState(false);
   const [threeLoaded, setThreeLoaded] = useState(false);
   const threeRef = useRef<any>(null);
 
@@ -129,59 +126,6 @@ export default function CadViewer({ stlBase64, assemblyParts = [] }: CadViewerPr
     };
   }, [threeLoaded]);
 
-  useEffect(() => {
-    if (!stlBase64 || !sceneRef.current || !threeRef.current) return;
-
-    const { THREE, STLLoader } = threeRef.current;
-    const scene = sceneRef.current;
-
-    if (meshRef.current) {
-      scene.remove(meshRef.current);
-      meshRef.current.geometry.dispose();
-      meshRef.current.material.dispose();
-      meshRef.current = null;
-    }
-
-    try {
-      const binaryString = atob(stlBase64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-
-      const geometry = new STLLoader().parse(bytes.buffer);
-      geometry.computeBoundingBox();
-      const center = new THREE.Vector3();
-      geometry.boundingBox!.getCenter(center);
-      geometry.translate(-center.x, -center.y, -center.z);
-
-      const material = new THREE.MeshPhongMaterial({
-        color: 0x4fc3f7,
-        specular: 0x111111,
-        shininess: 80,
-        flatShading: false,
-      });
-
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      scene.add(mesh);
-      meshRef.current = mesh;
-
-      const boundingBox = new THREE.Box3().setFromObject(mesh);
-      const size = boundingBox.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const fov = cameraRef.current.fov * (Math.PI / 180);
-      const cameraZ = (maxDim / (2 * Math.tan(fov / 2))) * 2;
-
-      cameraRef.current.position.set(cameraZ, cameraZ * 0.7, cameraZ);
-      cameraRef.current.lookAt(0, 0, 0);
-      controlsRef.current?.target.set(0, 0, 0);
-      controlsRef.current?.update();
-
-      setIsLoaded(true);
-    } catch (err) {
-      console.error('Failed to load STL:', err);
-    }
-  }, [stlBase64]);
 
   useEffect(() => {
     if (!sceneRef.current || !threeRef.current) return;
@@ -252,8 +196,6 @@ export default function CadViewer({ stlBase64, assemblyParts = [] }: CadViewerPr
     cameraRef.current.lookAt(0, 0, 0);
     controlsRef.current?.target.set(0, 0, 0);
     controlsRef.current?.update();
-
-    setIsLoaded(true);
   }, [assemblyParts, threeLoaded]);
 
   const handleResetView = () => {
@@ -291,14 +233,14 @@ export default function CadViewer({ stlBase64, assemblyParts = [] }: CadViewerPr
       </div>
 
       {/* Empty state */}
-      {!stlBase64 && (
+      {assemblyParts.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
           <div className="text-center">
             <div className="w-12 h-12 rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center mx-auto mb-3">
               <Box size={20} className="text-white/15" />
             </div>
             <p className="text-xs font-medium text-white/25">CAD Viewport</p>
-            <p className="text-[11px] text-white/15 mt-1">Describe a model in the chat</p>
+            <p className="text-[11px] text-white/15 mt-1">Describe a component in the chat</p>
           </div>
         </div>
       )}
