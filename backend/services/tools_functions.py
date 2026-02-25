@@ -4,7 +4,7 @@ These functions are called when the AI decides to use a tool
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from models.file import FileCreate, FileUpdate, FileType
 from services.file_service import file_service
 
@@ -19,7 +19,8 @@ class FileOperationError(Exception):
 async def handle_tool_use(
     tool_name: str,
     tool_input: Dict[str, Any],
-    project_id: str
+    project_id: str,
+    workspace_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Handle tool use requests from the model
@@ -44,6 +45,10 @@ async def handle_tool_use(
             return await tool_read_file(project_id, tool_input)
         elif tool_name == "list_files":
             return await tool_list_files(project_id)
+        elif tool_name == "execute_in_sandbox":
+            if not workspace_id:
+                return {"success": False, "error": "No sandbox workspace available for this project."}
+            return await tool_execute_in_sandbox(workspace_id, tool_input)
         else:
             raise FileOperationError(f"Unknown tool: {tool_name}")
     except Exception as e:
@@ -308,3 +313,46 @@ async def tool_list_files(project_id: str) -> Dict[str, Any]:
         "directories": dirs_sorted,
         "count": len(file_list)
     }
+
+
+async def tool_execute_in_sandbox(workspace_id: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Tool: Run a shell command inside the Daytona sandbox workspace.
+
+    Args:
+        workspace_id: Daytona workspace ID
+        tool_input: Dictionary with 'command' and optional 'timeout'
+
+    Returns:
+        Dictionary with stdout, stderr, exit_code, and success flag
+    """
+    from services.daytona_service import daytona_service
+    from schemas.daytona import CodeExecutionRequest
+
+    command = tool_input.get("command", "").strip()
+    timeout = min(int(tool_input.get("timeout", 60)), 120)
+
+    if not command:
+        return {"success": False, "error": "No command provided"}
+
+    logger.info(f"execute_in_sandbox: workspace={workspace_id} command={command!r}")
+
+    try:
+        result = await daytona_service.execute_code(
+            CodeExecutionRequest(
+                workspace_id=workspace_id,
+                code=command,
+                timeout=timeout,
+            )
+        )
+        logger.info(f"execute_in_sandbox exit_code={result.exit_code} time={result.execution_time:.2f}s")
+        return {
+            "success": result.success,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+            "execution_time": result.execution_time,
+        }
+    except Exception as e:
+        logger.error(f"execute_in_sandbox failed: {str(e)}")
+        return {"success": False, "error": str(e)}
