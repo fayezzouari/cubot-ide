@@ -14,6 +14,9 @@ from models.chat import (
     ChatMessageInDB,
     MessageRole,
     FileContext,
+    StepExecutionRequest,
+    StepExecutionResponse,
+    ExecutionLogEntry,
 )
 from services.tools_definitions import get_tool_config
 from services.tools_functions import handle_tool_use
@@ -90,17 +93,24 @@ class AIService:
                 "content": [{"text": user_content}]
             })
             
-            # Get tool configuration
-            tool_config = get_tool_config()
-            
-            # Call Bedrock Converse API
-            response_text, file_operations = await self._converse_with_tools(
-                messages=messages,
-                system_prompt=system_prompt,
-                tool_config=tool_config,
-                project_id=project_id,
-                max_iterations=50
-            )
+            # In plan mode skip tool use — the AI just returns a structured plan text
+            if request.plan_mode:
+                response_text = await self.generate_text(
+                    system_prompt=self._build_plan_system_prompt(request.compiler),
+                    user_prompt=user_content,
+                    max_tokens=4096,
+                )
+                file_operations = []
+            else:
+                # Get tool configuration and run agentic loop
+                tool_config = get_tool_config()
+                response_text, file_operations, _ = await self._converse_with_tools(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    tool_config=tool_config,
+                    project_id=project_id,
+                    max_iterations=50,
+                )
             
             # Save messages to database
             await self._save_message(
@@ -136,29 +146,29 @@ class AIService:
         system_prompt: str,
         tool_config: Dict[str, Any],
         project_id: str,
-        max_iterations: int = 5
-    ) -> tuple[str, List[Dict[str, Any]]]:
+        max_iterations: int = 5,
+        workspace_id: Optional[str] = None,
+    ) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
-        Use Bedrock with tool support
-        Supports both Claude and OpenAI models
+        Use Bedrock with tool support.
+        Supports both Claude and OpenAI models.
+        Returns (response_text, file_operations, execution_logs).
         """
-        client = self._get_bedrock_runtime()
-        file_operations = []
-        
         # Detect model type from model ID
         model_id = settings.BEDROCK_MODEL_ID.lower()
         is_claude = "claude" in model_id or "anthropic" in model_id
         is_openai = "gpt" in model_id or "openai" in model_id
-        
+
         logger.info(f"Using model: {settings.BEDROCK_MODEL_ID}, Claude: {is_claude}, OpenAI: {is_openai}")
-        
+
         if is_claude:
-            return await self._converse_claude(messages, system_prompt, tool_config, project_id, max_iterations)
-        elif is_openai:
-            return await self._converse_openai(messages, system_prompt, tool_config, project_id, max_iterations)
+            return await self._converse_claude(
+                messages, system_prompt, tool_config, project_id, max_iterations, workspace_id
+            )
         else:
-            # Default to OpenAI format
-            return await self._converse_openai(messages, system_prompt, tool_config, project_id, max_iterations)
+            return await self._converse_openai(
+                messages, system_prompt, tool_config, project_id, max_iterations, workspace_id
+            )
     
     async def _converse_openai(
         self,
@@ -166,13 +176,16 @@ class AIService:
         system_prompt: str,
         tool_config: Dict[str, Any],
         project_id: str,
-        max_iterations: int = 5
-    ) -> tuple[str, List[Dict[str, Any]]]:
+        max_iterations: int = 5,
+        workspace_id: Optional[str] = None,
+    ) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         Use Bedrock with OpenAI models (GPT-4, etc.)
+        Returns (response_text, file_operations, execution_logs).
         """
         client = self._get_bedrock_runtime()
         file_operations = []
+        execution_logs = []
         
         # Convert messages to OpenAI format
         openai_messages = []
@@ -281,33 +294,44 @@ class AIService:
                         tool_result = await handle_tool_use(
                             tool_name=tool_name,
                             tool_input=tool_args,
-                            project_id=project_id
+                            project_id=project_id,
+                            workspace_id=workspace_id,
                         )
                         logger.info(f"Tool result for {tool_name} (id={tool_call_id}): {tool_result}")
-                        
+
                         # Track file operations
                         if tool_name in ["create_file", "update_file"] and tool_result.get("success"):
                             file_operations.append({
                                 "operation": tool_name,
                                 "path": tool_result.get("path"),
                                 "file_id": tool_result.get("file_id"),
-                                "success": True
+                                "success": True,
                             })
-                        
+
+                        # Track sandbox executions
+                        if tool_name == "execute_in_sandbox":
+                            execution_logs.append({
+                                "command": tool_args.get("command", ""),
+                                "stdout": tool_result.get("stdout", ""),
+                                "stderr": tool_result.get("stderr", ""),
+                                "exit_code": tool_result.get("exit_code", -1),
+                                "success": tool_result.get("success", False),
+                            })
+
                         # Add tool result to messages
                         openai_messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call_id,
                             "content": json.dumps(tool_result)
                         })
-                    
+
                     # Continue loop to get final response
                     continue
-                
+
                 else:
                     # Model finished
                     response_text = message.get("content", "")
-                    return response_text.strip(), file_operations
+                    return response_text.strip(), file_operations, execution_logs
                     
             except ClientError as e:
                 error_msg = e.response['Error']['Message']
@@ -316,22 +340,25 @@ class AIService:
             except Exception as e:
                 logger.error(f"Unexpected error: {str(e)}")
                 raise
-        
-        return "Completed operations", file_operations
-    
+
+        return "Completed operations", file_operations, execution_logs
+
     async def _converse_claude(
         self,
         messages: List[Dict[str, Any]],
         system_prompt: str,
         tool_config: Dict[str, Any],
         project_id: str,
-        max_iterations: int = 5
-    ) -> tuple[str, List[Dict[str, Any]]]:
+        max_iterations: int = 5,
+        workspace_id: Optional[str] = None,
+    ) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
-        Use Bedrock with Claude models
+        Use Bedrock with Claude models.
+        Returns (response_text, file_operations, execution_logs).
         """
         client = self._get_bedrock_runtime()
         file_operations = []
+        execution_logs = []
         
         # Prepare system message
         system = [{"text": system_prompt}]
@@ -390,17 +417,28 @@ class AIService:
                             tool_result_content = await handle_tool_use(
                                 tool_name=tool_name,
                                 tool_input=tool_input,
-                                project_id=project_id
+                                project_id=project_id,
+                                workspace_id=workspace_id,
                             )
                             logger.info(f"Tool result for {tool_name} (id={tool_use_id}): {tool_result_content}")
-                            
+
                             # Track file operations
                             if tool_name in ["create_file", "update_file"] and tool_result_content.get("success"):
                                 file_operations.append({
                                     "operation": tool_name,
                                     "path": tool_result_content.get("path"),
                                     "file_id": tool_result_content.get("file_id"),
-                                    "success": True
+                                    "success": True,
+                                })
+
+                            # Track sandbox executions
+                            if tool_name == "execute_in_sandbox":
+                                execution_logs.append({
+                                    "command": tool_input.get("command", ""),
+                                    "stdout": tool_result_content.get("stdout", ""),
+                                    "stderr": tool_result_content.get("stderr", ""),
+                                    "exit_code": tool_result_content.get("exit_code", -1),
+                                    "success": tool_result_content.get("success", False),
                                 })
                             
                             # Prepare tool result for model - must be a string or list of content blocks
@@ -437,18 +475,16 @@ class AIService:
                     for content_block in content:
                         if content_block.get("type") == "text":
                             response_text += content_block.get("text", "")
-                    
-                    return response_text.strip(), file_operations
-                
+                    return response_text.strip(), file_operations, execution_logs
+
                 else:
                     # Other stop reasons (max_tokens, etc.)
                     response_text = ""
                     for content_block in content:
                         if content_block.get("type") == "text":
                             response_text += content_block.get("text", "")
-                    
-                    return response_text.strip(), file_operations
-                    
+                    return response_text.strip(), file_operations, execution_logs
+
             except ClientError as e:
                 error_msg = e.response['Error']['Message']
                 logger.error(f"Bedrock API error: {error_msg}")
@@ -456,10 +492,134 @@ class AIService:
             except Exception as e:
                 logger.error(f"Unexpected error: {str(e)}")
                 raise
-        
+
         # Max iterations reached
-        return "I've completed the requested operations. Please let me know if you need anything else!", file_operations
+        return "I've completed the requested operations. Please let me know if you need anything else!", file_operations, execution_logs
     
+    async def execute_step(
+        self,
+        project_id: str,
+        request: StepExecutionRequest,
+    ) -> StepExecutionResponse:
+        """
+        Execute a single plan step using the AI agent.
+        The agent has access to file tools and, when workspace_id is provided,
+        the execute_in_sandbox tool for running shell commands.
+        """
+        try:
+            has_sandbox = bool(request.workspace_id)
+            system_prompt = self._build_step_execution_prompt(
+                request.step_title,
+                request.step_body,
+                request.compiler,
+                has_sandbox=has_sandbox,
+            )
+
+            user_content = (
+                f"Execute this step now:\n\n"
+                f"**{request.step_title}**\n{request.step_body}"
+            )
+
+            if request.file_context:
+                context_section = "\n\n--- FILE CONTEXT ---\n"
+                for fc in request.file_context:
+                    context_section += f"\n### {fc.path}\n```\n{fc.content}\n```\n"
+                context_section += "\n--- END FILE CONTEXT ---\n\n"
+                user_content = context_section + user_content
+
+            messages = [{"role": "user", "content": [{"text": user_content}]}]
+            tool_config = get_tool_config(include_sandbox=has_sandbox)
+
+            response_text, file_operations, execution_logs_raw = await self._converse_with_tools(
+                messages=messages,
+                system_prompt=system_prompt,
+                tool_config=tool_config,
+                project_id=project_id,
+                workspace_id=request.workspace_id,
+                max_iterations=20,
+            )
+
+            execution_logs = [ExecutionLogEntry(**log) for log in execution_logs_raw]
+
+            return StepExecutionResponse(
+                message=response_text,
+                file_operations=file_operations,
+                execution_logs=execution_logs,
+                success=True,
+            )
+
+        except Exception as e:
+            logger.error(f"execute_step error: {str(e)}")
+            return StepExecutionResponse(
+                message=f"Failed to execute step: {str(e)}",
+                file_operations=[],
+                execution_logs=[],
+                success=False,
+            )
+
+    def _build_plan_system_prompt(self, compiler: Optional[str] = None) -> str:
+        """System prompt for plan-mode — produces a structured numbered plan without executing anything."""
+        compiler_info = f"\nYou are working with the {compiler} compiler/platform.\n" if compiler else ""
+        return f"""You are CuBot, an expert AI assistant for embedded systems and robotics development.{compiler_info}
+
+## YOUR TASK
+The user wants a structured implementation plan. Output ONLY the plan — do NOT create or modify any files.
+
+## OUTPUT FORMAT
+Use exactly this format for every step (no deviations):
+
+**Step N: [Short descriptive title]**
+[Clear description of what needs to be done in this step, including relevant details, file paths, and code snippets if helpful]
+
+## RULES
+- Number steps sequentially starting from 1.
+- Each step should be a concrete, actionable task (not vague).
+- Steps should be ordered so that each one can be executed independently in sequence.
+- Do NOT call any tools. Do NOT create or update files. Only output the plan text.
+"""
+
+    def _build_step_execution_prompt(
+        self,
+        step_title: str,
+        step_body: str,
+        compiler: Optional[str] = None,
+        has_sandbox: bool = False,
+    ) -> str:
+        """System prompt for executing a single plan step with tools."""
+        compiler_info = f"\nYou are working with the {compiler} compiler/platform.\n" if compiler else ""
+        sandbox_section = """
+- execute_in_sandbox: Run a shell command in the live sandbox (build, test, install packages, etc.)
+  Always call list_files first to know the project structure, then execute commands from the right directory.
+""" if has_sandbox else ""
+
+        return f"""You are CuBot, an AI agent executing a specific implementation step for an embedded/robotics project.{compiler_info}
+
+## YOUR TASK
+Execute ONLY the step described below. Do not go beyond its scope.
+
+## STEP TO EXECUTE
+**{step_title}**
+{step_body}
+
+## AVAILABLE TOOLS
+- list_files: See all project files and their paths
+- read_file: Read a file before modifying it
+- create_file: Create a new file
+- update_file: Overwrite an existing file{sandbox_section}
+
+## WORKFLOW
+1. Call list_files to understand the project structure.
+2. Read any relevant existing files before modifying them.
+3. Create or update files as needed to complete the step.
+4. If a sandbox is available, run a build or test command to verify the result.
+5. Provide a brief summary of what you did.
+
+## RULES
+- Complete the step fully — don't leave it half-done.
+- Always use the correct full path (as returned by list_files).
+- Include all necessary imports and follow best practices for the target platform.
+"""
+
     def _build_system_prompt(self, compiler: Optional[str] = None) -> str:
         """Build the system prompt for the AI"""
         compiler_info = ""
