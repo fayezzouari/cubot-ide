@@ -20,6 +20,8 @@ import type {
   CadChatRequest,
   CadChatResponse,
   CadSessionHistory,
+  StepExecutionRequest,
+  StepExecutionResponse,
 } from './types';
 
 // File Service
@@ -121,11 +123,14 @@ export const chatService = {
   getHistory: (projectId: string, limit: number = 50) => 
     apiClient.get<ChatMessageInDB[]>(`/chat/${projectId}/history?limit=${limit}`),
 
-  applyOperations: (projectId: string, operations: any[]) => 
+  applyOperations: (projectId: string, operations: any[]) =>
     apiClient.post<{ results: any[] }>(
       `/chat/${projectId}/apply-operations`,
       operations
     ),
+
+  executeStep: (projectId: string, data: StepExecutionRequest) =>
+    apiClient.post<StepExecutionResponse>(`/chat/${projectId}/execute-step`, data),
 };
 
 // Wiring Service
