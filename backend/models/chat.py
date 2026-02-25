@@ -43,6 +43,7 @@ class ChatRequest(BaseModel):
     compiler: Optional[str] = None
     conversation_history: Optional[List[dict]] = None
     plan_mode: bool = False
+    enable_websearch: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -58,6 +59,7 @@ class StepExecutionRequest(BaseModel):
     workspace_id: Optional[str] = None
     file_context: Optional[List[FileContext]] = None
     compiler: Optional[str] = None
+    enable_websearch: bool = False
 
 
 class ExecutionLogEntry(BaseModel):
