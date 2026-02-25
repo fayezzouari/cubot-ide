@@ -223,11 +223,73 @@ make flash
 MIT License`,
 };
 
+// Chat mode
+export type ChatMode = 'vibe' | 'plan';
+
+// Plan step (used in plan mode messages)
+export interface PlanStepExecutionResult {
+  message: string;
+  logs: Array<{ command: string; stdout: string; stderr: string; exit_code: number; success: boolean }>;
+  fileOps: any[];
+  success: boolean;
+}
+
+export interface PlanStep {
+  id: string;
+  stepNumber: number;
+  title: string;
+  body: string;
+  status: 'pending' | 'executing' | 'done' | 'discarded';
+  executionResult?: PlanStepExecutionResult;
+}
+
 // Mock chat messages
 export interface ChatMessage {
   id: string;
   role: 'assistant' | 'user';
   content: string;
+  planSteps?: PlanStep[];
+  pendingFileOps?: any[];
+}
+
+/** Parse a plan-mode AI response into structured PlanStep objects. */
+export function parsePlanSteps(content: string): PlanStep[] {
+  const lines = content.split('\n');
+  const steps: PlanStep[] = [];
+  let current: { num: number; title: string; bodyLines: string[] } | null = null;
+
+  // Matches lines like: "**Step 1: Title**", "1. Title", "Step 1: Title", "### 1. Title"
+  const stepStart = /^(?:#{1,3}\s*)?(?:\*{0,2})?(?:Step\s+)?(\d+)[.:)\s]\s*\*{0,2}([^*\n]+?)\*{0,2}$/i;
+
+  for (const line of lines) {
+    const m = line.trim().match(stepStart);
+    if (m) {
+      if (current) {
+        steps.push({
+          id: `step-${current.num}-${Math.random().toString(36).substring(2, 8)}`,
+          stepNumber: current.num,
+          title: current.title,
+          body: current.bodyLines.join('\n').trim(),
+          status: 'pending',
+        });
+      }
+      current = { num: parseInt(m[1]), title: m[2].trim(), bodyLines: [] };
+    } else if (current) {
+      current.bodyLines.push(line);
+    }
+  }
+
+  if (current) {
+    steps.push({
+      id: `step-${current.num}-${Math.random().toString(36).substring(2, 8)}`,
+      stepNumber: current.num,
+      title: current.title,
+      body: current.bodyLines.join('\n').trim(),
+      status: 'pending',
+    });
+  }
+
+  return steps;
 }
 
 export const mockMessages: ChatMessage[] = [
