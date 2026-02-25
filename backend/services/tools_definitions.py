@@ -30,18 +30,55 @@ _EXECUTE_IN_SANDBOX_TOOL = {
     }
 }
 
+_SEARCH_WEB_TOOL = {
+    "toolSpec": {
+        "name": "search_web",
+        "description": "Search the web for up-to-date information: recent releases, library docs, changelogs, blog posts, GitHub repos, and technical references. Use this when you need information beyond your training data.",
+        "inputSchema": {
+            "json": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query (e.g., 'ROS 2 Humble latest packages', 'Arduino ESP32 3.x migration guide', 'colcon build flags reference')"
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of results to return (default: 5, max: 10)",
+                        "default": 5
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    }
+}
 
-def get_tool_config(include_sandbox: bool = False) -> Dict[str, Any]:
+
+def get_tool_config(include_sandbox: bool = False, include_websearch: bool = False) -> Dict[str, Any]:
     """
     Get tool configuration for Bedrock Converse API.
 
     Args:
         include_sandbox: When True, adds the execute_in_sandbox tool.
+        include_websearch: When True, adds the search_web tool.
 
     Returns:
         Dictionary containing tool specifications
     """
-    tools = [
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"get_tool_config: include_sandbox={include_sandbox}, include_websearch={include_websearch}")
+
+    tools = []
+
+    # Add web search first if enabled (priority)
+    if include_websearch:
+        tools.append(_SEARCH_WEB_TOOL)
+        logger.info("Added search_web tool (priority)")
+
+    # Add remaining file tools
+    tools.extend([
             {
                 "toolSpec": {
                     "name": "create_file",
@@ -125,9 +162,14 @@ def get_tool_config(include_sandbox: bool = False) -> Dict[str, Any]:
                     }
                 }
             }
-        ]
+    ])
+
     if include_sandbox:
         tools.append(_EXECUTE_IN_SANDBOX_TOOL)
+        logger.info("Added execute_in_sandbox tool")
+
+    tool_names = [t.get("toolSpec", {}).get("name", "unknown") for t in tools]
+    logger.info(f"Final tool config: {tool_names}")
     return {"tools": tools}
 
 

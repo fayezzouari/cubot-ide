@@ -49,6 +49,9 @@ async def handle_tool_use(
             if not workspace_id:
                 return {"success": False, "error": "No sandbox workspace available for this project."}
             return await tool_execute_in_sandbox(workspace_id, tool_input)
+        elif tool_name == "search_web":
+            logger.info(f"Tool call: search_web with query: {tool_input.get('query', '')}")
+            return await tool_search_web(tool_input)
         else:
             raise FileOperationError(f"Unknown tool: {tool_name}")
     except Exception as e:
@@ -356,3 +359,61 @@ async def tool_execute_in_sandbox(workspace_id: str, tool_input: Dict[str, Any])
     except Exception as e:
         logger.error(f"execute_in_sandbox failed: {str(e)}")
         return {"success": False, "error": str(e)}
+
+
+async def tool_search_web(tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Tool: Search the web using Exa for up-to-date technical information.
+    """
+    from core.config import settings
+
+    query = tool_input.get("query", "").strip()
+    num_results = min(int(tool_input.get("num_results", 5)), 10)
+
+    if not query:
+        logger.warning("search_web: No search query provided")
+        return {"success": False, "error": "No search query provided"}
+
+    if not settings.EXA_API_KEY:
+        logger.error("search_web: EXA_API_KEY is not configured in environment")
+        return {"success": False, "error": "EXA_API_KEY is not configured. Please set it in your .env file."}
+
+    logger.info(f"search_web (Exa): query={query!r} num_results={num_results}")
+
+    try:
+        from exa_py import Exa
+
+        exa = Exa(api_key=settings.EXA_API_KEY)
+        response = exa.search(
+            query=query,
+            type="auto",
+            num_results=num_results,
+            contents={"highlights": {"max_characters": 2000}},
+        )
+
+        results = []
+        for r in response.results:
+            snippet = ""
+            if hasattr(r, "highlights") and r.highlights:
+                snippet = " ... ".join(r.highlights)
+            results.append({
+                "title": r.title or "",
+                "url": r.url or "",
+                "snippet": snippet,
+            })
+
+        logger.info(f"search_web found {len(results)} results")
+        return {
+            "success": True,
+            "query": query,
+            "results": results,
+            "count": len(results),
+        }
+
+    except ImportError:
+        return {"success": False, "error": "exa-py not installed. Run: pip install exa-py"}
+    except Exception as e:
+        logger.error(f"search_web failed: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+
