@@ -4,7 +4,7 @@ import { useRef, useEffect, useState } from 'react';
 import {
   Bot, User, Send, Loader2, X, Code2, Sparkles,
   Zap, ListChecks, Check, CheckCheck, Trash2, ChevronDown, ChevronUp,
-  Terminal, AlertCircle,
+  Terminal, AlertCircle, Globe,
 } from 'lucide-react';
 import MarkdownRenderer from '@/components/ui/markdown-renderer';
 import type { ChatMessage, ChatMode, PlanStep, PlanStepExecutionResult } from '@/lib/mock-data';
@@ -30,6 +30,9 @@ interface ChatSidebarProps {
   onAcceptStep: (messageId: string, stepId: string) => void;
   onAcceptAllSteps: (messageId: string) => void;
   onDiscardStep: (messageId: string, stepId: string) => void;
+  enableWebsearch: boolean;
+  onWebsearchChange: (enabled: boolean) => void;
+  onClearChat: () => void;
 }
 
 function ExecutionLogBlock({ logs }: { logs: PlanStepExecutionResult['logs'] }) {
@@ -220,6 +223,9 @@ export default function ChatSidebar({
   onAcceptStep,
   onAcceptAllSteps,
   onDiscardStep,
+  enableWebsearch,
+  onWebsearchChange,
+  onClearChat,
 }: ChatSidebarProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -279,6 +285,14 @@ export default function ChatSidebar({
             Plan
           </button>
         </div>
+
+        <button
+          onClick={onClearChat}
+          title="Clear conversation"
+          className="p-1 rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.06] transition-colors cursor-pointer ml-1"
+        >
+          <Trash2 size={12} />
+        </button>
 
         {isLoading && <Loader2 size={12} className="animate-spin text-white/30 ml-1" />}
       </div>
@@ -455,6 +469,22 @@ export default function ChatSidebar({
             ))}
           </div>
         )}
+
+        {/* Websearch toggle */}
+        <div className="flex items-center gap-2 px-1">
+          <button
+            onClick={() => onWebsearchChange(!enableWebsearch)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium transition-colors cursor-pointer ${
+              enableWebsearch
+                ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400'
+                : 'bg-white/[0.04] border border-white/[0.08] text-white/40 hover:text-white/60'
+            }`}
+            title="Enable web search (powered by Exa) for up-to-date information"
+          >
+            <Globe size={10} />
+            {enableWebsearch ? 'Web search on' : 'Web search off'}
+          </button>
+        </div>
 
         {/* Input row */}
         <div className={`flex items-end gap-2 bg-[#161616] border rounded-xl px-3 py-2 focus-within:border-white/20 transition-colors ${

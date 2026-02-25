@@ -17,6 +17,9 @@ interface RightSidebarProps {
   onAcceptStep: (messageId: string, stepId: string) => void;
   onAcceptAllSteps: (messageId: string) => void;
   onDiscardStep: (messageId: string, stepId: string) => void;
+  enableWebsearch: boolean;
+  onWebsearchChange: (enabled: boolean) => void;
+  onClearChat: () => void;
 }
 
 export default function RightSidebar({
@@ -32,6 +35,9 @@ export default function RightSidebar({
   onAcceptStep,
   onAcceptAllSteps,
   onDiscardStep,
+  enableWebsearch,
+  onWebsearchChange,
+  onClearChat,
 }: RightSidebarProps) {
   return (
     <div className="w-full h-full flex flex-col bg-background">
@@ -48,6 +54,9 @@ export default function RightSidebar({
         onAcceptStep={onAcceptStep}
         onAcceptAllSteps={onAcceptAllSteps}
         onDiscardStep={onDiscardStep}
+        enableWebsearch={enableWebsearch}
+        onWebsearchChange={onWebsearchChange}
+        onClearChat={onClearChat}
       />
     </div>
   );
