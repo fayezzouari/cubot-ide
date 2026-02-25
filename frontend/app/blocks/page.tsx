@@ -521,7 +521,7 @@ export default function BlocksPage() {
       {/* Top Bar */}
       <header className="h-14 border-b border-white/[0.08] flex items-center justify-between px-4 bg-[#0a0a0a]">
         <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <Link href="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <div className="w-8 h-8 bg-white/5 border border-white/10 flex items-center justify-center rounded">
               <span className="text-foreground font-black text-sm">⚙</span>
             </div>
@@ -585,7 +585,7 @@ export default function BlocksPage() {
           <Button variant="ghost" size="icon" className="text-white/40 hover:text-white/60">
             <Settings size={16} />
           </Button>
-          <Link href="/">
+          <Link href="/dashboard" title="Back to Dashboard">
             <Button variant="ghost" size="icon" className="text-white/40 hover:text-white/60">
               <Home size={16} />
             </Button>

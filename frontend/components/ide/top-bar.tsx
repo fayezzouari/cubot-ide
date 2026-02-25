@@ -82,8 +82,9 @@ export default function TopBar({
           <Settings size={13} />
         </button>
         <Link
-          href="/"
+          href="/dashboard"
           className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
+          title="Back to Dashboard"
         >
           <Home size={13} />
         </Link>
