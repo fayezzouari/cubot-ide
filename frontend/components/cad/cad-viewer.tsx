@@ -3,17 +3,36 @@
 import { useEffect, useRef, useState } from 'react';
 import { RotateCcw, ZoomIn, ZoomOut, Box } from 'lucide-react';
 
-interface CadViewerProps {
-  stlBase64: string | null;
+const PART_COLORS = [
+  0x4fc3f7, // light blue
+  0xff7043, // deep orange
+  0x66bb6a, // green
+  0xffa726, // amber
+  0xab47bc, // purple
+  0x26c6da, // cyan
+  0xec407a, // pink
+  0x8d6e63, // brown
+];
+
+interface AssemblyPart {
+  id: string;
+  name: string;
+  stl_base64: string;
 }
 
-export default function CadViewer({ stlBase64 }: CadViewerProps) {
+interface CadViewerProps {
+  stlBase64: string | null;
+  assemblyParts?: AssemblyPart[];
+}
+
+export default function CadViewer({ stlBase64, assemblyParts = [] }: CadViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<any>(null);
   const sceneRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
   const controlsRef = useRef<any>(null);
   const meshRef = useRef<any>(null);
+  const partMeshesRef = useRef<any[]>([]);
   const frameIdRef = useRef<number>(0);
   const [isLoaded, setIsLoaded] = useState(false);
   const [threeLoaded, setThreeLoaded] = useState(false);
@@ -163,6 +182,79 @@ export default function CadViewer({ stlBase64 }: CadViewerProps) {
       console.error('Failed to load STL:', err);
     }
   }, [stlBase64]);
+
+  useEffect(() => {
+    if (!sceneRef.current || !threeRef.current) return;
+
+    const { THREE, STLLoader } = threeRef.current;
+    const scene = sceneRef.current;
+
+    // Remove previous part meshes
+    for (const m of partMeshesRef.current) {
+      scene.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+    }
+    partMeshesRef.current = [];
+
+    if (assemblyParts.length === 0) return;
+
+    const loader = new STLLoader();
+    const combinedBox = new THREE.Box3();
+
+    assemblyParts.forEach((part, index) => {
+      try {
+        const binaryString = atob(part.stl_base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+
+        const geometry = loader.parse(bytes.buffer);
+        geometry.computeBoundingBox();
+
+        const color = PART_COLORS[index % PART_COLORS.length];
+        const material = new THREE.MeshPhongMaterial({
+          color,
+          specular: 0x222222,
+          shininess: 60,
+          flatShading: false,
+          transparent: true,
+          opacity: 0.92,
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        partMeshesRef.current.push(mesh);
+
+        const box = new THREE.Box3().setFromObject(mesh);
+        combinedBox.union(box);
+      } catch (err) {
+        console.error(`Failed to load STL for part "${part.name}":`, err);
+      }
+    });
+
+    if (partMeshesRef.current.length === 0) return;
+
+    // Center all parts around the combined bounding box center
+    const center = new THREE.Vector3();
+    combinedBox.getCenter(center);
+    for (const m of partMeshesRef.current) {
+      m.position.sub(center);
+    }
+
+    // Fit camera
+    const size = combinedBox.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = cameraRef.current.fov * (Math.PI / 180);
+    const cameraZ = (maxDim / (2 * Math.tan(fov / 2))) * 2;
+    cameraRef.current.position.set(cameraZ, cameraZ * 0.7, cameraZ);
+    cameraRef.current.lookAt(0, 0, 0);
+    controlsRef.current?.target.set(0, 0, 0);
+    controlsRef.current?.update();
+
+    setIsLoaded(true);
+  }, [assemblyParts, threeLoaded]);
 
   const handleResetView = () => {
     if (!cameraRef.current || !controlsRef.current) return;

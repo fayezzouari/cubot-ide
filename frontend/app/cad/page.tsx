@@ -8,6 +8,9 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/componen
 import CadViewer from '@/components/cad/cad-viewer';
 import CadChatPanel, { type CadChatMessage } from '@/components/cad/cad-chat-panel';
 import { cadService } from '@/lib/api';
+import type { CadSSEEvent, PlanStepState } from '@/lib/api/types';
+
+type PlanPhase = 'planning' | 'executing' | 'assembling' | 'complete' | null;
 
 export default function CadPage() {
   const searchParams = useSearchParams();
@@ -16,12 +19,27 @@ export default function CadPage() {
     searchParams.get('session') ||
     `cad-${Date.now()}`;
 
+  const [mode, setMode] = useState<'part' | 'assembly'>('part');
   const [messages, setMessages] = useState<CadChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentStl, setCurrentStl] = useState<string | null>(null);
   const [currentCode, setCurrentCode] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Plan state
+  const [planSteps, setPlanSteps] = useState<PlanStepState[]>([]);
+  const [planPhase, setPlanPhase] = useState<PlanPhase>(null);
+
+  const handleModeChange = useCallback((newMode: 'part' | 'assembly') => {
+    setMode(newMode);
+    if (newMode === 'part') {
+      setPlanSteps([]);
+      setPlanPhase(null);
+    } else {
+      setCurrentStl(null);
+    }
+  }, []);
 
   const blobToBase64 = useCallback(async (blob: Blob): Promise<string> => {
     const buffer = await blob.arrayBuffer();
@@ -56,6 +74,91 @@ export default function CadPage() {
     loadHistory();
   }, [sessionId, blobToBase64]);
 
+  const handleSSEEvent = useCallback((event: CadSSEEvent) => {
+    switch (event.type) {
+      case 'planning':
+        setPlanPhase('planning');
+        setPlanSteps([]);
+        break;
+
+      case 'plan_ready':
+        setPlanPhase('executing');
+        setPlanSteps(
+          (event.parts ?? []).map(p => ({
+            ...p,
+            status: 'pending' as const,
+          }))
+        );
+        break;
+
+      case 'executing_part':
+        setPlanSteps(prev =>
+          prev.map(s => s.id === event.part_id ? { ...s, status: 'running' } : s)
+        );
+        break;
+
+      case 'reflecting':
+        setPlanSteps(prev =>
+          prev.map(s =>
+            s.id === event.part_id
+              ? { ...s, status: 'running', attempts: event.attempt, error: event.error }
+              : s
+          )
+        );
+        break;
+
+      case 'part_result':
+        setPlanSteps(prev =>
+          prev.map(s =>
+            s.id === event.part_id
+              ? {
+                  ...s,
+                  status: event.success ? 'success' : 'failed',
+                  attempts: event.attempts,
+                  stl_base64: event.stl_base64,
+                  error: event.success ? undefined : event.error,
+                }
+              : s
+          )
+        );
+        // Update viewer with each successful part preview
+        if (event.success && event.stl_base64) {
+          setCurrentStl(event.stl_base64);
+        }
+        break;
+
+      case 'complete':
+        setPlanPhase('complete');
+        if (event.stl_base64) setCurrentStl(event.stl_base64);
+        if (event.cadquery_code) setCurrentCode(event.cadquery_code);
+        if (event.message) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `assistant-${Date.now()}`,
+              role: 'assistant',
+              content: event.message!,
+              cadquery_code: event.cadquery_code,
+              has_model: !!event.stl_base64,
+            },
+          ]);
+        }
+        break;
+
+      case 'error':
+        setPlanPhase(null);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: event.message ?? 'An error occurred.',
+          },
+        ]);
+        break;
+    }
+  }, []);
+
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || isGenerating) return;
@@ -64,42 +167,52 @@ export default function CadPage() {
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsGenerating(true);
+    setPlanPhase(null);
+    setPlanSteps([]);
 
     try {
-      const response = await cadService.generate(sessionId, {
-        message: trimmed,
-        current_code: currentCode || undefined,
-        conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
-      });
-
-      setMessages(prev => [...prev, {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response.message,
-        cadquery_code: response.cadquery_code,
-        has_model: !!response.stl_base64,
-      }]);
-
-      if (response.cadquery_code) setCurrentCode(response.cadquery_code);
-      if (response.stl_base64) setCurrentStl(response.stl_base64);
-
-      if (response.error && !response.stl_base64) {
-        setMessages(prev => [...prev, {
-          id: `error-${Date.now()}`,
-          role: 'assistant',
-          content: `CadQuery error:\n${response.error}`,
-        }]);
+      if (mode === 'assembly') {
+        await cadService.generatePlanned(
+          sessionId,
+          {
+            message: trimmed,
+            current_code: currentCode || undefined,
+            conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
+          },
+          handleSSEEvent,
+        );
+      } else {
+        const result = await cadService.generate(sessionId, {
+          message: trimmed,
+          current_code: currentCode || undefined,
+          conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
+        });
+        if (result.cadquery_code) setCurrentCode(result.cadquery_code);
+        if (result.stl_base64) setCurrentStl(result.stl_base64);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: result.message,
+            cadquery_code: result.cadquery_code,
+            has_model: !!result.stl_base64,
+          },
+        ]);
       }
     } catch (err: any) {
-      setMessages(prev => [...prev, {
-        id: `error-${Date.now()}`,
-        role: 'assistant',
-        content: `Failed to generate model: ${err.message || 'Unknown error'}`,
-      }]);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: `Failed to generate model: ${err.message || 'Unknown error'}`,
+        },
+      ]);
     } finally {
       setIsGenerating(false);
     }
-  }, [input, isGenerating, messages, currentCode, sessionId]);
+  }, [input, isGenerating, messages, currentCode, sessionId, handleSSEEvent]);
 
   const handleExportSTL = useCallback(async () => {
     if (!currentCode) return;
@@ -124,7 +237,7 @@ export default function CadPage() {
   return (
     <div className="h-screen flex flex-col bg-black text-foreground font-sans">
 
-      {/* Top bar — matches IDE top bar */}
+      {/* Top bar */}
       <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="flex items-center gap-2 group">
@@ -165,11 +278,24 @@ export default function CadPage() {
             isGenerating={isGenerating}
             onInputChange={setInput}
             onSend={handleSend}
+            planSteps={planSteps}
+            planPhase={planPhase}
+            mode={mode}
+            onModeChange={handleModeChange}
           />
         </ResizablePanel>
         <ResizableHandle className="bg-white/[0.04] hover:bg-white/[0.08] transition-colors w-px" />
         <ResizablePanel defaultSize={70}>
-          <CadViewer stlBase64={currentStl} />
+          <CadViewer
+            stlBase64={mode === 'part' ? currentStl : null}
+            assemblyParts={
+              mode === 'assembly'
+                ? planSteps
+                    .filter(s => s.status === 'success' && s.stl_base64)
+                    .map(s => ({ id: s.id, name: s.name, stl_base64: s.stl_base64! }))
+                : []
+            }
+          />
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>
