@@ -58,44 +58,6 @@ export const blockCategories: BlockCategory[] = [
   },
 ];
 
-// Initial nodes for demo workspace
-export const initialNodes: Node[] = [
-  {
-    id: '1',
-    type: 'start',
-    position: { x: 250, y: 50 },
-    data: { label: 'START' },
-  },
-  {
-    id: '2',
-    type: 'for',
-    position: { x: 225, y: 150 },
-    data: { label: 'FOR LOOP' },
-  },
-  {
-    id: '3',
-    type: 'move_position',
-    position: { x: 225, y: 280 },
-    data: { label: 'MOVE POSITION' },
-  },
-  {
-    id: '4',
-    type: 'delay',
-    position: { x: 225, y: 450 },
-    data: { label: 'DELAY' },
-  },
-  {
-    id: '5',
-    type: 'end',
-    position: { x: 250, y: 580 },
-    data: { label: 'END' },
-  },
-];
+export const initialNodes: Node[] = [];
 
-// Initial edges connecting the demo nodes
-export const initialEdges: Edge[] = [
-  { id: 'e1-2', source: '1', target: '2', style: { strokeWidth: 2 } },
-  { id: 'e2-3', source: '2', target: '3', style: { strokeWidth: 2 } },
-  { id: 'e3-4', source: '3', target: '4', style: { strokeWidth: 2 } },
-  { id: 'e4-5', source: '4', target: '5', style: { strokeWidth: 2 } },
-];
+export const initialEdges: Edge[] = [];
