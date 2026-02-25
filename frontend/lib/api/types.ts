@@ -133,6 +133,8 @@ export interface ChatRequest {
   file_context?: FileContext[];
   compiler?: string;
   conversation_history?: Array<{ role: string; content: string }>;
+  plan_mode?: boolean;
+  enable_websearch?: boolean;
 }
 
 export interface ChatResponse {
@@ -152,6 +154,7 @@ export interface StepExecutionRequest {
   workspace_id?: string;
   file_context?: FileContext[];
   compiler?: string;
+  enable_websearch?: boolean;
 }
 
 export interface ExecutionLogEntry {
