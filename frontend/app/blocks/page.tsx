@@ -68,10 +68,10 @@ function NodeDeleteButton({ nodeId, onDelete }: NodeDeleteButtonProps) {
         e.stopPropagation();
         onDelete(nodeId);
       }}
-      className="absolute -top-2.5 -right-2.5 w-6 h-6 bg-red-500 hover:bg-red-600 active:scale-90 text-white rounded-full flex items-center justify-center shadow-lg border-2 border-background transition-all z-10"
+      className="absolute -top-2 -right-2 w-5 h-5 bg-[#0a0a0a] border border-white/[0.10] hover:border-red-500/50 text-white/20 hover:text-red-400 rounded-full flex items-center justify-center transition-all z-10"
       title="Delete block"
     >
-      <X size={14} />
+      <X size={12} />
     </button>
   );
 }
@@ -79,7 +79,7 @@ function NodeDeleteButton({ nodeId, onDelete }: NodeDeleteButtonProps) {
 function StartNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative px-6 py-4 bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-900/70 dark:to-emerald-900/40 border-2 border-emerald-500 dark:border-emerald-400 text-emerald-900 dark:text-emerald-100 font-bold text-sm min-w-[140px] text-center shadow-lg hover:shadow-xl transition-all rounded-lg">
+    <div className="relative px-6 py-4 bg-[#0e0e0e] border border-blue-500/30 border-l-[3px] border-l-blue-500 text-blue-400 font-bold text-sm min-w-[140px] text-center rounded-lg transition-all">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <div className="flex items-center justify-center gap-2">
         <span className="text-lg">▶</span>
@@ -88,7 +88,7 @@ function StartNode({ data, id }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-emerald-600 dark:bg-emerald-400 border-2 border-background hover:w-4 hover:h-4 transition-all"
+        className="w-3 h-3 bg-blue-500 border border-white/20"
       />
     </div>
   );
@@ -97,12 +97,12 @@ function StartNode({ data, id }: NodeProps) {
 function EndNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative px-6 py-4 bg-gradient-to-b from-rose-50 to-rose-100 dark:from-rose-900/70 dark:to-rose-900/40 border-2 border-rose-500 dark:border-rose-400 text-rose-900 dark:text-rose-100 font-bold text-sm min-w-[140px] text-center shadow-lg hover:shadow-xl transition-all rounded-lg">
+    <div className="relative px-6 py-4 bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-white/30 text-white/60 font-bold text-sm min-w-[140px] text-center rounded-lg transition-all">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-rose-600 dark:bg-rose-400 border-2 border-background hover:w-4 hover:h-4 transition-all"
+        className="w-3 h-3 bg-white/30 border border-white/20"
       />
       <div className="flex items-center justify-center gap-2 mt-1">
         <span className="text-lg">⏹</span>
@@ -115,14 +115,14 @@ function EndNode({ data, id }: NodeProps) {
 function ForNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-600 dark:border-amber-400 text-amber-900 dark:text-amber-100 min-w-[150px] shadow-md">
+    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-amber-400 text-white/60 min-w-[150px] rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-amber-600 dark:bg-amber-400 border-2 border-background"
+        className="w-3 h-3 bg-amber-400 border border-white/20"
       />
-      <div className="px-4 py-2 border-b border-amber-300 dark:border-amber-600 font-bold text-sm bg-amber-200/50 dark:bg-amber-800/50">
+      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
         {data.label as string}
       </div>
       <div className="px-4 py-2 text-xs font-medium">
@@ -131,7 +131,7 @@ function ForNode({ data, id }: NodeProps) {
           <input
             type="number"
             defaultValue={10}
-            className="w-12 px-1 py-0.5 bg-white dark:bg-amber-950 border border-amber-400 dark:border-amber-500 text-amber-900 dark:text-amber-100 text-center focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="w-12 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -139,7 +139,7 @@ function ForNode({ data, id }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-amber-600 dark:bg-amber-400 border-2 border-background"
+        className="w-3 h-3 bg-amber-400 border border-white/20"
       />
     </div>
   );
@@ -148,14 +148,14 @@ function ForNode({ data, id }: NodeProps) {
 function WhileNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-600 dark:border-amber-400 text-amber-900 dark:text-amber-100 min-w-[150px] shadow-md">
+    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-amber-400 text-white/60 min-w-[150px] rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-amber-600 dark:bg-amber-400 border-2 border-background"
+        className="w-3 h-3 bg-amber-400 border border-white/20"
       />
-      <div className="px-4 py-2 border-b border-amber-300 dark:border-amber-600 font-bold text-sm bg-amber-200/50 dark:bg-amber-800/50">
+      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
         {data.label as string}
       </div>
       <div className="px-4 py-2 text-xs font-medium">
@@ -164,7 +164,7 @@ function WhileNode({ data, id }: NodeProps) {
           <input
             type="text"
             defaultValue="true"
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-amber-950 border border-amber-400 dark:border-amber-500 text-amber-900 dark:text-amber-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -172,7 +172,7 @@ function WhileNode({ data, id }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-amber-600 dark:bg-amber-400 border-2 border-background"
+        className="w-3 h-3 bg-amber-400 border border-white/20"
       />
     </div>
   );
@@ -181,14 +181,14 @@ function WhileNode({ data, id }: NodeProps) {
 function IfNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative bg-sky-100 dark:bg-sky-900/50 border-2 border-sky-600 dark:border-sky-400 text-sky-900 dark:text-sky-100 min-w-[150px] shadow-md">
+    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-cyan-400 text-white/60 min-w-[150px] rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-sky-600 dark:bg-sky-400 border-2 border-background"
+        className="w-3 h-3 bg-cyan-400 border border-white/20"
       />
-      <div className="px-4 py-2 border-b border-sky-300 dark:border-sky-600 font-bold text-sm bg-sky-200/50 dark:bg-sky-800/50">
+      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
         {data.label as string}
       </div>
       <div className="px-4 py-2 text-xs font-medium">
@@ -197,7 +197,7 @@ function IfNode({ data, id }: NodeProps) {
           <input
             type="text"
             defaultValue="x > 0"
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-sky-950 border border-sky-400 dark:border-sky-500 text-sky-900 dark:text-sky-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -206,14 +206,14 @@ function IfNode({ data, id }: NodeProps) {
         type="source"
         position={Position.Bottom}
         id="true"
-        className="w-3 h-3 bg-sky-600 dark:bg-sky-400 border-2 border-background"
+        className="w-3 h-3 bg-cyan-400 border border-white/20"
         style={{ left: '30%' }}
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="false"
-        className="w-3 h-3 bg-sky-600 dark:bg-sky-400 border-2 border-background"
+        className="w-3 h-3 bg-cyan-400 border border-white/20"
         style={{ left: '70%' }}
       />
     </div>
@@ -223,14 +223,14 @@ function IfNode({ data, id }: NodeProps) {
 function MovePositionNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[180px] shadow-md">
+    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-violet-400 text-white/60 min-w-[180px] rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-violet-600 dark:bg-violet-400 border-2 border-background"
+        className="w-3 h-3 bg-violet-400 border border-white/20"
       />
-      <div className="px-4 py-2 border-b border-violet-300 dark:border-violet-600 font-bold text-sm bg-violet-200/50 dark:bg-violet-800/50">
+      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
         {data.label as string}
       </div>
       <div className="px-4 py-2 text-xs font-medium space-y-1.5">
@@ -242,7 +242,7 @@ function MovePositionNode({ data, id }: NodeProps) {
             step="0.01"
             min="-5"
             max="5"
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
+            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -254,7 +254,7 @@ function MovePositionNode({ data, id }: NodeProps) {
             step="0.01"
             min="-5"
             max="5"
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
+            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -266,18 +266,18 @@ function MovePositionNode({ data, id }: NodeProps) {
             step="0.01"
             min="-5"
             max="5"
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
+            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
-        <div className="text-[9px] text-violet-600 dark:text-violet-300 mt-1 opacity-70">
+        <div className="text-[9px] text-white/40 mt-1">
           Uses IK to move arm
         </div>
       </div>
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-violet-600 dark:bg-violet-400 border-2 border-background"
+        className="w-3 h-3 bg-violet-400 border border-white/20"
       />
     </div>
   );
@@ -286,14 +286,14 @@ function MovePositionNode({ data, id }: NodeProps) {
 function MoveJointNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative bg-violet-100 dark:bg-violet-900/50 border-2 border-violet-600 dark:border-violet-400 text-violet-900 dark:text-violet-100 min-w-[180px] shadow-md">
+    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-violet-400 text-white/60 min-w-[180px] rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-violet-600 dark:bg-violet-400 border-2 border-background"
+        className="w-3 h-3 bg-violet-400 border border-white/20"
       />
-      <div className="px-4 py-2 border-b border-violet-300 dark:border-violet-600 font-bold text-sm bg-violet-200/50 dark:bg-violet-800/50">
+      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
         {data.label as string}
       </div>
       <div className="px-4 py-2 text-xs font-medium space-y-1.5">
@@ -301,7 +301,7 @@ function MoveJointNode({ data, id }: NodeProps) {
           <span>JOINT:</span>
           <select
             defaultValue="1"
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 focus:outline-none focus:ring-1 focus:ring-violet-500"
+            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           >
             <option value="1">Joint 1</option>
@@ -320,19 +320,19 @@ function MoveJointNode({ data, id }: NodeProps) {
             step="1"
             min="-180"
             max="180"
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-violet-950 border border-violet-400 dark:border-violet-500 text-violet-900 dark:text-violet-100 text-center focus:outline-none focus:ring-1 focus:ring-violet-500"
+            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           />
           <span className="text-[10px]">°</span>
         </div>
-        <div className="text-[9px] text-violet-600 dark:text-violet-300 mt-1 opacity-70">
+        <div className="text-[9px] text-white/40 mt-1">
           Range: -180° to +180°
         </div>
       </div>
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-violet-600 dark:bg-violet-400 border-2 border-background"
+        className="w-3 h-3 bg-violet-400 border border-white/20"
       />
     </div>
   );
@@ -341,14 +341,14 @@ function MoveJointNode({ data, id }: NodeProps) {
 function GetPositionNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative bg-indigo-100 dark:bg-indigo-900/50 border-2 border-indigo-600 dark:border-indigo-400 text-indigo-900 dark:text-indigo-100 min-w-[180px] shadow-md">
+    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-violet-400 text-white/60 min-w-[180px] rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-indigo-600 dark:bg-indigo-400 border-2 border-background"
+        className="w-3 h-3 bg-violet-400 border border-white/20"
       />
-      <div className="px-4 py-2 border-b border-indigo-300 dark:border-indigo-600 font-bold text-sm bg-indigo-200/50 dark:bg-indigo-800/50">
+      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
         {data.label as string}
       </div>
       <div className="px-4 py-2 text-xs font-medium">
@@ -359,7 +359,7 @@ function GetPositionNode({ data, id }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-indigo-600 dark:bg-indigo-400 border-2 border-background"
+        className="w-3 h-3 bg-violet-400 border border-white/20"
       />
     </div>
   );
@@ -368,14 +368,14 @@ function GetPositionNode({ data, id }: NodeProps) {
 function DelayNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative bg-lime-100 dark:bg-lime-900/50 border-2 border-lime-600 dark:border-lime-400 text-lime-900 dark:text-lime-100 min-w-[150px] shadow-md">
+    <div className="relative bg-[#0e0e0e] border border-white/[0.10] border-l-[3px] border-l-emerald-400 text-white/60 min-w-[150px] rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-lime-600 dark:bg-lime-400 border-2 border-background"
+        className="w-3 h-3 bg-emerald-400 border border-white/20"
       />
-      <div className="px-4 py-2 border-b border-lime-300 dark:border-lime-600 font-bold text-sm bg-lime-200/50 dark:bg-lime-800/50">
+      <div className="px-4 py-2 border-b border-white/[0.06] font-bold text-sm text-white/80">
         {data.label as string}
       </div>
       <div className="px-4 py-2 text-xs font-medium">
@@ -384,7 +384,7 @@ function DelayNode({ data, id }: NodeProps) {
           <input
             type="number"
             defaultValue={1000}
-            className="flex-1 px-1 py-0.5 bg-white dark:bg-lime-950 border border-lime-400 dark:border-lime-500 text-lime-900 dark:text-lime-100 text-center focus:outline-none focus:ring-1 focus:ring-lime-500"
+            className="flex-1 px-1 py-0.5 bg-white/[0.04] border border-white/[0.08] text-foreground text-center focus:outline-none focus:border-white/20"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -392,7 +392,7 @@ function DelayNode({ data, id }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-lime-600 dark:bg-lime-400 border-2 border-background"
+        className="w-3 h-3 bg-emerald-400 border border-white/20"
       />
     </div>
   );
@@ -401,18 +401,18 @@ function DelayNode({ data, id }: NodeProps) {
 function DefaultNode({ data, id }: NodeProps) {
   const onDelete = data.onDelete as ((id: string) => void) | undefined;
   return (
-    <div className="relative px-6 py-3 bg-slate-100 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-500 text-slate-800 dark:text-slate-200 font-bold text-sm min-w-[120px] text-center shadow-md">
+    <div className="relative px-6 py-3 bg-[#0e0e0e] border border-white/[0.10] text-white/60 font-bold text-sm min-w-[120px] text-center rounded-lg">
       {onDelete && <NodeDeleteButton nodeId={id} onDelete={onDelete} />}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 bg-slate-500 border-2 border-background"
+        className="w-3 h-3 bg-white/30 border border-white/20"
       />
       <div>{data.label as string}</div>
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 bg-slate-500 border-2 border-background"
+        className="w-3 h-3 bg-white/30 border border-white/20"
       />
     </div>
   );
@@ -861,7 +861,7 @@ export default function BlocksPage() {
         <ResizablePanelGroup direction="horizontal" className="flex-1">
           {/* React Flow Canvas */}
           <ResizablePanel defaultSize={65} minSize={30}>
-            <div className="h-full">
+            <div className="h-full bg-[#080808]">
               <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -885,8 +885,8 @@ export default function BlocksPage() {
                   markerEnd: { type: 'arrow' },
                 }}
               >
-                <Controls className="border-2 border-foreground bg-background shadow-lg rounded-lg" />
-                <Background gap={20} size={1} color="var(--muted-foreground)" style={{ opacity: 0.2 }} />
+                <Controls className="border border-white/[0.10] bg-[#0a0a0a] shadow-xl rounded-lg" />
+                <Background gap={20} size={2} color="#ffffff" style={{ opacity: 0.15 }} />
                 <MiniMap
                   nodeColor={(node) => {
                     switch (node.type) {
@@ -903,25 +903,25 @@ export default function BlocksPage() {
                       default: return '#6b7280';
                     }
                   }}
-                  className="border-2 border-foreground bg-background shadow-lg rounded-lg"
-                  style={{ backgroundColor: 'var(--background)' }}
+                  className="border border-white/[0.10] bg-[#0a0a0a] shadow-xl rounded-lg"
+                  style={{ backgroundColor: '#0a0a0a' }}
                 />
               </ReactFlow>
             </div>
           </ResizablePanel>
 
           {/* Arm Visualization Sidebar */}
-          <ResizableHandle withHandle className="border-l-4 border-foreground" />
+          <ResizableHandle withHandle className="w-px bg-white/[0.06] hover:bg-white/[0.15] transition-colors" />
           <ResizablePanel defaultSize={35} minSize={20} maxSize={60}>
-            <div className="h-full flex flex-col bg-muted/30">
-              <div className="p-4 border-b-2 border-foreground flex items-center justify-between bg-gradient-to-r from-background to-background/95">
+            <div className="h-full flex flex-col bg-[#0a0a0a]">
+              <div className="p-4 border-b border-white/[0.08] flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">🦾</span>
                   <span className="font-black text-sm">ARM STATE</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs ${armState.is_moving ? 'bg-amber-500/20 border border-amber-500/50 text-amber-600 dark:text-amber-400' : 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-600 dark:text-emerald-400'}`}>
-                    <span className={`w-2 h-2 rounded-full ${armState.is_moving ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></span>
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs ${armState.is_moving ? 'bg-amber-400/10 border border-amber-400/30 text-amber-300' : 'bg-emerald-400/10 border border-emerald-400/30 text-emerald-300'}`}>
+                    <span className={`w-2 h-2 rounded-full ${armState.is_moving ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}></span>
                     {armState.is_moving ? 'MOVING' : 'READY'}
                   </div>
                 </div>
@@ -929,7 +929,7 @@ export default function BlocksPage() {
               <div className="flex-1">
                 <ArmVisualization position={armState.position} joints={armState.joints} />
               </div>
-              <div className="p-3 border-t-2 border-foreground bg-muted/50">
+              <div className="p-3 border-t border-white/[0.08]">
                 <ScrollArea className="h-full max-h-48">
                   <div className="text-xs space-y-1 font-mono pr-3">
                     <div className="font-bold mb-2">POSITION:</div>
