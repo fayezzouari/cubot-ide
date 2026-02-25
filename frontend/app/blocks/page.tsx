@@ -45,6 +45,7 @@ import {
 } from '@/lib/mock-data';
 import { blocksApi, type ArmState } from '@/lib/api/blocks';
 import { toast } from 'sonner';
+import { useProject } from '@/contexts/project-context';
 
 // Dynamic import for 3D component (client-side only)
 const ArmVisualization = dynamic(
@@ -81,6 +82,20 @@ const nodeTypes = {
 };
 
 export default function BlocksPage() {
+  const { currentProject, loadProject } = useProject();
+  const projectId = currentProject?.id || 'default';
+
+  // Load project from URL param or localStorage (same pattern as IDE page)
+  useEffect(() => {
+    if (currentProject) return; // Already loaded
+    const urlParams = new URLSearchParams(window.location.search);
+    const pid = urlParams.get('project') || localStorage.getItem('cubot-ide-last-project');
+    if (pid) {
+      loadProject(pid).catch(() => {
+        console.warn('Failed to load project for blocks page:', pid);
+      });
+    }
+  }, [currentProject, loadProject]);
   const [nodes, setNodes, onNodesChange] = useNodesState(defaultNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(defaultEdges);
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['control', 'loops', 'logic', 'robotics']);
@@ -101,7 +116,88 @@ export default function BlocksPage() {
     toast.success('Block deleted');
   }, [setNodes, setEdges]);
 
-  // Load initial arm state on mount
+  // Update node data handler (for controlled inputs inside nodes)
+  const onDataChange = useCallback((nodeId: string, updates: Record<string, any>) => {
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodeId ? { ...node, data: { ...node.data, ...updates } } : node
+      )
+    );
+  }, [setNodes]);
+
+  // Save program function
+  const saveProgram = useCallback(async () => {
+    if (!currentProject) {
+      toast.error('No project loaded');
+      return;
+    }
+    if (nodes.length === 0) {
+      toast.error('No blocks to save');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const programData = {
+        project_id: projectId,
+        name: 'Block Program',
+        nodes: nodes.map(node => {
+          // Filter node data to exclude React/XYFlow internal properties
+          const cleanData = { ...node.data };
+          delete (cleanData as any).onDelete; // Remove callback function
+
+          const blockNode = {
+            id: node.id,
+            type: node.type || 'default',
+            position: {
+              x: Number(node.position.x) || 0,
+              y: Number(node.position.y) || 0
+            },
+            data: cleanData,
+          };
+          return blockNode;
+        }),
+        edges: edges.map(edge => {
+          const blockEdge: any = {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+          };
+          if (edge.sourceHandle) blockEdge.sourceHandle = edge.sourceHandle;
+          if (edge.targetHandle) blockEdge.targetHandle = edge.targetHandle;
+          if (edge.style) {
+            blockEdge.style = edge.style;
+          }
+          return blockEdge;
+        }),
+      };
+
+      console.log('Saving program:', { currentProgramId, programData });
+      console.log('Program data JSON:', JSON.stringify(programData, null, 2));
+
+      if (currentProgramId) {
+        const result = await blocksApi.updateProgram(currentProgramId, programData);
+        console.log('Program updated:', result);
+        console.log('Result JSON:', JSON.stringify(result, null, 2));
+        toast.success('Workflow saved');
+      } else {
+        const newProgram = await blocksApi.createProgram(programData);
+        console.log('Program created:', newProgram);
+        console.log('Created program JSON:', JSON.stringify(newProgram, null, 2));
+        setCurrentProgramId(newProgram.id!);
+        toast.success('Workflow saved');
+      }
+    } catch (error: any) {
+      console.error('Failed to save program:', error);
+      const errorDetail = error?.response?.data?.detail || error?.message || 'Unknown error';
+      console.error('Error details:', errorDetail);
+      toast.error(`Failed to save: ${errorDetail}`);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [nodes, edges, currentProgramId]);
+
+  // Load initial arm state and saved program on mount
   useEffect(() => {
     const loadInitialState = async () => {
       try {
@@ -115,13 +211,62 @@ export default function BlocksPage() {
         console.error('Failed to load initial arm state:', error);
       }
     };
+
+    const loadSavedProgram = async () => {
+      if (!currentProject) return; // Wait until real project is loaded
+      try {
+        // Try to load the most recent program for the current project
+        const programs = await blocksApi.getPrograms(projectId);
+        console.log('Loaded programs from backend:', JSON.stringify(programs, null, 2));
+
+        if (programs.length > 0) {
+          const lastProgram = programs[0]; // Get the first (most recent) program
+          setCurrentProgramId(lastProgram.id!);
+          console.log('Selected program:', lastProgram.id);
+
+          if (lastProgram.nodes && lastProgram.nodes.length > 0) {
+            console.log('Setting nodes:', JSON.stringify(lastProgram.nodes, null, 2));
+            // Convert backend nodes to XYFlow nodes with proper structure
+            const convertedNodes = lastProgram.nodes.map((node: any) => ({
+              id: node.id,
+              type: node.type || 'default',
+              position: { x: node.position?.x || 0, y: node.position?.y || 0 },
+              data: { ...node.data, onDelete: deleteNode, onDataChange },
+            }));
+            setNodes(convertedNodes);
+          }
+          if (lastProgram.edges && lastProgram.edges.length > 0) {
+            console.log('Setting edges:', JSON.stringify(lastProgram.edges, null, 2));
+            // Convert backend edges to XYFlow edges with proper structure
+            const convertedEdges = lastProgram.edges.map((edge: any) => ({
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              sourceHandle: edge.sourceHandle,
+              targetHandle: edge.targetHandle,
+              style: edge.style || { strokeWidth: 2 },
+            }));
+            setEdges(convertedEdges);
+          }
+
+          console.log('Loaded and converted saved program:', lastProgram.id);
+        } else {
+          console.log(`No saved programs found for project ${projectId}`);
+        }
+      } catch (error: any) {
+        const errorDetail = error?.response?.data?.detail || error?.message || 'Unknown error';
+        console.error('Failed to load saved program:', errorDetail);
+      }
+    };
+
     loadInitialState();
-  }, []);
+    loadSavedProgram();
+  }, [setNodes, setEdges, projectId, currentProject, deleteNode]);
 
   // WebSocket for arm status updates (opens when program is running)
   useArmStatusWebSocket({
     enabled: isProgramRunning,
-    projectId: 'default', // Can be made dynamic if project context is available
+    projectId: projectId,
     onStateChange: setArmState,
     onError: (error) => {
       console.error('Arm status error:', error);
@@ -134,46 +279,69 @@ export default function BlocksPage() {
     console.log('Arm state updated:', armState);
   }, [armState]);
 
-  // Auto-save on changes
+  // Auto-save on changes (debounced) - only depends on nodes and edges, not saveProgram
   useEffect(() => {
-    const saveProgram = async () => {
-      if (nodes.length === 0) return;
-      
+    if (!currentProject || nodes.length === 0) return;
+
+    const debounceTimer = setTimeout(async () => {
       setIsSaving(true);
       try {
         const programData = {
-          project_id: 'default', // You can make this dynamic
+          project_id: projectId,
           name: 'Block Program',
-          nodes: nodes.map(node => ({
-            id: node.id,
-            type: node.type || 'default',
-            position: node.position,
-            data: node.data,
-          })),
-          edges: edges.map(edge => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle || undefined,
-            targetHandle: edge.targetHandle || undefined,
-            style: edge.style,
-          })),
+          nodes: nodes.map(node => {
+            // Filter node data to exclude React/XYFlow internal properties
+            const cleanData = { ...node.data };
+            delete (cleanData as any).onDelete; // Remove callback function
+
+            const blockNode = {
+              id: node.id,
+              type: node.type || 'default',
+              position: {
+                x: Number(node.position.x) || 0,
+                y: Number(node.position.y) || 0
+              },
+              data: cleanData,
+            };
+            return blockNode;
+          }),
+          edges: edges.map(edge => {
+            const blockEdge: any = {
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+            };
+            if (edge.sourceHandle) blockEdge.sourceHandle = edge.sourceHandle;
+            if (edge.targetHandle) blockEdge.targetHandle = edge.targetHandle;
+            if (edge.style) {
+              blockEdge.style = edge.style;
+            }
+            return blockEdge;
+          }),
         };
 
+        console.log('Auto-saving program:', { currentProgramId, nodeCount: nodes.length, edgeCount: edges.length });
+        console.log('Auto-save program data:', JSON.stringify(programData, null, 2));
+
         if (currentProgramId) {
-          await blocksApi.updateProgram(currentProgramId, programData);
+          const result = await blocksApi.updateProgram(currentProgramId, programData);
+          console.log('Auto-save successful:', result);
+          console.log('Auto-save result JSON:', JSON.stringify(result, null, 2));
         } else {
           const newProgram = await blocksApi.createProgram(programData);
+          console.log('New program created:', newProgram.id);
+          console.log('New auto-save program JSON:', JSON.stringify(newProgram, null, 2));
           setCurrentProgramId(newProgram.id!);
         }
-      } catch (error) {
-        console.error('Failed to save program:', error);
+      } catch (error: any) {
+        console.error('Failed to auto-save program:', error);
+        const errorDetail = error?.response?.data?.detail || error?.message || 'Unknown error';
+        console.error('Error details:', errorDetail);
       } finally {
         setIsSaving(false);
       }
-    };
+    }, 2000);
 
-    const debounceTimer = setTimeout(saveProgram, 1000);
     return () => clearTimeout(debounceTimer);
   }, [nodes, edges, currentProgramId]);
 
@@ -207,7 +375,7 @@ export default function BlocksPage() {
         id: `${Date.now()}`,
         type,
         position,
-        data: { label, onDelete: deleteNode },
+        data: { label, onDelete: deleteNode, onDataChange },
       };
 
       setNodes((nds) => [...nds, newNode]);
@@ -275,104 +443,62 @@ export default function BlocksPage() {
     // Execute the current node
     switch (node.type) {
       case 'move_position': {
-        // Get X, Y, Z values from the node's DOM inputs
-        const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
-        if (nodeElement) {
-          const inputs = nodeElement.querySelectorAll('input[type="number"]');
-          const x = parseFloat((inputs[0] as HTMLInputElement)?.value || '0');
-          const y = parseFloat((inputs[1] as HTMLInputElement)?.value || '0');
-          const z = parseFloat((inputs[2] as HTMLInputElement)?.value || '0');
+        const x = (node.data.x as number) ?? 0;
+        const y = (node.data.y as number) ?? 0;
+        const z = (node.data.z as number) ?? 0;
 
-          toast.info(`Moving to position (${x}, ${y}, ${z})`);
-          
-          // Start the movement
-          await blocksApi.moveArmPosition(x, y, z);
-          
-          // Poll arm state until movement is complete
-          let isMoving = true;
-          while (isMoving) {
-            await new Promise(resolve => setTimeout(resolve, 100)); // Poll every 100ms
-            const state = await blocksApi.getArmState();
-            // Force new object references to trigger re-render
-            setArmState({
-              position: { ...state.position },
-              joints: [...state.joints],
-              is_moving: state.is_moving
-            });
-            isMoving = state.is_moving;
-          }
-          
-          toast.success(`Reached position (${x}, ${y}, ${z})`);
+        toast.info(`Moving to position (${x}, ${y}, ${z})`);
+        await blocksApi.moveArmPosition(x, y, z);
+
+        let isMoving = true;
+        while (isMoving) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const state = await blocksApi.getArmState();
+          setArmState({ position: { ...state.position }, joints: [...state.joints], is_moving: state.is_moving });
+          isMoving = state.is_moving;
         }
+        toast.success(`Reached position (${x}, ${y}, ${z})`);
         break;
       }
-      
+
       case 'move_joint': {
-        // Get joint and angle values from the node's DOM inputs
-        const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
-        if (nodeElement) {
-          const select = nodeElement.querySelector('select') as HTMLSelectElement;
-          const input = nodeElement.querySelector('input[type="number"]') as HTMLInputElement;
-          const joint = parseInt(select?.value || '1');
-          const angle = parseFloat(input?.value || '0');
-          
-          toast.info(`Moving joint ${joint} to ${angle}°`);
-          
-          // Start the movement
-          await blocksApi.moveArmJoint(joint, angle);
-          
-          // Poll arm state until movement is complete
-          let isMoving = true;
-          while (isMoving) {
-            await new Promise(resolve => setTimeout(resolve, 100)); // Poll every 100ms
-            const state = await blocksApi.getArmState();
-            // Force new object references to trigger re-render
-            setArmState({
-              position: { ...state.position },
-              joints: [...state.joints],
-              is_moving: state.is_moving
-            });
-            isMoving = state.is_moving;
-          }
-          
-          toast.success(`Joint ${joint} reached ${angle}°`);
+        const joint = (node.data.joint as number) ?? 1;
+        const angle = (node.data.angle as number) ?? 0;
+
+        toast.info(`Moving joint ${joint} to ${angle}°`);
+        await blocksApi.moveArmJoint(joint, angle);
+
+        let isMoving = true;
+        while (isMoving) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const state = await blocksApi.getArmState();
+          setArmState({ position: { ...state.position }, joints: [...state.joints], is_moving: state.is_moving });
+          isMoving = state.is_moving;
         }
+        toast.success(`Joint ${joint} reached ${angle}°`);
         break;
       }
-      
+
       case 'delay': {
-        // Get delay value from the node's DOM input
-        const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
-        if (nodeElement) {
-          const input = nodeElement.querySelector('input[type="number"]') as HTMLInputElement;
-          const ms = parseInt(input?.value || '1000');
-          
-          toast.info(`Waiting ${ms}ms...`);
-          await new Promise(resolve => setTimeout(resolve, ms));
-        }
+        const ms = (node.data.ms as number) ?? 1000;
+        toast.info(`Waiting ${ms}ms...`);
+        await new Promise(resolve => setTimeout(resolve, ms));
         break;
       }
-      
+
       case 'for': {
-        // Get loop count from the node's DOM input
-        const nodeElement = document.querySelector(`[data-id="${nodeId}"]`);
-        if (nodeElement) {
-          const input = nodeElement.querySelector('input[type="number"]') as HTMLInputElement;
-          const count = parseInt(input?.value || '10');
-          
-          // Find the next node in the loop
-          const nextEdge = edges.find(e => e.source === nodeId);
-          if (nextEdge) {
-            for (let i = 0; i < count; i++) {
-              toast.info(`Loop iteration ${i + 1}/${count}`);
-              await executeNode(nextEdge.target);
-            }
-            return; // Don't continue after loop
+        const count = (node.data.count as number) ?? 10;
+        const nextEdge = edges.find(e => e.source === nodeId);
+        if (nextEdge) {
+          for (let i = 0; i < count; i++) {
+            toast.info(`Loop iteration ${i + 1}/${count}`);
+            await executeNode(nextEdge.target);
           }
+          return;
         }
         break;
       }
-      
+
       case 'end':
         toast.success('Reached END block');
         return;
@@ -404,6 +530,16 @@ export default function BlocksPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs font-black border border-white/80 text-white hover:bg-white/10 hover:border-white"
+            onClick={saveProgram}
+            disabled={isSaving}
+          >
+            <Save size={14} />
+            {isSaving ? 'SAVING...' : 'SAVE'}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -527,6 +663,7 @@ export default function BlocksPage() {
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                deleteKeyCode={['Delete', 'Backspace']}
                 onDrop={onDrop}
                 onDragOver={onDragOver}
                 nodeTypes={nodeTypes}
