@@ -292,20 +292,27 @@ export function parsePlanSteps(content: string): PlanStep[] {
   return steps;
 }
 
+// Separate initial messages for each mode to maintain independent conversation histories
 export const mockMessages: ChatMessage[] = [
   {
     id: '1',
     role: 'assistant',
     content: 'Hello! I\'m your AI assistant for embedded development. How can I help you today?',
   },
+];
+
+export const mockVibeModeMessages: ChatMessage[] = [
   {
-    id: '2',
-    role: 'user',
-    content: 'How do I set up a PWM signal on this microcontroller?',
-  },
-  {
-    id: '3',
+    id: '1',
     role: 'assistant',
-    content: 'To set up PWM on your microcontroller, you\'ll need to:\n\n1. Configure the timer for PWM mode\n2. Set the prescaler and auto-reload values\n3. Configure the output compare channel\n4. Enable the timer\n\nWould you like me to generate the code for this?',
+    content: 'Hello! I\'m your AI assistant. How can I help?',
+  },
+];
+
+export const mockPlanModeMessages: ChatMessage[] = [
+  {
+    id: '1',
+    role: 'assistant',
+    content: 'I can help you plan complex projects step-by-step. Describe what you want to build!',
   },
 ];
