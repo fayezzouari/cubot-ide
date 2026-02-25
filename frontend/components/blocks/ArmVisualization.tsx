@@ -167,7 +167,7 @@ function GridHelper() {
 
 export default function ArmVisualization({ position, joints }: ArmVisualizationProps) {
   return (
-    <div className="w-full h-full bg-slate-900">
+    <div className="w-full h-full bg-[#080808]">
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50 }}
         shadows
