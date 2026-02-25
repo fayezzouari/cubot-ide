@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     DAYTONA_API_KEY: Optional[str] = None
     DAYTONA_ROS_SNAPSHOT: Optional[str] = None  # Daytona snapshot name for ROS Humble env
 
+    # Exa Web Search
+    EXA_API_KEY: Optional[str] = None
+
     class Config:
         env_file = ".env"
         extra = "allow"
