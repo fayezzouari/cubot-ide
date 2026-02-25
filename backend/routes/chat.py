@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 from typing import List, Optional
 
-from models.chat import ChatRequest, ChatResponse, ChatMessageInDB
+from models.chat import ChatRequest, ChatResponse, ChatMessageInDB, StepExecutionRequest, StepExecutionResponse
 from services.ai_service import ai_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -27,6 +27,16 @@ async def get_chat_history(project_id: str, limit: int = 50):
     """Get chat history for a project"""
     history = await ai_service.get_chat_history(project_id, limit)
     return history
+
+
+@router.post("/{project_id}/execute-step", response_model=StepExecutionResponse)
+async def execute_step(project_id: str, request: StepExecutionRequest):
+    """
+    Execute a single plan step with the AI agent.
+    The agent uses file tools (and optionally the Daytona sandbox) to complete the task.
+    """
+    response = await ai_service.execute_step(project_id, request)
+    return response
 
 
 @router.post("/{project_id}/apply-operations")
