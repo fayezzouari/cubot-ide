@@ -186,8 +186,10 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
             </div>
             {/* Step dots */}
             <div className="flex items-center gap-1.5">
-              {(['select', 'projectType', 'name', 'compiler'] as const).map((s, i) => {
-                const steps = ['select', 'projectType', 'name', 'compiler'];
+              {(['select', 'projectType', 'name', 'compiler'] as const).filter(s => selectedProjectType !== 'ros' || s !== 'compiler').map((s, i) => {
+                const steps = selectedProjectType === 'ros'
+                  ? ['select', 'projectType', 'name']
+                  : ['select', 'projectType', 'name', 'compiler'];
                 const current = steps.indexOf(step);
                 const isDone = i < current;
                 const isActive = i === current;
@@ -284,7 +286,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                 autoFocus
                 onKeyDown={e => {
                   if (e.key === 'Enter' && projectName.trim() && !isCreating) {
-                    if (selectedType === 'ide') setStep('compiler');
+                    if (selectedType === 'ide' && selectedProjectType !== 'ros') setStep('compiler');
                     else handleCreateProject();
                   }
                 }}
@@ -299,7 +301,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
               >
                 <ArrowLeft size={12} /> Back
               </button>
-              {selectedType === 'ide' ? (
+              {selectedType === 'ide' && selectedProjectType !== 'ros' ? (
                 <button
                   onClick={() => setStep('compiler')}
                   disabled={isCreating || !projectName.trim()}
