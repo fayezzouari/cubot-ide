@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState, useEffect } from 'react';
+import { useArmStatusWebSocket } from '@/hooks/useArmStatusWebSocket';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import {
@@ -91,6 +92,7 @@ export default function BlocksPage() {
   const [currentProgramId, setCurrentProgramId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [blockSearch, setBlockSearch] = useState('');
+  const [isProgramRunning, setIsProgramRunning] = useState(false);
 
   // Delete node handler
   const deleteNode = useCallback((nodeId: string) => {
@@ -99,28 +101,33 @@ export default function BlocksPage() {
     toast.success('Block deleted');
   }, [setNodes, setEdges]);
 
-  // Load arm state
+  // Load initial arm state on mount
   useEffect(() => {
-    const loadArmState = async () => {
+    const loadInitialState = async () => {
       try {
         const state = await blocksApi.getArmState();
-        console.log('Loaded arm state:', state);
-        // Force a new object to trigger re-render
         setArmState({
           position: { ...state.position },
           joints: [...state.joints],
-          is_moving: state.is_moving
+          is_moving: state.is_moving,
         });
       } catch (error) {
-        console.error('Failed to load arm state:', error);
+        console.error('Failed to load initial arm state:', error);
       }
     };
-    loadArmState();
-
-    // Poll arm state every 500ms
-    const interval = setInterval(loadArmState, 500);
-    return () => clearInterval(interval);
+    loadInitialState();
   }, []);
+
+  // WebSocket for arm status updates (opens when program is running)
+  useArmStatusWebSocket({
+    enabled: isProgramRunning,
+    projectId: 'default', // Can be made dynamic if project context is available
+    onStateChange: setArmState,
+    onError: (error) => {
+      console.error('Arm status error:', error);
+      toast.error(error);
+    },
+  });
 
   // Log when arm state changes
   useEffect(() => {
@@ -235,25 +242,29 @@ export default function BlocksPage() {
 
   const runProgram = async () => {
     toast.info('Running program...');
-    
+    setIsProgramRunning(true);
+
     try {
       // Reset arm to starting position
       await blocksApi.resetArm();
-      
+
       // Find the start node
       const startNode = nodes.find(node => node.type === 'start');
       if (!startNode) {
         toast.error('No START block found');
+        setIsProgramRunning(false);
         return;
       }
-      
+
       // Execute blocks in sequence
       await executeNode(startNode.id);
-      
+
       toast.success('Program executed successfully');
     } catch (error) {
       console.error('Program execution error:', error);
       toast.error('Failed to run program');
+    } finally {
+      setIsProgramRunning(false);
     }
   };
 
@@ -271,7 +282,7 @@ export default function BlocksPage() {
           const x = parseFloat((inputs[0] as HTMLInputElement)?.value || '0');
           const y = parseFloat((inputs[1] as HTMLInputElement)?.value || '0');
           const z = parseFloat((inputs[2] as HTMLInputElement)?.value || '0');
-          
+
           toast.info(`Moving to position (${x}, ${y}, ${z})`);
           
           // Start the movement
@@ -375,6 +386,7 @@ export default function BlocksPage() {
   };
 
   const stopProgram = () => {
+    setIsProgramRunning(false);
     toast.info('Program stopped');
   };
 
