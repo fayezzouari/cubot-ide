@@ -146,6 +146,34 @@ export interface ChatResponse {
   }>;
 }
 
+export interface StepExecutionRequest {
+  step_title: string;
+  step_body: string;
+  workspace_id?: string;
+  file_context?: FileContext[];
+  compiler?: string;
+}
+
+export interface ExecutionLogEntry {
+  command: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  success: boolean;
+}
+
+export interface StepExecutionResponse {
+  message: string;
+  file_operations: Array<{
+    operation: string;
+    path: string;
+    file_id?: string;
+    success?: boolean;
+  }>;
+  execution_logs: ExecutionLogEntry[];
+  success: boolean;
+}
+
 export interface ChatMessageInDB {
   id: string;
   project_id: string;
