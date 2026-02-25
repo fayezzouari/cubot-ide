@@ -139,3 +139,35 @@
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
 }
+
+/* ReactFlow Controls styling - Dark theme */
+.react-flow__controls {
+  background-color: #0a0a0a !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+}
+
+.react-flow__controls-button {
+  background-color: #1a1a1a !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  transition: all 200ms ease !important;
+  fill: rgba(255, 255, 255, 0.5) !important;
+}
+
+.react-flow__controls-button:hover {
+  background-color: #252525 !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+  fill: rgba(255, 255, 255, 0.8) !important;
+}
+
+.react-flow__controls-button svg {
+  fill: inherit !important;
+  stroke: rgba(255, 255, 255, 0.5) !important;
+}
+
+.react-flow__controls-button:hover svg {
+  stroke: rgba(255, 255, 255, 0.8) !important;
+}
