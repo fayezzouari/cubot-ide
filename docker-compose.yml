@@ -5,6 +5,7 @@ services:
     image: mongo:7.0
     container_name: cubot-mongodb
     restart: unless-stopped
+    env_file: .env
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-cubot}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-cubot_secret}
