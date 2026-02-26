@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowRight, LogOut } from 'lucide-react';
+import { ArrowRight, LogOut, User } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
-import Image from 'next/image';
+import { useState } from 'react';
 
 const navLinks = [
   { label: 'Platform', href: '#about' },
@@ -16,6 +16,7 @@ export default function Header() {
   const pathname = usePathname();
   const isLanding = pathname === '/';
   const { data: session, status } = useSession();
+  const [imageError, setImageError] = useState(false);
 
   return (
     <header className="fixed top-4 left-0 right-0 z-50 flex justify-center px-6">
@@ -73,14 +74,21 @@ export default function Header() {
             >
               <LogOut size={13} />
             </button>
-            {session.user?.image && (
-              <Image
+            {session.user?.image && !imageError ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
                 src={session.user.image}
                 alt={session.user.name ?? 'User'}
                 width={24}
                 height={24}
                 className="rounded-full"
+                onError={() => setImageError(true)}
+                crossOrigin="anonymous"
               />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
+                <User size={14} className="text-primary" />
+              </div>
             )}
           </div>
         ) : (
