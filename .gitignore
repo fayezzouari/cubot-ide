@@ -16,3 +16,5 @@ backend/schemas/__pycache__
 backend/schemas/*.pyc
 backend/.env
 frontend/.next/
+.env
+nginx/certs/
