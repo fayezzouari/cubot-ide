@@ -213,10 +213,9 @@ export default function CadPage() {
       <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="flex items-center gap-2 group">
-            <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center">
-              <Cpu size={12} className="text-black" />
-            </div>
-            <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">cubot</span>
+            <img src="/cubot.svg" alt="CuBot" className="w-8 h-8 object-contain" />
+
+            <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">CuBot</span>
           </Link>
           <span className="text-white/[0.12]">·</span>
           <span className="text-xs text-white/30 font-mono">CAD</span>

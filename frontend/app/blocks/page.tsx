@@ -524,12 +524,13 @@ export default function BlocksPage() {
       {/* Top Bar */}
       <header className="h-14 border-b border-white/[0.08] flex items-center justify-between px-4 bg-[#0a0a0a]">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <div className="w-8 h-8 bg-white/5 border border-white/10 flex items-center justify-center rounded">
-              <span className="text-foreground font-black text-sm">⚙</span>
-            </div>
-            <span className="font-black text-sm">BLOCKS</span>
+          <Link href="/dashboard" className="flex items-center gap-2 group">
+            <img src="/cubot.svg" alt="CuBot" className="w-8 h-8 object-contain" />
+
+            <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">CuBot</span>
           </Link>
+          <span className="text-white/[0.12]">·</span>
+          <span className="text-xs text-white/30 font-mono">Blocks</span>
         </div>
 
         <div className="flex items-center gap-2">
