@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 import { useArmStatusWebSocket } from '@/hooks/useArmStatusWebSocket';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -82,6 +84,7 @@ const nodeTypes = {
 };
 
 export default function BlocksPage() {
+  const { data: session } = useSession();
   const { currentProject, loadProject } = useProject();
   const projectId = currentProject?.id || 'default';
 
@@ -582,14 +585,20 @@ export default function BlocksPage() {
               Saving
             </span>
           )}
-          <Button variant="ghost" size="icon" className="text-white/40 hover:text-white/60">
-            <Settings size={16} />
-          </Button>
           <Link href="/dashboard" title="Back to Dashboard">
             <Button variant="ghost" size="icon" className="text-white/40 hover:text-white/60">
               <Home size={16} />
             </Button>
           </Link>
+          {session?.user?.image && (
+            <Image
+              src={session.user.image}
+              alt={session.user.name ?? 'User'}
+              width={28}
+              height={28}
+              className="rounded-full border border-white/10"
+            />
+          )}
         </div>
       </header>
 

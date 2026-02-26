@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { Home, Download, Box, Loader2, Cpu } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
@@ -13,6 +15,7 @@ import type { CadSSEEvent, PlanStepState } from '@/lib/api/types';
 type PlanPhase = 'planning' | 'executing' | 'assembling' | 'complete' | null;
 
 export default function CadPage() {
+  const { data: session } = useSession();
   const searchParams = useSearchParams();
   const sessionId =
     searchParams.get('project') ||
@@ -229,12 +232,22 @@ export default function CadPage() {
             Export STL
           </button>
           <span className="w-px h-4 bg-white/[0.08] mx-1" />
-          <Link
+         <Link
             href="/dashboard"
             className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
           >
             <Home size={13} />
           </Link>
+          {session?.user?.image && (
+            <Image
+              src={session.user.image}
+              alt={session.user.name ?? 'User'}
+              width={24}
+              height={24}
+              className="rounded-full border border-white/10"
+            />
+          )}
+
         </div>
       </header>
 

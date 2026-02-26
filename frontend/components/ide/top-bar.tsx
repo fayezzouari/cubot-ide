@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { Play, Settings, Home, TerminalSquare, Cpu, Usb } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 
 interface TopBarProps {
   projectId: string | null;
@@ -20,6 +22,8 @@ export default function TopBar({
   onOpenSerial,
   onOpenUpload,
 }: TopBarProps) {
+  const { data: session, status } = useSession();
+  
   return (
     <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
       {/* Left: Logo */}
@@ -76,9 +80,7 @@ export default function TopBar({
 
         <span className="w-px h-4 bg-white/[0.08] mx-1" />
 
-        <button className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all cursor-pointer">
-          <Settings size={13} />
-        </button>
+
         <Link
           href="/dashboard"
           className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
@@ -86,6 +88,21 @@ export default function TopBar({
         >
           <Home size={13} />
         </Link>
+        <>
+          {status === 'authenticated' && (
+            <>
+              {session?.user?.image && (
+                <Image
+                  src={session.user.image}
+                  alt={session.user.name ?? 'User'}
+                  width={24}
+                  height={24}
+                  className="rounded-full"
+                />
+              )}
+            </>
+          )}
+        </>
       </div>
     </header>
   );
