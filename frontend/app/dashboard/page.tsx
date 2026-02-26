@@ -106,23 +106,28 @@ export default function DashboardPage() {
       <div className="max-w-5xl mx-auto px-6 pt-28 pb-16">
 
         {/* Page header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            {session?.user?.name && (
-              <p className="text-xs text-white/40 font-mono mb-0.5">Hey {session.user.name}!</p>
-            )}
-            <h1 className="text-lg font-semibold text-white tracking-tight">Projects</h1>
-            <p className="text-xs text-white/30 mt-0.5 font-mono">
-              {isLoading ? '—' : `${sortedProjects.length} project${sortedProjects.length !== 1 ? 's' : ''}`}
-            </p>
+        <div className="mb-8">
+          {session?.user?.name && (
+            <>
+              <p className="text-3xl font-bold text-white mb-4 tracking-tight">Hey {session.user.name},</p>
+              <div className="h-px bg-white/[0.16] mb-8" />
+            </>
+          )}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-lg font-semibold text-white/60 tracking-tight">Projects</h1>
+              <p className="text-xs text-white/30 mt-0.5 font-mono">
+                {isLoading ? '—' : `${sortedProjects.length} project${sortedProjects.length !== 1 ? 's' : ''}`}
+              </p>
+            </div>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
+            >
+              <Plus size={12} />
+              New Project
+            </button>
           </div>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
-          >
-            <Plus size={12} />
-            New Project
-          </button>
         </div>
 
         {/* Error */}
