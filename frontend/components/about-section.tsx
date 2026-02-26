@@ -47,9 +47,9 @@ const workspaces = [
 
 const mcus = [
   { name: 'Arduino', chip: 'ATmega328P', color: 'text-green-400/40' },
-  { name: 'ESP32', chip: 'Xtensa LX6', color: 'text-blue-400/40' },
-  { name: 'STM32F4', chip: 'ARM Cortex-M4', color: 'text-purple-400/40' },
-  { name: 'STM32L476', chip: 'Cortex-M4 LP', color: 'text-orange-400/40' },
+  { name: 'ESP32 (Upcoming)', chip: 'Xtensa LX6', color: 'text-blue-400/40' },
+  { name: 'STM32F4 (Upcoming)', chip: 'ARM Cortex-M4', color: 'text-purple-400/40' },
+  { name: 'STM32L476 (Upcoming)', chip: 'Cortex-M4 LP', color: 'text-orange-400/40' },
 ];
 
 export default function AboutSection() {
