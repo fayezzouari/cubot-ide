@@ -1,6 +1,8 @@
 import Header from '@/components/header';
 import HeroSection from '@/components/hero-section';
+import DemoSection from '@/components/demo-section';
 import AboutSection from '@/components/about-section';
+import WorkflowSection from '@/components/workflow-section';
 import FeaturesSection from '@/components/features-section';
 import CTASection from '@/components/cta-section';
 import Footer from '@/components/footer';
@@ -49,7 +51,9 @@ export default function Home() {
       <div className="relative z-10">
         <Header />
         <HeroSection />
+        <DemoSection />
         <AboutSection />
+        <WorkflowSection />
         <FeaturesSection />
         <CTASection />
         <Footer />

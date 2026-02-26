@@ -1,4 +1,4 @@
-import { Github, Mail, Cpu, Twitter } from 'lucide-react';
+import { Github, Mail, Twitter } from 'lucide-react';
 
 export default function Footer() {
   return (
@@ -7,24 +7,22 @@ export default function Footer() {
         <div className="grid md:grid-cols-4 gap-10 mb-10">
           <div className="md:col-span-2">
             <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-7 h-7 bg-white rounded-md flex items-center justify-center">
-                <Cpu size={14} className="text-black" />
-              </div>
-              <span className="text-sm font-semibold text-white">cubot</span>
+              <img src="/cubot.svg" alt="CuBot" className="w-7 h-7 object-contain" />
+              <span className="text-sm font-semibold text-white">CuBot</span>
             </div>
             <p className="text-xs text-white/30 leading-relaxed max-w-xs">
-              Learn embedded systems and robotics with AI assistance.
-              Code on virtual hardware, then deploy to real microcontrollers.
+              AI-powered embedded IDE with a code editor, visual block builder,
+              and CAD designer — all in one browser. No hardware required.
             </p>
           </div>
 
           <div>
-            <p className="text-xs font-semibold text-white/40 mb-4 tracking-wider uppercase">Resources</p>
+            <p className="text-xs font-semibold text-white/40 mb-4 tracking-wider uppercase">Product</p>
             <ul className="space-y-2.5">
               {[
                 { label: 'Platform', href: '#about' },
                 { label: 'Features', href: '#features' },
-                { label: 'Documentation', href: 'https://github.com' },
+                { label: 'Workflow', href: '#' },
                 { label: 'Get Started', href: '#github' },
               ].map(({ label, href }) => (
                 <li key={label}>
@@ -61,7 +59,7 @@ export default function Footer() {
 
         <div className="border-t border-white/[0.04] pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-white/20 font-mono">
-            © 2024 Cubot. Open source embedded systems education.
+            © 2025 CuBot. Open source embedded systems platform.
           </p>
           <div className="flex items-center gap-4">
             <a href="#" className="text-xs text-white/20 hover:text-white/40 transition-colors">Privacy</a>
