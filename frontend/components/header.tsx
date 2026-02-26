@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ArrowRight, LogOut } from 'lucide-react';
-import { useSession, signIn, signOut } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import Image from 'next/image';
 
 const navLinks = [
@@ -82,13 +82,13 @@ export default function Header() {
             </button>
           </div>
         ) : (
-          <button
-            onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+          <Link
+            href="/login"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-lg transition-all group flex-shrink-0"
           >
             Login
             <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
-          </button>
+          </Link>
         )}
 
       </nav>
