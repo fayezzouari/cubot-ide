@@ -30,7 +30,7 @@ export default function CTASection() {
               <ArrowRight size={14} />
             </Link>
             <a
-              href="https://github.com"
+              href="https://github.com/fayezzouari/cubot-ide"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-6 py-3 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/50 hover:text-white font-medium text-sm rounded-xl transition-all"

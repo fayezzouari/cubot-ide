@@ -123,7 +123,7 @@ export default function HeroSection() {
             <ArrowRight size={13} className="transition-transform duration-200 group-hover:translate-x-0.5" />
           </button>
           <a
-            href="https://github.com"
+            href="https://github.com/fayezzouari/cubot-ide"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full flex items-center justify-center gap-2 px-6 py-3 border border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.03] text-white/35 hover:text-white/60 font-medium text-sm rounded-xl transition-all duration-200"

@@ -1,4 +1,4 @@
-import { Github, Mail, Twitter } from 'lucide-react';
+import { Github, Mail, Linkedin } from 'lucide-react';
 
 export default function Footer() {
   return (
@@ -38,9 +38,9 @@ export default function Footer() {
             <p className="text-xs font-semibold text-white/40 mb-4 tracking-wider uppercase">Community</p>
             <div className="flex gap-2">
               {[
-                { href: 'https://github.com', icon: Github, label: 'GitHub' },
-                { href: 'https://twitter.com', icon: Twitter, label: 'Twitter' },
-                { href: 'mailto:hello@cubot.dev', icon: Mail, label: 'Email' },
+                { href: 'https://github.com/fayezzouari', icon: Github, label: 'GitHub' },
+                { href: 'mailto:fayez.zouari@insat.ucar.tn', icon: Mail, label: 'Email' },
+                { href: 'https://linkedin.com/in/fayez-zouari', icon: Linkedin, label: 'LinkedIn' },  
               ].map(({ href, icon: Icon, label }) => (
                 <a
                   key={label}
@@ -59,7 +59,7 @@ export default function Footer() {
 
         <div className="border-t border-white/[0.04] pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-white/20 font-mono">
-            © 2025 CuBot. Open source embedded systems platform.
+            © 2026 CuBot. Open source embedded systems platform.
           </p>
           <div className="flex items-center gap-4">
             <a href="#" className="text-xs text-white/20 hover:text-white/40 transition-colors">Privacy</a>

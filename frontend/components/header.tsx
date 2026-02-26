@@ -42,7 +42,7 @@ export default function Header() {
             ))}
             <span className="mx-2 h-3.5 w-px bg-white/10" />
             <a
-              href="https://github.com"
+              href="https://github.com/fayezzouari/cubot-ide"
               target="_blank"
               rel="noopener noreferrer"
               className="px-3 py-1.5 text-xs font-medium text-white/50 hover:text-white hover:bg-white/[0.06] rounded-lg transition-all flex items-center gap-1.5"

@@ -44,15 +44,9 @@ const workspaces = [
   },
 ];
 
-const embeddedSpecs = [
-  { icon: Cpu, label: 'MCU Support', desc: 'ARM, ESP32, STM32, AVR' },
-  { icon: Zap, label: 'Real-time I/O', desc: 'GPIO, ADC, PWM, UART' },
-  { icon: Radio, label: 'Wireless', desc: 'BLE, WiFi, LoRaWAN' },
-  { icon: RotateCcw, label: 'Simulation', desc: 'Virtual execution' },
-];
 
 const mcus = [
-  { name: 'Arduino Nano', chip: 'ATmega328P', color: 'text-green-400/40' },
+  { name: 'Arduino', chip: 'ATmega328P', color: 'text-green-400/40' },
   { name: 'ESP32', chip: 'Xtensa LX6', color: 'text-blue-400/40' },
   { name: 'STM32F4', chip: 'ARM Cortex-M4', color: 'text-purple-400/40' },
   { name: 'STM32L476', chip: 'Cortex-M4 LP', color: 'text-orange-400/40' },
@@ -112,21 +106,7 @@ export default function AboutSection() {
           ))}
         </div>
 
-        {/* Embedded I/O features */}
-        <div className="mb-16">
-          <p className="text-xs font-mono text-white/20 mb-6 tracking-widest uppercase">Embedded I/O</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {embeddedSpecs.map(({ icon: Icon, label, desc }) => (
-              <div key={label} className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.10] transition-colors">
-                <div className="w-8 h-8 rounded-lg border border-white/[0.08] flex items-center justify-center text-white/40 mb-3">
-                  <Icon size={14} />
-                </div>
-                <p className="text-xs font-semibold text-white/60 mb-0.5">{label}</p>
-                <p className="text-xs text-white/30">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+       
 
         {/* MCU grid */}
         <div>
