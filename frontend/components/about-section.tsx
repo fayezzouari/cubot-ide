@@ -6,13 +6,13 @@ const workspaces = [
   {
     icon: Code2,
     title: 'Code IDE',
-    subtitle: 'Professional Development',
-    desc: 'A full Monaco-based editor with AI chat, multi-compiler support, and serial monitoring. Write embedded C/C++ with Claude-powered suggestions, then deploy directly to hardware.',
+    subtitle: 'ROS & Embedded Development',
+    desc: 'A full Monaco-based editor with AI chat, multi-compiler support, and serial monitoring. Write ROS nodes or embedded C/C++ with Claude-powered suggestions, then deploy to hardware or robots.',
     items: [
       'Monaco editor with AI code assistant',
-      'Compile for Arduino, ESP32 & STM32',
+      'ROS packages & Arduino/ESP32/STM32 firmware',
       'Serial monitor over WebSocket',
-      'Upload HEX files to real hardware',
+      'Deploy to robots and hardware from browser',
     ],
     tag: '/ide',
   },
