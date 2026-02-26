@@ -57,6 +57,22 @@ export default function Header() {
         {/* CTA */}
         {status === 'authenticated' ? (
           <div className="flex items-center gap-2 flex-shrink-0">
+            {pathname !== '/dashboard' && (
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-lg transition-all group"
+              >
+                Dashboard
+                <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            )}
+            <button
+              onClick={() => signOut({ callbackUrl: '/' })}
+              className="p-1.5 text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all cursor-pointer"
+              title="Sign out"
+            >
+              <LogOut size={13} />
+            </button>
             {session.user?.image && (
               <Image
                 src={session.user.image}
@@ -66,20 +82,6 @@ export default function Header() {
                 className="rounded-full"
               />
             )}
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-lg transition-all group"
-            >
-              Dashboard
-              <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
-            </Link>
-            <button
-              onClick={() => signOut({ callbackUrl: '/' })}
-              className="p-1.5 text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all cursor-pointer"
-              title="Sign out"
-            >
-              <LogOut size={13} />
-            </button>
           </div>
         ) : (
           <Link
