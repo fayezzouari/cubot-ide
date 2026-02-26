@@ -6,6 +6,7 @@ import { ProjectProvider } from '@/contexts/project-context'
 import { Toaster } from 'sonner'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
+import { SessionProvider } from '@/components/session-provider'
 
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: '--font-sans' });
 const ibmPlexSerif = IBM_Plex_Serif({ subsets: ["latin"], weight: ['400', '600', '700'], variable: '--font-serif' });
@@ -43,11 +44,13 @@ export default function RootLayout({
     <html lang="en" className={`dark ${spaceGrotesk.variable} ${ibmPlexSerif.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <body className={`font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
-          <ProjectProvider>
-            {children}
-          </ProjectProvider>
-          <Toaster position="top-right" />
-          <Analytics />
+          <SessionProvider>
+            <ProjectProvider>
+              {children}
+            </ProjectProvider>
+            <Toaster position="top-right" />
+            <Analytics />
+          </SessionProvider>
         </ThemeProvider>
       </body>
     </html>

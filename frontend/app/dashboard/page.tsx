@@ -7,6 +7,7 @@ import WorkspaceModal from '@/components/workspace-modal';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
 import { Plus, ArrowRight, Trash2, Clock, Code2, Cpu, Blocks, Box } from 'lucide-react';
+import { useSession } from 'next-auth/react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,7 @@ import {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +108,9 @@ export default function DashboardPage() {
         {/* Page header */}
         <div className="flex items-center justify-between mb-8">
           <div>
+            {session?.user?.name && (
+              <p className="text-xs text-white/40 font-mono mb-0.5">Hey {session.user.name}!</p>
+            )}
             <h1 className="text-lg font-semibold text-white tracking-tight">Projects</h1>
             <p className="text-xs text-white/30 mt-0.5 font-mono">
               {isLoading ? '—' : `${sortedProjects.length} project${sortedProjects.length !== 1 ? 's' : ''}`}
