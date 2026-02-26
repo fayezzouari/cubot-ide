@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Cpu, ArrowRight } from 'lucide-react';
+import { ArrowRight, LogOut } from 'lucide-react';
+import { useSession, signIn, signOut } from 'next-auth/react';
+import Image from 'next/image';
 
 const navLinks = [
   { label: 'Platform', href: '#about' },
@@ -13,6 +15,7 @@ const navLinks = [
 export default function Header() {
   const pathname = usePathname();
   const isLanding = pathname === '/';
+  const { data: session, status } = useSession();
 
   return (
     <header className="fixed top-4 left-0 right-0 z-50 flex justify-center px-6">
@@ -52,13 +55,41 @@ export default function Header() {
         )}
 
         {/* CTA */}
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-lg transition-all group flex-shrink-0"
-        >
-          Launch Editor
-          <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
-        </Link>
+        {status === 'authenticated' ? (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {session.user?.image && (
+              <Image
+                src={session.user.image}
+                alt={session.user.name ?? 'User'}
+                width={24}
+                height={24}
+                className="rounded-full"
+              />
+            )}
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-lg transition-all group"
+            >
+              Dashboard
+              <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+            <button
+              onClick={() => signOut({ callbackUrl: '/' })}
+              className="p-1.5 text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
+              title="Sign out"
+            >
+              <LogOut size={13} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-lg transition-all group flex-shrink-0"
+          >
+            Login
+            <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+          </button>
+        )}
 
       </nav>
     </header>
