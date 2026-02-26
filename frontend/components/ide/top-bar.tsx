@@ -25,10 +25,8 @@ export default function TopBar({
       {/* Left: Logo */}
       <div className="flex items-center gap-3">
         <Link href="/" className="flex items-center gap-2 group">
-          <div className="w-6 h-6 bg-white rounded-md flex items-center justify-center">
-            <Cpu size={12} className="text-black" />
-          </div>
-          <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">cubot</span>
+          <img src="/cubot.svg" alt="CuBot" className="w-6 h-6 object-contain" />
+          <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">CuBot</span>
         </Link>
 
         <span className="text-white/[0.12]">·</span>

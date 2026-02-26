@@ -20,10 +20,8 @@ export default function Header() {
 
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 flex-shrink-0 group">
-          <div className="w-6 h-6 bg-primary rounded-md flex items-center justify-center">
-            <Cpu size={12} className="text-primary-foreground" />
-          </div>
-          <span className="text-sm font-semibold text-white tracking-tight">cubot</span>
+          <img src="/cubot.svg" alt="CuBot" className="w-8 h-8 object-contain" />
+          <span className="text-sm font-semibold text-white tracking-tight">CuBot</span>
         </Link>
 
         {/* Nav links */}
