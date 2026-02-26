@@ -75,7 +75,7 @@ export default function Header() {
             </Link>
             <button
               onClick={() => signOut({ callbackUrl: '/' })}
-              className="p-1.5 text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
+              className="p-1.5 text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all cursor-pointer"
               title="Sign out"
             >
               <LogOut size={13} />
