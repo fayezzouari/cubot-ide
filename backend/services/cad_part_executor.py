@@ -11,6 +11,7 @@ import base64
 import subprocess
 import os
 import re
+import sys
 import logging
 from typing import Optional
 
@@ -22,7 +23,7 @@ from models.cad import CadPlanStep, CadPartResult
 
 logger = logging.getLogger(__name__)
 
-MAX_REFLECTION_ATTEMPTS = 3
+MAX_REFLECTION_ATTEMPTS = 10
 
 
 EXECUTOR_SYSTEM_PROMPT = """You are a CadQuery code generator. You write Python scripts that build 3D geometry using CadQuery.
@@ -214,7 +215,7 @@ cq.exporters.export(_result, _stl_path)
 
         try:
             proc = subprocess.run(
-                ["python", script_path],
+                [sys.executable, script_path],
                 capture_output=True,
                 text=True,
                 timeout=30,

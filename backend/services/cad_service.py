@@ -187,7 +187,7 @@ The `faces()`, `edges()`, and `vertices()` methods use selector strings to filte
     # Generate / update a model
     # ------------------------------------------------------------------
 
-    MAX_REFLECTION_ATTEMPTS = 3
+    MAX_REFLECTION_ATTEMPTS = 10
 
     async def generate(
         self,
