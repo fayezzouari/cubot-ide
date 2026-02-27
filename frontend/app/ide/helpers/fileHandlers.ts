@@ -33,7 +33,7 @@ export async function importSandboxFile({
   const fileType = FILE_TYPE_MAP[ext] || 'other';
   if (currentProject && Array.isArray(currentProject.files)) {
     const relPath = entry.path; // sandbox relative path like 'src/foo/bar.c'
-    const existing = currentProject.files.find(f => {
+    const existing = currentProject.files.find((f: any) => {
       const dir = f.path && f.path !== '/' && f.path !== '.'
         ? f.path.replace(/^\//, '').replace(/\/$/, '') + '/'
         : '';

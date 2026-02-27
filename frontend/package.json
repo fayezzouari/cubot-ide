@@ -83,6 +83,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/w3c-web-serial": "^1",
     "eslint": "^8",
     "eslint-config-next": "^15",
     "postcss": "^8.5",
