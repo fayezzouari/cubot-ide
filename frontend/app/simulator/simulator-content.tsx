@@ -368,7 +368,7 @@ export default function SimulatorPageContent() {
 
       const result = await compileService.compile({
         project_id: currentProject.id,
-        main_file: mainFile.path,
+        main_file: mainFile.path || mainFile.name,
         file_ids: currentProject.files.map((f) => f.id),
         compiler: 'arduino' as CompilerType,
       });
