@@ -193,9 +193,10 @@ class CompilerService:
 
             files_to_write = normalized_files
             main_file = sketch_dir
-        
-        # Create temporary directory for compilation
-        temp_dir = tempfile.mkdtemp(prefix="cubot_compile_")
+            
+        compile_base = os.environ.get("COMPILE_WORKDIR", "/compile_tmp")
+        os.makedirs(compile_base, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(prefix="cubot_compile_", dir=compile_base)
         
         try:
             # Write files to temp directory
@@ -270,6 +271,16 @@ class CompilerService:
                     compile_time_ms=0,
                 )
 
+            # Translate the container-internal path to the host path for
+            # the -v mount so the compiler container can access the files.
+            host_base = os.environ.get("COMPILE_WORKDIR_HOST",
+                                       os.environ.get("COMPILE_WORKDIR", "/compile_tmp"))
+            host_source_dir = source_dir.replace(
+                os.environ.get("COMPILE_WORKDIR", "/compile_tmp"),
+                host_base,
+                1,
+            )
+
             docker_args = [
                 "run",
                 "--rm",
@@ -279,12 +290,13 @@ class CompilerService:
                 "512m",
                 "--cpus",
                 "0.5",
+                "--entrypoint",
+                "sh",
                 "-v",
-                f"{source_dir}:/src",
+                f"{host_source_dir}:/src",
                 "-w",
                 "/src",
                 image_name,
-                "sh",
                 "-lc",
                 command,
             ]
