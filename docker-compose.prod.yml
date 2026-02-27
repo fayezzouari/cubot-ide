@@ -12,5 +12,3 @@ services:
   frontend:
     image: ${ECR_REGISTRY}/cubot/frontend:${IMAGE_TAG:-latest}
     build: !reset {}
-    environment:
-      - NEXTAUTH_URL=https://${DOMAIN:-localhost}

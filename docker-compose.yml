@@ -56,8 +56,6 @@ services:
     container_name: cubot-frontend
     restart: unless-stopped
     env_file: frontend/.env.local
-    environment:
-      - NEXTAUTH_URL=http://${DOMAIN:-localhost}
     depends_on:
       - backend
     networks:
