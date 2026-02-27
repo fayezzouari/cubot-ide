@@ -1,4 +1,18 @@
 services:
+  compiler-arduino:
+    build:
+      context: ./compilers
+      dockerfile: arduino.Dockerfile
+    image: cubot/arduino-compiler:latest
+    profiles: ["build-compilers"]
+
+  compiler-arm:
+    build:
+      context: ./compilers
+      dockerfile: arm.Dockerfile
+    image: cubot/ti-arm-compiler:latest
+    profiles: ["build-compilers"]
+
   mongodb:
     image: mongo:7.0
     container_name: cubot-mongodb
@@ -22,8 +36,11 @@ services:
     environment:
       - MONGODB_URI=mongodb://${MONGO_USER:-cubot}:${MONGO_PASSWORD:-cubot_secret}@mongodb:27017/cubot_ide?authSource=admin
       - ALLOWED_ORIGINS=http://localhost,https://${DOMAIN:-localhost}
+      - COMPILE_WORKDIR=/compile_tmp
+      - COMPILE_WORKDIR_HOST=${COMPILE_HOST_DIR:-/opt/cubot/compiles}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${COMPILE_HOST_DIR:-/opt/cubot/compiles}:/compile_tmp
     depends_on:
       - mongodb
     networks:
@@ -35,6 +52,7 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_API_URL=/api
+        - NEXT_PUBLIC_WS_URL=ws://${DOMAIN:-localhost}
     container_name: cubot-frontend
     restart: unless-stopped
     env_file: frontend/.env.local
