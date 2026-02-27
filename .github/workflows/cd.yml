@@ -80,26 +80,27 @@ jobs:
 
       - name: Write .env files and deploy
         uses: appleboy/ssh-action@v1
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          MONGO_USER: ${{ secrets.MONGO_USER }}
+          MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          AWS_BEDROCK_MODEL_ID: ${{ secrets.AWS_BEDROCK_MODEL_ID }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          COMPILE_HOST_DIR: ${{ secrets.COMPILE_HOST_DIR }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: |
-            AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }},
-            AWS_REGION=${{ secrets.AWS_REGION }},
-            AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }},
-            AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }},
-            DOMAIN=${{ secrets.DOMAIN }},
-            MONGO_USER=${{ secrets.MONGO_USER }},
-            MONGO_PASSWORD=${{ secrets.MONGO_PASSWORD }},
-            NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }},
-            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},
-            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }},
-            AWS_BEDROCK_MODEL_ID=${{ secrets.AWS_BEDROCK_MODEL_ID }},
-            DAYTONA_API_KEY=${{ secrets.DAYTONA_API_KEY }},
-            SECRET_KEY=${{ secrets.SECRET_KEY }},
-            COMPILE_HOST_DIR=${{ secrets.COMPILE_HOST_DIR }},
-            IMAGE_TAG=${{ needs.build-and-push.outputs.image_tag }}
+          envs: AWS_ACCOUNT_ID,AWS_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,DOMAIN,MONGO_USER,MONGO_PASSWORD,NEXTAUTH_SECRET,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,AWS_BEDROCK_MODEL_ID,DAYTONA_API_KEY,SECRET_KEY,COMPILE_HOST_DIR,IMAGE_TAG
           script: |
             set -euo pipefail
             cd /home/ubuntu/cubot-ide
