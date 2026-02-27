@@ -1,11 +1,8 @@
-version: '3.8'
-
 services:
   mongodb:
     image: mongo:7.0
     container_name: cubot-mongodb
     restart: unless-stopped
-    env_file: .env
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-cubot}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-cubot_secret}
@@ -21,16 +18,10 @@ services:
       dockerfile: Dockerfile
     container_name: cubot-backend
     restart: unless-stopped
-    env_file: .env
+    env_file: backend/.env
     environment:
       - MONGODB_URI=mongodb://${MONGO_USER:-cubot}:${MONGO_PASSWORD:-cubot_secret}@mongodb:27017/cubot_ide?authSource=admin
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID}
       - ALLOWED_ORIGINS=http://localhost,https://${DOMAIN:-localhost}
-      - DAYTONA_API_KEY=${DAYTONA_API_KEY}
-      - SECRET_KEY=${SECRET_KEY}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -46,12 +37,9 @@ services:
         - NEXT_PUBLIC_API_URL=/api
     container_name: cubot-frontend
     restart: unless-stopped
-    env_file: .env
+    env_file: frontend/.env.local
     environment:
       - NEXTAUTH_URL=https://${DOMAIN:-localhost}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     depends_on:
       - backend
     networks:
