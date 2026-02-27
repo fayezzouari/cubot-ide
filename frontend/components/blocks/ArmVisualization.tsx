@@ -8,6 +8,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 
 // Extend Three.js elements for JSX
+// @ts-ignore — passing the full THREE namespace is valid at runtime
 extend(THREE);
 
 interface ArmVisualizationProps {
