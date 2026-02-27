@@ -49,17 +49,10 @@ export default function IDEPage() {
   const [isExplaining, setIsExplaining] = useState(false);
   const [explanation, setExplanation] = useState('');
   const [isSerialModalOpen, setIsSerialModalOpen] = useState(false);
-  const [serialPort, setSerialPort] = useState('/dev/ttyACM0');
-  const [serialBaud, setSerialBaud] = useState('115200');
-  const [serialLogs, setSerialLogs] = useState('');
-  const [isSerialConnecting, setIsSerialConnecting] = useState(false);
-  const [isSerialConnected, setIsSerialConnected] = useState(false);
-  const [serialError, setSerialError] = useState<string | null>(null);
   const [codeContexts, setCodeContexts] = useState<CodeContext[]>([]);
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
-  const serialSocketRef = useRef<WebSocket | null>(null);
   const hasLoadedProjectRef = useRef(false);
 
   // Sandbox file tree state
@@ -664,11 +657,7 @@ export default function IDEPage() {
     setIsCompileModalOpen(true);
   };
 
-  const handleOpenSerialModal = () => {
-    setSerialError(null);
-    setSerialLogs('');
-    setIsSerialModalOpen(true);
-  };
+  const handleOpenSerialModal = () => setIsSerialModalOpen(true);
 
   const handleOpenUploadModal = () => setIsUploadModalOpen(true);
 
@@ -702,54 +691,6 @@ export default function IDEPage() {
     } catch (err: any) {
       return { hexOutput: '', logs: '', errors: [err?.message ?? 'Compilation failed'] };
     }
-  };
-
-  const handleDisconnectSerial = () => {
-    if (serialSocketRef.current) {
-      serialSocketRef.current.close();
-      serialSocketRef.current = null;
-    }
-    setIsSerialConnected(false);
-    setIsSerialConnecting(false);
-  };
-
-  const handleConnectSerial = () => {
-    if (!currentProject) return;
-    if (isSerialConnected || isSerialConnecting) return;
-
-    setSerialError(null);
-    setIsSerialConnecting(true);
-
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-    const wsBase = apiBase.startsWith('/')
-      ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${apiBase}`
-      : apiBase.replace(/^http/, 'ws');
-    const wsUrl = `${wsBase}/ws/serial?project_id=${currentProject.id}&port=${encodeURIComponent(
-      serialPort,
-    )}&baud=${encodeURIComponent(serialBaud)}`;
-
-    const ws = new WebSocket(wsUrl);
-    serialSocketRef.current = ws;
-
-    ws.onopen = () => {
-      setIsSerialConnected(true);
-      setIsSerialConnecting(false);
-      setSerialLogs('');
-    };
-
-    ws.onmessage = (event) => {
-      setSerialLogs((prev) => `${prev}${prev ? '\n' : ''}${event.data}`);
-    };
-
-    ws.onerror = () => {
-      setSerialError('Failed to connect to serial monitor.');
-      setIsSerialConnecting(false);
-    };
-
-    ws.onclose = () => {
-      setIsSerialConnected(false);
-      setIsSerialConnecting(false);
-    };
   };
 
   const handleCompile = async () => {
@@ -912,11 +853,6 @@ export default function IDEPage() {
     initializeProject();
   }, [isInitialized, loadProject]);
 
-  useEffect(() => {
-    return () => {
-      handleDisconnectSerial();
-    };
-  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-black text-foreground overflow-hidden">
@@ -946,16 +882,6 @@ export default function IDEPage() {
       <SerialDialog
         open={isSerialModalOpen}
         onOpenChange={setIsSerialModalOpen}
-        serialPort={serialPort}
-        onSerialPortChange={setSerialPort}
-        serialBaud={serialBaud}
-        onSerialBaudChange={setSerialBaud}
-        isSerialConnected={isSerialConnected}
-        isSerialConnecting={isSerialConnecting}
-        serialError={serialError}
-        serialLogs={serialLogs}
-        onConnect={handleConnectSerial}
-        onDisconnect={handleDisconnectSerial}
       />
 
       <UploadDialog
