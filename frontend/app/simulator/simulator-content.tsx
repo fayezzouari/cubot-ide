@@ -431,337 +431,388 @@ export default function SimulatorPageContent() {
 
   if (projectLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background">
-        <div className="text-foreground font-bold">Loading project...</div>
+      <div className="h-screen flex items-center justify-center bg-[#080808]">
+        <div className="flex items-center gap-3 text-white/40 text-sm">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+          Loading project…
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
-      {/* Header */}
-      <header className="h-14 border-b border-border flex items-center justify-between px-4 bg-[#252526]">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 cursor-pointer">
-            <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
-              <span className="text-primary font-semibold text-sm">⚙</span>
+    <div className="h-screen flex flex-col bg-[#080808] text-[#ededed] overflow-hidden">
+
+      {/* ── Top bar ─────────────────────────────────────────────────────── */}
+      <header className="h-12 border-b border-white/[0.06] flex items-center justify-between px-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="w-7 h-7 bg-blue-500/10 rounded-lg flex items-center justify-center">
+              <Cpu size={13} className="text-blue-400" />
             </div>
-            <span className="text-lg font-semibold text-foreground">CuBot Simulator</span>
+            <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">
+              Simulator
+            </span>
           </Link>
+          {currentProject && (
+            <>
+              <span className="text-white/20">/</span>
+              <span className="text-sm text-white/40 font-mono">{currentProject.name}</span>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
+
+        <div className="flex items-center gap-1.5">
+          {/* Compile */}
+          <button
             onClick={handleCompile}
             disabled={compileStatus === 'compiling'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-white/70 hover:text-white"
           >
-            <Cpu size={14} className="mr-2" />
-            {compileStatus === 'compiling' ? 'Compiling...' : 'Compile'}
-          </Button>
+            <Cpu size={12} />
+            {compileStatus === 'compiling' ? 'Compiling…' : 'Compile'}
+          </button>
+
+          {/* Run / Stop */}
           {!isRunning ? (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
               onClick={handleStart}
               disabled={compileStatus !== 'ready'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 hover:border-blue-500/30 text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
-              <Play size={14} className="mr-2" />
+              <Play size={12} />
               Run
-            </Button>
+            </button>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
               onClick={handleStop}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 transition-colors"
             >
-              <Square size={14} className="mr-2" />
+              <Square size={12} />
               Stop
-            </Button>
+            </button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
+
+          {/* Reset */}
+          <button
             onClick={handleReset}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-white/50 hover:text-white"
           >
-            <RotateCcw size={14} className="mr-2" />
+            <RotateCcw size={12} />
             Reset
-          </Button>
-          <Link href={`/ide?project=${projectId}`}>
-            <Button variant="ghost" size="icon" className="cursor-pointer">
-              <Home size={18} />
-            </Button>
+          </button>
+
+          <div className="w-px h-5 bg-white/[0.08] mx-1" />
+
+          {/* Back to IDE */}
+          <Link
+            href={`/ide?project=${projectId}`}
+            className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-white/40 hover:text-white transition-colors"
+          >
+            <Home size={13} />
           </Link>
         </div>
       </header>
 
-      {/* Main content */}
+      {/* ── Main layout ─────────────────────────────────────────────────── */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Arduino Board Visualization */}
-        <div className="w-1/2 border-r border-border p-6 overflow-y-auto bg-background">
-          <h2 className="text-xl font-semibold mb-4 text-foreground">Arduino Uno</h2>
 
-          {/* Simple board representation */}
-          <div className="bg-blue-900 border border-border rounded-lg p-6 max-w-md">
-            <div className="flex justify-between mb-4">
-              <span className="text-white font-bold text-xs">DIGITAL PINS</span>
-            </div>
+        {/* ── Left panel ──────────────────────────────────────────────── */}
+        <div className="w-[420px] shrink-0 border-r border-white/[0.06] flex flex-col min-h-0 overflow-hidden">
+          <ScrollArea className="flex-1">
+            <div className="p-4 space-y-3">
 
-            {/* Pin row */}
-            <div className="flex gap-1 mb-6">
-              {[13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map((pin) => (
-                <div
-                  key={pin}
-                  className={`w-6 h-6 rounded border-2 border-white flex items-center justify-center text-xs font-bold ${
-                    ledStates[pin] ? 'bg-yellow-400 text-black' : 'bg-gray-700 text-white'
-                  }`}
-                  title={`Pin ${pin}`}
-                >
-                  {pin}
-                </div>
-              ))}
-            </div>
-
-            {/* Built-in LED indicator */}
-            <div className="flex items-center gap-3 mt-4">
-              <Lightbulb
-                size={32}
-                className={ledStates[13] ? 'text-yellow-400' : 'text-gray-500'}
-                fill={ledStates[13] ? '#facc15' : 'none'}
-              />
-              <span className="text-white font-bold">
-                LED (Pin 13): {ledStates[13] ? 'ON' : 'OFF'}
-              </span>
-            </div>
-
-            {/* Status */}
-            <div className="mt-6 p-2 bg-black/30 rounded">
-              <span className="text-green-400 font-mono text-xs">
-                {isRunning ? '● Running' : '○ Stopped'}
-              </span>
-            </div>
-          </div>
-
-          {/* Environment Simulator & Sensors */}
-          <div className="mt-6 border border-border rounded-lg max-w-md bg-card">
-            {/* Environment Presets */}
-            <div className="border-b border-border p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-sm text-foreground">Environments</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setShowCreateEnv((v) => !v)}
-                >
-                  <Plus size={12} className="mr-1" />
-                  Custom
-                </Button>
-              </div>
-
-              {showCreateEnv && (
-                <div className="mb-2 flex items-center gap-2 p-2 border border-dashed border-primary rounded">
-                  <Input
-                    value={newEnvName}
-                    onChange={(e) => setNewEnvName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleCreateCustomEnvironment()}
-                    placeholder="Environment name..."
-                    className="h-7 text-xs flex-1 border border-input"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={handleCreateCustomEnvironment}
-                    disabled={!newEnvName.trim() || sensors.length === 0}
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setShowCreateEnv(false)}
-                  >
-                    <X size={12} />
-                  </Button>
-                </div>
-              )}
-
-              <div className="grid grid-cols-3 gap-1.5">
-                {ENVIRONMENT_PRESETS.map((env) => (
-                  <button
-                    key={env.id}
-                    onClick={() => handleActivateEnvironment(env.id)}
-                    title={env.description}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
-                      activeEnvironment === env.id
-                        ? 'border-primary bg-primary/15 text-primary shadow-sm'
-                        : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                    }`}
-                  >
-                    {getEnvIcon(env.icon)}
-                    <span className="truncate w-full text-center leading-tight">{env.name}</span>
-                  </button>
-                ))}
-                {customEnvironments.map((env) => (
-                  <div key={env.id} className="relative group">
-                    <button
-                      onClick={() => handleActivateEnvironment(env.id)}
-                      className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs font-medium transition-all w-full cursor-pointer ${
-                        activeEnvironment === env.id
-                          ? 'border-primary bg-primary/15 text-primary shadow-sm'
-                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                      }`}
-                    >
-                      <FlaskConical size={14} />
-                      <span className="truncate w-full text-center leading-tight">{env.name}</span>
-                    </button>
-                    <button
-                      onClick={() => handleDeleteCustomEnvironment(env.id)}
-                      className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                    >
-                      <X size={8} />
-                    </button>
+              {/* Board card */}
+              <div className="rounded-xl border border-white/[0.06] bg-[#0e0e0e] overflow-hidden">
+                {/* Card header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-blue-500/10 flex items-center justify-center">
+                      <Cpu size={11} className="text-blue-400" />
+                    </div>
+                    <span className="text-xs font-semibold text-white/80">Arduino Uno</span>
                   </div>
-                ))}
-              </div>
-              {activeEnvironment && (
-                <p className="text-[10px] text-muted-foreground mt-2 leading-tight">
-                  ✓ Active — link sensors below to this environment so their values update when it&apos;s activated.
-                </p>
-              )}
-            </div>
+                  {/* Status pill */}
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                    isRunning
+                      ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                      : simState === 'error'
+                        ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                        : 'bg-white/[0.04] border-white/[0.08] text-white/30'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full bg-current ${isRunning ? 'animate-pulse' : ''}`} />
+                    {isRunning ? 'Running' : simState === 'error' ? 'Error' : 'Idle'}
+                  </div>
+                </div>
 
-            {/* Sensors */}
-            <div className="p-3">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm text-foreground">Sensors</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                  onClick={handleAddSensor}
-                >
-                  <Plus size={12} className="mr-1" />
-                  Add
-                </Button>
+                <div className="p-4 space-y-4">
+                  {/* Digital pin row */}
+                  <div>
+                    <p className="text-[10px] font-medium text-white/30 uppercase tracking-widest mb-2">Digital Pins</p>
+                    <div className="flex flex-wrap gap-1">
+                      {[13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map((pin) => (
+                        <div
+                          key={pin}
+                          title={`Pin ${pin}`}
+                          className={`w-7 h-7 rounded-md border flex items-center justify-center text-[10px] font-mono font-semibold transition-all ${
+                            ledStates[pin]
+                              ? 'bg-yellow-400/20 border-yellow-400/40 text-yellow-300 shadow-[0_0_6px_rgba(250,204,21,0.3)]'
+                              : 'bg-white/[0.03] border-white/[0.08] text-white/30'
+                          }`}
+                        >
+                          {pin}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* LED indicator */}
+                  <div className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                    ledStates[13]
+                      ? 'bg-yellow-400/10 border-yellow-400/20'
+                      : 'bg-white/[0.02] border-white/[0.06]'
+                  }`}>
+                    <Lightbulb
+                      size={20}
+                      className={ledStates[13] ? 'text-yellow-300' : 'text-white/20'}
+                      fill={ledStates[13] ? 'currentColor' : 'none'}
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-white/70">Built-in LED</p>
+                      <p className="text-[10px] font-mono text-white/30">Pin 13</p>
+                    </div>
+                    <span className={`ml-auto text-xs font-semibold tabular-nums ${ledStates[13] ? 'text-yellow-300' : 'text-white/20'}`}>
+                      {ledStates[13] ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                </div>
               </div>
-              {sensors.length === 0 ? (
-                <p className="text-xs text-muted-foreground mt-2">No sensors added yet. Click Add to attach virtual sensors.</p>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {sensors.map((sensor) => {
-                    const option = getSensorOption(sensor.type);
-                    const linked = sensor.linkedEnv !== null;
-                    const linkedEnvName =
-                      ENVIRONMENT_PRESETS.find((e) => e.id === sensor.linkedEnv)?.name ??
-                      customEnvironments.find((e) => e.id === sensor.linkedEnv)?.name;
-                    return (
-                      <div
-                        key={sensor.id}
-                        className={`border rounded-lg p-2 transition-colors ${
-                          linked ? 'border-primary/60 bg-primary/5' : 'border-border'
+
+              {/* Compile status banner */}
+              {compileStatus === 'error' && (
+                <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-red-950/20 border border-red-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1 shrink-0" />
+                  <p className="text-[11px] font-mono text-red-300/80 leading-relaxed">{compileError}</p>
+                </div>
+              )}
+              {compileStatus === 'ready' && (
+                <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-green-950/20 border border-green-500/20 text-green-400 text-[11px] font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                  Compiled — click Run to start simulation
+                </div>
+              )}
+
+              {/* Environments card */}
+              <div className="rounded-xl border border-white/[0.06] bg-[#0e0e0e] overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+                  <span className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">Environments</span>
+                  <button
+                    onClick={() => setShowCreateEnv((v) => !v)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-white/50 hover:text-white transition-colors"
+                  >
+                    <Plus size={10} />
+                    Custom
+                  </button>
+                </div>
+
+                <div className="p-3 space-y-3">
+                  {showCreateEnv && (
+                    <div className="flex items-center gap-2 p-2.5 rounded-lg border border-blue-500/20 bg-blue-500/5">
+                      <input
+                        value={newEnvName}
+                        onChange={(e) => setNewEnvName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleCreateCustomEnvironment()}
+                        placeholder="Environment name…"
+                        className="flex-1 bg-transparent text-xs font-medium text-white/80 placeholder:text-white/20 outline-none"
+                      />
+                      <button
+                        onClick={handleCreateCustomEnvironment}
+                        disabled={!newEnvName.trim() || sensors.length === 0}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/20 text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Save
+                      </button>
+                      <button onClick={() => setShowCreateEnv(false)} className="text-white/30 hover:text-white/60 transition-colors">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {ENVIRONMENT_PRESETS.map((env) => (
+                      <button
+                        key={env.id}
+                        onClick={() => handleActivateEnvironment(env.id)}
+                        title={env.description}
+                        className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg border text-[11px] font-medium transition-all cursor-pointer ${
+                          activeEnvironment === env.id
+                            ? 'border-blue-500/30 bg-blue-500/10 text-blue-400'
+                            : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04] text-white/50 hover:text-white/80'
                         }`}
                       >
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={sensor.type}
-                            onChange={(e) => {
-                              const next = getSensorOption(e.target.value);
-                              handleUpdateSensor(sensor.id, {
-                                type: next.type,
-                                pin: next.defaultPin,
-                                value: next.defaultValue,
-                              });
-                            }}
-                            className="flex-1 border border-input px-2 py-1 text-xs font-medium bg-background rounded cursor-pointer"
-                          >
-                            {SENSOR_OPTIONS.map((opt) => (
-                              <option key={opt.type} value={opt.type}>
-                                {opt.type}
-                              </option>
-                            ))}
-                          </select>
-                          <Input
-                            value={sensor.pin}
-                            onChange={(e) => handleUpdateSensor(sensor.id, { pin: e.target.value })}
-                            className="w-16 h-7 text-xs font-mono border border-input"
-                            placeholder="A0"
-                          />
-                          {activeEnvironment && (
-                            <Button
-                              variant={linked ? 'default' : 'outline'}
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => handleToggleSensorLink(sensor.id, activeEnvironment)}
-                              title={linked ? `Linked to ${linkedEnvName}` : 'Link to active environment'}
-                            >
-                              {linked ? <Link2 size={12} /> : <Unlink size={12} />}
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => handleRemoveSensor(sensor.id)}
-                          >
-                            <Trash2 size={12} />
-                          </Button>
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <input
-                            type="range"
-                            min={option.min}
-                            max={option.max}
-                            value={sensor.value}
-                            onChange={(e) => handleUpdateSensor(sensor.id, { value: Number(e.target.value) })}
-                            className="flex-1 accent-primary"
-                          />
-                          <span className="text-xs font-semibold w-16 text-right tabular-nums">
-                            {sensor.value} {option.unit}
-                          </span>
-                        </div>
-                        {linked && (
-                          <div className="mt-1 text-[10px] text-primary flex items-center gap-1">
-                            <Link2 size={8} /> Linked to {linkedEnvName}
-                          </div>
-                        )}
+                        <span className={activeEnvironment === env.id ? 'text-blue-400' : 'text-white/30'}>
+                          {getEnvIcon(env.icon)}
+                        </span>
+                        <span className="truncate w-full text-center leading-tight">{env.name}</span>
+                      </button>
+                    ))}
+                    {customEnvironments.map((env) => (
+                      <div key={env.id} className="relative group">
+                        <button
+                          onClick={() => handleActivateEnvironment(env.id)}
+                          className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg border text-[11px] font-medium transition-all w-full cursor-pointer ${
+                            activeEnvironment === env.id
+                              ? 'border-blue-500/30 bg-blue-500/10 text-blue-400'
+                              : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04] text-white/50 hover:text-white/80'
+                          }`}
+                        >
+                          <FlaskConical size={13} className={activeEnvironment === env.id ? 'text-blue-400' : 'text-white/30'} />
+                          <span className="truncate w-full text-center leading-tight">{env.name}</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCustomEnvironment(env.id)}
+                          className="absolute -top-1 -right-1 bg-red-500 rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        >
+                          <X size={7} className="text-white" />
+                        </button>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
+
+                  {activeEnvironment && (
+                    <p className="text-[10px] text-white/30 leading-relaxed">
+                      Environment active — link sensors below to sync their values.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Sensors card */}
+              <div className="rounded-xl border border-white/[0.06] bg-[#0e0e0e] overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+                  <span className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">Sensors</span>
+                  <button
+                    onClick={handleAddSensor}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-white/50 hover:text-white transition-colors"
+                  >
+                    <Plus size={10} />
+                    Add
+                  </button>
+                </div>
+
+                <div className="p-3">
+                  {sensors.length === 0 ? (
+                    <p className="text-[11px] text-white/25 py-2 text-center">
+                      No sensors yet — click Add to attach a virtual sensor
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {sensors.map((sensor) => {
+                        const option = getSensorOption(sensor.type);
+                        const linked = sensor.linkedEnv !== null;
+                        const linkedEnvName =
+                          ENVIRONMENT_PRESETS.find((e) => e.id === sensor.linkedEnv)?.name ??
+                          customEnvironments.find((e) => e.id === sensor.linkedEnv)?.name;
+                        return (
+                          <div
+                            key={sensor.id}
+                            className={`rounded-lg border p-2.5 transition-colors ${
+                              linked
+                                ? 'border-blue-500/20 bg-blue-500/[0.04]'
+                                : 'border-white/[0.06] bg-white/[0.02]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={sensor.type}
+                                onChange={(e) => {
+                                  const next = getSensorOption(e.target.value);
+                                  handleUpdateSensor(sensor.id, {
+                                    type: next.type,
+                                    pin: next.defaultPin,
+                                    value: next.defaultValue,
+                                  });
+                                }}
+                                className="flex-1 bg-[#161616] border border-white/[0.08] rounded-md px-2 py-1 text-[11px] font-medium text-white/70 cursor-pointer focus:outline-none focus:border-blue-500/40"
+                              >
+                                {SENSOR_OPTIONS.map((opt) => (
+                                  <option key={opt.type} value={opt.type}>{opt.type}</option>
+                                ))}
+                              </select>
+                              <input
+                                value={sensor.pin}
+                                onChange={(e) => handleUpdateSensor(sensor.id, { pin: e.target.value })}
+                                className="w-14 bg-[#161616] border border-white/[0.08] rounded-md px-2 py-1 text-[11px] font-mono text-white/70 text-center focus:outline-none focus:border-blue-500/40"
+                                placeholder="A0"
+                              />
+                              {activeEnvironment && (
+                                <button
+                                  onClick={() => handleToggleSensorLink(sensor.id, activeEnvironment)}
+                                  title={linked ? `Linked to ${linkedEnvName}` : 'Link to active environment'}
+                                  className={`w-7 h-7 rounded-md border flex items-center justify-center transition-colors ${
+                                    linked
+                                      ? 'bg-blue-500/20 border-blue-500/30 text-blue-400'
+                                      : 'border-white/[0.08] bg-white/[0.03] text-white/30 hover:text-white/60'
+                                  }`}
+                                >
+                                  {linked ? <Link2 size={11} /> : <Unlink size={11} />}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleRemoveSensor(sensor.id)}
+                                className="w-7 h-7 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-white/25 hover:text-red-400 hover:border-red-500/20 hover:bg-red-500/[0.05] transition-colors"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+
+                            <div className="mt-2.5 flex items-center gap-2.5">
+                              <input
+                                type="range"
+                                min={option.min}
+                                max={option.max}
+                                value={sensor.value}
+                                onChange={(e) => handleUpdateSensor(sensor.id, { value: Number(e.target.value) })}
+                                className="flex-1 accent-blue-500 h-1 cursor-pointer"
+                              />
+                              <span className="text-[11px] font-mono text-white/50 w-16 text-right tabular-nums shrink-0">
+                                {sensor.value} {option.unit}
+                              </span>
+                            </div>
+
+                            {linked && (
+                              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-blue-400/70">
+                                <Link2 size={8} />
+                                Linked to {linkedEnvName}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* ── Right panel ─────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+          {/* Wiring Diagram */}
+          <div className="flex-1 border-b border-white/[0.06] flex flex-col min-h-0 overflow-hidden">
+            <div className="h-10 border-b border-white/[0.04] flex items-center px-4 shrink-0">
+              <span className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">Wiring Diagram</span>
+              {isGeneratingWiring && (
+                <div className="ml-auto flex items-center gap-1.5 text-[11px] text-blue-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  Generating…
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Compile status */}
-          {compileStatus === 'error' && (
-            <div className="mt-4 p-3 bg-destructive/10 border border-destructive rounded-lg">
-              <span className="text-destructive font-medium text-sm">{compileError}</span>
-            </div>
-          )}
-
-          {compileStatus === 'ready' && (
-            <div className="mt-4 p-3 bg-green-500/10 border border-green-500 rounded-lg">
-              <span className="text-green-600 font-medium text-sm">
-                ✓ Compiled successfully. Click Run to start simulation.
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Right panel: Wiring Diagram + Serial Monitor */}
-        <div className="w-1/2 flex flex-col min-h-0 overflow-hidden bg-background">
-          {/* Wiring Diagram */}
-          <div className="flex-1 border-b border-border flex flex-col min-h-0 overflow-hidden">
-            <div className="h-10 border-b border-border flex items-center px-4 shrink-0 bg-[#252526]">
-              <span className="font-semibold text-sm text-foreground">Wiring Diagram</span>
-              {isGeneratingWiring && (
-                <span className="ml-auto text-xs font-medium text-primary">Generating…</span>
-              )}
-            </div>
-            <div className="flex-1 min-h-0 relative">
+            <div className="flex-1 min-h-0 relative bg-[#080808]">
               <WiringDiagram
                 guide={wiringGuide}
                 loading={isGeneratingWiring}
@@ -771,18 +822,30 @@ export default function SimulatorPageContent() {
           </div>
 
           {/* Serial Monitor */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="h-10 border-b border-border flex items-center px-4 shrink-0 bg-[#252526]">
-              <span className="font-semibold text-sm text-foreground">Serial Monitor</span>
+          <div className="h-52 shrink-0 flex flex-col min-h-0 overflow-hidden">
+            <div className="h-10 border-b border-white/[0.04] flex items-center px-4 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-white/10" />
+                <span className="w-1.5 h-1.5 rounded-full bg-white/10" />
+                <span className="w-1.5 h-1.5 rounded-full bg-white/10" />
+              </div>
+              <span className="ml-2.5 text-[11px] font-semibold text-white/40 uppercase tracking-wider">Serial Monitor</span>
+              {isRunning && (
+                <div className="ml-auto flex items-center gap-1.5 text-[11px] text-green-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  Live
+                </div>
+              )}
             </div>
-            <div className="flex-1 min-h-0 overflow-hidden bg-[#1e1e1e]">
-              <ScrollArea className="h-full p-4">
-                <pre className="font-mono text-sm whitespace-pre-wrap text-[#cccccc]">
-                  {serialOutput || 'No serial output yet.'}
+            <div className="flex-1 min-h-0 overflow-hidden bg-black">
+              <ScrollArea className="h-full">
+                <pre className="px-4 py-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-white/50">
+                  {serialOutput || <span className="text-white/20">No serial output yet…</span>}
                 </pre>
               </ScrollArea>
             </div>
           </div>
+
         </div>
       </div>
     </div>
