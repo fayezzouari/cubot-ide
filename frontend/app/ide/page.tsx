@@ -721,7 +721,9 @@ export default function IDEPage() {
     setIsSerialConnecting(true);
 
     const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-    const wsBase = apiBase.replace(/^http/, 'ws');
+    const wsBase = apiBase.startsWith('/')
+      ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${apiBase}`
+      : apiBase.replace(/^http/, 'ws');
     const wsUrl = `${wsBase}/ws/serial?project_id=${currentProject.id}&port=${encodeURIComponent(
       serialPort,
     )}&baud=${encodeURIComponent(serialBaud)}`;
