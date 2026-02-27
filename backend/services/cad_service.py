@@ -9,8 +9,6 @@ from typing import List, Optional, AsyncGenerator
 from datetime import datetime
 
 import boto3
-
-logger = logging.getLogger(__name__)
 from botocore.config import Config as BotoConfig
 
 from core.config import settings
@@ -24,6 +22,8 @@ from models.cad import (
 )
 from services.cad_planner import cad_planner
 from services.cad_part_executor import cad_part_executor
+
+logger = logging.getLogger(__name__)
 
 
 class CadService:
@@ -733,7 +733,7 @@ else:
                 accept="application/json",
                 body=body,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("[CAD:bedrock] ✘ Bedrock API call failed")
             raise
 

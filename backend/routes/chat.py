@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, status
-from typing import List, Optional
+from fastapi import APIRouter
+from typing import List
 
 from models.chat import ChatRequest, ChatResponse, ChatMessageInDB, StepExecutionRequest, StepExecutionResponse
 from services.ai_service import ai_service

@@ -14,7 +14,6 @@ from schemas.components import (
     SimulationComponentInstance,
     SimulationConfig,
     ComponentResponse,
-    PinType,
 )
 from services.daytona_service import daytona_service
 from schemas.daytona import CodeExecutionRequest

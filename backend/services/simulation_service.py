@@ -10,7 +10,6 @@ import asyncio
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, Any
@@ -152,7 +151,7 @@ class SimulationService:
                             pass
                 except asyncio.CancelledError:
                     pass
-                except Exception as e:
+                except Exception:
                     session.state = SimulationState.ERROR
                     await on_state_change(SimulationState.ERROR)
 
@@ -171,7 +170,7 @@ class SimulationService:
             await asyncio.gather(read_output(), read_stderr())
 
             # Process ended
-            return_code = await process.wait()
+            await process.wait()
             if session.state == SimulationState.RUNNING:
                 session.state = SimulationState.STOPPED
                 await on_state_change(SimulationState.STOPPED)
@@ -180,7 +179,7 @@ class SimulationService:
             session.state = SimulationState.ERROR
             await on_state_change(SimulationState.ERROR)
             raise RuntimeError("Docker is not available")
-        except Exception as e:
+        except Exception:
             session.state = SimulationState.ERROR
             await on_state_change(SimulationState.ERROR)
             raise

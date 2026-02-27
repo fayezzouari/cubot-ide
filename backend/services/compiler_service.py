@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import docker
 from docker.errors import DockerException
-from docker.errors import ContainerError, ImageNotFound, APIError
+from docker.errors import ContainerError, APIError
 
 from core.config import settings
 from models.file import CompilerType

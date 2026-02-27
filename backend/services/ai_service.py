@@ -363,9 +363,6 @@ class AIService:
         file_operations = []
         execution_logs = []
         
-        # Prepare system message
-        system = [{"text": system_prompt}]
-        
         for iteration in range(max_iterations):
             logger.info(f"Converse iteration {iteration + 1}")
             
@@ -830,8 +827,7 @@ Whenever the user asks you to create, write, generate, or modify ANY file or cod
         # Detect model type
         model_id = settings.BEDROCK_MODEL_ID.lower()
         is_claude = "claude" in model_id or "anthropic" in model_id
-        is_openai = "gpt" in model_id or "openai" in model_id
-        
+
         messages = []
         
         # Add history if provided
