@@ -78,13 +78,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get ECR login password
+        id: ecr-token
+        run: |
+          echo "password=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})" >> "$GITHUB_OUTPUT"
+
       - name: Write .env files and deploy
         uses: appleboy/ssh-action@v1
         env:
-          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          ECR_PASSWORD: ${{ steps.ecr-token.outputs.password }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
           DOMAIN: ${{ secrets.DOMAIN }}
           MONGO_USER: ${{ secrets.MONGO_USER }}
           MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
@@ -100,12 +114,13 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: AWS_ACCOUNT_ID,AWS_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,DOMAIN,MONGO_USER,MONGO_PASSWORD,NEXTAUTH_SECRET,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,AWS_BEDROCK_MODEL_ID,DAYTONA_API_KEY,SECRET_KEY,COMPILE_HOST_DIR,IMAGE_TAG
+          envs: ECR_REGISTRY,ECR_PASSWORD,AWS_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_ACCOUNT_ID,DOMAIN,MONGO_USER,MONGO_PASSWORD,NEXTAUTH_SECRET,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,AWS_BEDROCK_MODEL_ID,DAYTONA_API_KEY,SECRET_KEY,COMPILE_HOST_DIR,IMAGE_TAG
           script: |
             set -euo pipefail
             cd /home/ubuntu/cubot-ide
 
-            ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+            # ── ECR login (no aws CLI needed on EC2) ─────────────
+            echo "${ECR_PASSWORD}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
             # ── Write root .env ──────────────────────────────────
             cat > .env <<EOF
@@ -144,12 +159,6 @@ jobs:
             GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
             GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
             EOF
-
-            # ── ECR login ────────────────────────────────────────
-            AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
-            AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
-            aws ecr get-login-password --region ${AWS_REGION} | \
-              docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
             # ── Pull latest configs from repo ────────────────────
             git fetch origin main && git reset --hard origin/main
