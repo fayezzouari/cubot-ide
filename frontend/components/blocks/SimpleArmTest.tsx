@@ -33,7 +33,7 @@ export default function SimpleArmTest({ joints }: SimpleArmTestProps) {
       </div>
       <div className="mt-4 text-xs text-slate-400">
         If these bars move when you click buttons, the state IS updating.
-        If they don't move, the state is NOT reaching this component.
+        If they don&apos;t move, the state is NOT reaching this component.
       </div>
     </div>
   );

@@ -76,7 +76,7 @@ export default function CadChatPanel({
             </div>
             <p className="text-xs font-semibold text-white/60 mb-1">CAD Assistant</p>
             <p className="text-[11px] text-white/25 leading-relaxed max-w-[220px]">
-              Describe a 3D component or assembly — I'll plan and build it using CadQuery.
+              Describe a 3D component or assembly — I&apos;ll plan and build it using CadQuery.
             </p>
             <div className="mt-5 w-full space-y-1.5">
               <p className="text-[10px] font-medium text-white/20 uppercase tracking-wider mb-2">Try saying</p>

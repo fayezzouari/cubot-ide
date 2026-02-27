@@ -66,10 +66,10 @@ export default function LoginPage() {
 
         {/* Footer link */}
         <p className="text-xs text-white/25 text-center mt-8">
-          Don't have an account?{' '}
-          <a href="/" className="text-white/40 hover:text-white transition-colors">
+          Don&apos;t have an account?{' '}
+          <Link href="/" className="text-white/40 hover:text-white transition-colors">
             Learn more
-          </a>
+          </Link>
         </p>
       </div>
     </main>
