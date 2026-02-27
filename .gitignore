@@ -17,4 +17,9 @@ backend/schemas/*.pyc
 backend/.env
 frontend/.next/
 .env
+.env.local
+.env.production
+.env.production.local
+frontend/.env.local
+frontend/.env.production
 nginx/certs/

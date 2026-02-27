@@ -1,0 +1,16 @@
+# Production overlay — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Replaces local builds with pre-built ECR images.
+# Requires ECR_REGISTRY and IMAGE_TAG to be set in the root .env file.
+
+services:
+  backend:
+    image: ${ECR_REGISTRY}/cubot/backend:${IMAGE_TAG:-latest}
+    build: !reset {}
+
+  frontend:
+    image: ${ECR_REGISTRY}/cubot/frontend:${IMAGE_TAG:-latest}
+    build: !reset {}
+    environment:
+      - NEXTAUTH_URL=https://${DOMAIN:-localhost}
