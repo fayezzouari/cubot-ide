@@ -17,6 +17,14 @@ services:
     networks:
       - cubot-network
 
+  arduino-compiler:
+    build:
+      context: ..
+      dockerfile: compilers/arduino.Dockerfile
+    image: cubot/arduino-compiler:latest
+    command: ["true"]
+    restart: "no"
+
   # Backend API
   backend:
     build:
