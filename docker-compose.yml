@@ -38,6 +38,8 @@ services:
       - ALLOWED_ORIGINS=http://localhost,https://${DOMAIN:-localhost}
       - COMPILE_WORKDIR=/compile_tmp
       - COMPILE_WORKDIR_HOST=${COMPILE_HOST_DIR:-/opt/cubot/compiles}
+    group_add:
+      - "${DOCKER_GID:-984}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${COMPILE_HOST_DIR:-/opt/cubot/compiles}:/compile_tmp
