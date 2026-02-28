@@ -84,17 +84,29 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Deploy via SSM
+        env:
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          MONGO_USER: ${{ secrets.MONGO_USER }}
+          MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
+          COMPILE_HOST_DIR: ${{ secrets.COMPILE_HOST_DIR }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_BEDROCK_MODEL_ID: ${{ secrets.AWS_BEDROCK_MODEL_ID }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
-          ECR_REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
-          ECR_PASSWORD=$(aws ecr get-login-password --region "${{ secrets.AWS_REGION }}")
-          IMAGE_TAG="${{ needs.build-and-push.outputs.image_tag }}"
+          ECR_PASSWORD=$(aws ecr get-login-password --region "$AWS_REGION")
 
           # Build the deploy script on the runner.
-          # GitHub Actions has already expanded all ${{ }} tokens before this shell runs.
-          # The unquoted heredoc lets us embed $ECR_REGISTRY / $ECR_PASSWORD / $IMAGE_TAG
-          # (runner shell vars) directly into the script text.
-          # Inner 'EC2_EOF' delimiters are written as literals so no further expansion
-          # happens when the script runs on EC2.
+          # All variables below are runner env vars, expanded by the unquoted heredoc.
           cat > /tmp/deploy.sh << RUNNER_EOF
           #!/bin/bash
           set -euo pipefail
@@ -108,11 +120,11 @@ jobs:
 
           # ── Write root .env ───────────────────────────────────
           cat > .env << 'EC2_EOF'
-          DOMAIN=${{ secrets.DOMAIN }}
-          MONGO_USER=${{ secrets.MONGO_USER }}
-          MONGO_PASSWORD=${{ secrets.MONGO_PASSWORD }}
-          COMPILE_HOST_DIR=${{ secrets.COMPILE_HOST_DIR }}
-          AWS_REGION=${{ secrets.AWS_REGION }}
+          DOMAIN=$DOMAIN
+          MONGO_USER=$MONGO_USER
+          MONGO_PASSWORD=$MONGO_PASSWORD
+          COMPILE_HOST_DIR=$COMPILE_HOST_DIR
+          AWS_REGION=$AWS_REGION
           ECR_REGISTRY=$ECR_REGISTRY
           IMAGE_TAG=$IMAGE_TAG
           EC2_EOF
@@ -120,28 +132,28 @@ jobs:
           # ── Write backend/.env ────────────────────────────────
           mkdir -p backend
           cat > backend/.env << 'EC2_EOF'
-          MONGODB_URI=mongodb://${{ secrets.MONGO_USER }}:${{ secrets.MONGO_PASSWORD }}@mongodb:27017/cubot_ide?authSource=admin
+          MONGODB_URI=mongodb://$MONGO_USER:$MONGO_PASSWORD@mongodb:27017/cubot_ide?authSource=admin
           MONGODB_DB_NAME=cubot_ide
-          AWS_REGION=${{ secrets.AWS_REGION }}
-          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
-          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          BEDROCK_MODEL_ID=${{ secrets.AWS_BEDROCK_MODEL_ID }}
-          DAYTONA_API_KEY=${{ secrets.DAYTONA_API_KEY }}
-          SECRET_KEY=${{ secrets.SECRET_KEY }}
-          ALLOWED_ORIGINS=https://${{ secrets.DOMAIN }}
+          AWS_REGION=$AWS_REGION
+          AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+          AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID
+          AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+          BEDROCK_MODEL_ID=$AWS_BEDROCK_MODEL_ID
+          DAYTONA_API_KEY=$DAYTONA_API_KEY
+          SECRET_KEY=$SECRET_KEY
+          ALLOWED_ORIGINS=https://$DOMAIN
           COMPILE_WORKDIR=/compile_tmp
-          COMPILE_WORKDIR_HOST=${{ secrets.COMPILE_HOST_DIR }}
+          COMPILE_WORKDIR_HOST=$COMPILE_HOST_DIR
           EC2_EOF
 
           # ── Write frontend/.env.local ─────────────────────────
           mkdir -p frontend
           cat > frontend/.env.local << 'EC2_EOF'
           NEXT_PUBLIC_API_URL=/api
-          NEXTAUTH_URL=https://${{ secrets.DOMAIN }}
-          NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
-          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          NEXTAUTH_URL=https://$DOMAIN
+          NEXTAUTH_SECRET=$NEXTAUTH_SECRET
+          GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+          GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
           EC2_EOF
 
           # ── Deploy ────────────────────────────────────────────
@@ -156,7 +168,7 @@ jobs:
 
           # Send the script to EC2 via SSM (jq handles JSON escaping of the script content)
           COMMAND_ID=$(aws ssm send-command \
-            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --instance-id "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --timeout-seconds 900 \
             --parameters "$(jq -n --rawfile script /tmp/deploy.sh '{commands: [$script]}')" \
@@ -168,19 +180,19 @@ jobs:
           # Wait for the command to finish (30 retries × 30 s = 15 min max)
           AWS_MAX_ATTEMPTS=30 aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+            --instance-id "$INSTANCE_ID"
 
           # Print stderr if the command failed
           STATUS=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --instance-id "$INSTANCE_ID" \
             --query "Status" --output text)
 
           if [ "$STATUS" != "Success" ]; then
             echo "Deploy failed ($STATUS) — stderr:"
             aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
-              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --instance-id "$INSTANCE_ID" \
               --query "StandardErrorContent" --output text
             exit 1
           fi
