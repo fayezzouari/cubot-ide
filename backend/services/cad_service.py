@@ -3,6 +3,7 @@ import base64
 import subprocess
 import tempfile
 import os
+import sys
 import uuid
 import logging
 from typing import List, Optional, AsyncGenerator
@@ -654,7 +655,7 @@ else:
             # Run in subprocess with timeout
             logger.info("[CAD:exec] Running subprocess…")
             proc = subprocess.run(
-                ["python", script_path],
+                [sys.executable, script_path],
                 capture_output=True,
                 text=True,
                 timeout=30,
