@@ -122,6 +122,9 @@ jobs:
             # ── ECR login (no aws CLI needed on EC2) ─────────────
             echo "${ECR_PASSWORD}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
+            # ── Pull latest configs from repo ────────────────────
+            git fetch origin main && git reset --hard origin/main
+
             # ── Write root .env ──────────────────────────────────
             cat > .env <<EOF
             DOMAIN=${DOMAIN}
@@ -159,9 +162,6 @@ jobs:
             GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
             GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
             EOF
-
-            # ── Pull latest configs from repo ────────────────────
-            git fetch origin main && git reset --hard origin/main
 
             # ── Deploy ───────────────────────────────────────────
             docker compose \
