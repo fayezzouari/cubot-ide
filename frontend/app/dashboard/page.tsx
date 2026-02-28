@@ -6,7 +6,7 @@ import Header from '@/components/header';
 import WorkspaceModal from '@/components/workspace-modal';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
-import { Plus, ArrowRight, Trash2, Clock, Code2, Cpu, Blocks, Box } from 'lucide-react';
+import { Plus, ArrowRight, Trash2, Clock, Code2, Cpu, Blocks, Box, X } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import {
   AlertDialog,
@@ -19,6 +19,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -27,7 +31,10 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<ProjectResponse | null>(null);
+
+  const PROJECT_LIMIT = 3;
 
   useEffect(() => {
     let isMounted = true;
@@ -51,6 +58,14 @@ export default function DashboardPage() {
     [...projects].sort((a, b) =>
       new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     ), [projects]);
+
+  const handleNewProject = () => {
+    if (sortedProjects.length >= PROJECT_LIMIT) {
+      setIsLimitModalOpen(true);
+    } else {
+      setIsModalOpen(true);
+    }
+  };
 
   const handleOpenProject = (project: ProjectResponse) => {
     const ws = localStorage.getItem(`cubot-ide-project-workspace-${project.id}`) || 'ide';
@@ -121,7 +136,7 @@ export default function DashboardPage() {
               </p>
             </div>
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={handleNewProject}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
             >
               <Plus size={12} />
@@ -155,7 +170,7 @@ export default function DashboardPage() {
             <p className="text-sm font-medium text-white/60 mb-1">No projects yet</p>
             <p className="text-xs text-white/25 mb-6">Create your first project to get started.</p>
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={handleNewProject}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
             >
               <Plus size={12} />
@@ -253,7 +268,7 @@ export default function DashboardPage() {
 
             {/* New project card */}
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={handleNewProject}
               className="rounded-xl border border-dashed border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.02] transition-all p-5 flex flex-col items-center justify-center gap-2 min-h-[10rem] cursor-pointer group"
             >
               <div className="w-8 h-8 rounded-lg border border-dashed border-white/[0.1] group-hover:border-white/20 flex items-center justify-center transition-colors">
@@ -267,6 +282,36 @@ export default function DashboardPage() {
       </div>
 
       <WorkspaceModal open={isModalOpen} onOpenChange={setIsModalOpen} />
+
+      {/* Project limit modal */}
+      <Dialog open={isLimitModalOpen} onOpenChange={setIsLimitModalOpen}>
+        <DialogContent className="max-w-sm bg-[#0e0e0e] border border-white/[0.08] rounded-xl p-0 gap-0 shadow-2xl overflow-hidden">
+          <div className="px-5 pt-5 pb-4 border-b border-white/[0.06] flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-white leading-none mb-1">Project limit reached</p>
+              <p className="text-xs text-white/40">You&apos;ve reached the maximum of {PROJECT_LIMIT} projects.</p>
+            </div>
+            <button
+              onClick={() => setIsLimitModalOpen(false)}
+              className="p-1 text-white/20 hover:text-white/60 transition-colors cursor-pointer flex-shrink-0"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="p-5 space-y-4">
+            <p className="text-xs text-white/50 leading-relaxed">
+              Our project budget is not high enough for users to create a lot of projects.
+              Please cope with the provided limitations — thank you for your understanding!
+            </p>
+            <button
+              onClick={() => setIsLimitModalOpen(false)}
+              className="w-full inline-flex items-center justify-center px-4 py-2 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
+            >
+              Got it
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
