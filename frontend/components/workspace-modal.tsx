@@ -13,6 +13,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface WorkspaceModalProps {
   open: boolean;
@@ -326,26 +332,43 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
         {step === 'compiler' && (
           <div className="p-4 space-y-4">
             <div className="space-y-2">
+              <TooltipProvider delayDuration={100}>
               {compilerList.map(compiler => {
                 const selected = selectedCompiler === compiler.id;
-                return (
+                const unavailable = compiler.id === 'ti_arm' || compiler.id === 'esp32';
+                const btn = (
                   <button
                     key={compiler.id}
-                    onClick={() => setSelectedCompiler(compiler.id)}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-all cursor-pointer ${
-                      selected
-                        ? 'border-white/30 bg-white/[0.06]'
-                        : 'border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03]'
+                    onClick={() => !unavailable && setSelectedCompiler(compiler.id)}
+                    disabled={unavailable}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-all ${
+                      unavailable
+                        ? 'border-white/[0.04] opacity-40 cursor-not-allowed'
+                        : selected
+                          ? 'border-white/30 bg-white/[0.06] cursor-pointer'
+                          : 'border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03] cursor-pointer'
                     }`}
                   >
                     <div>
                       <p className="text-xs font-semibold text-white/80">{compiler.name}</p>
                       <p className="text-[11px] text-white/30 mt-0.5">{compiler.description}</p>
                     </div>
-                    {selected && <CheckCircle2 size={14} className="text-white/60 flex-shrink-0" />}
+                    {selected && !unavailable && <CheckCircle2 size={14} className="text-white/60 flex-shrink-0" />}
                   </button>
                 );
+                if (unavailable) {
+                  return (
+                    <Tooltip key={compiler.id}>
+                      <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        This feature is not available yet
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                }
+                return btn;
               })}
+              </TooltipProvider>
             </div>
             <div className="flex items-center justify-between pt-1">
               <button
