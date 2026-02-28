@@ -116,7 +116,8 @@ jobs:
           echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
           # ── Pull latest configs from repo ─────────────────────
-          git fetch origin main && git reset --hard origin/main
+          # Run as ubuntu so git uses its SSH key (SSM executes as root by default)
+          sudo -u ubuntu -H git fetch origin main && sudo -u ubuntu -H git reset --hard origin/main
 
           # ── Write root .env ───────────────────────────────────
           cat > .env << 'EC2_EOF'
