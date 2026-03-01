@@ -21,7 +21,7 @@ import { importSandboxFile, syncSandboxToProject } from './helpers/fileHandlers'
 import { handleWorkspaceCreate as wsHandleWorkspaceCreate, handleSyncComplete as wsHandleSyncComplete } from './helpers/wsHandlers';
 
 export default function IDEPage() {
-  const { currentProject, updateFile, deleteFile, loadProject, createFile, compileProject, isLoading } = useProject();
+  const { currentProject, setCurrentProject, updateFile, deleteFile, loadProject, createFile, compileProject, isLoading } = useProject();
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [enableWebsearch, setEnableWebsearch] = useState(false);
@@ -824,12 +824,14 @@ export default function IDEPage() {
       if (isInitialized || hasLoadedProjectRef.current) return;
       hasLoadedProjectRef.current = true;
       
-      // Try to get project ID from URL or localStorage
+      // Try to get project ID from URL — URL always wins over localStorage
       const urlParams = new URLSearchParams(window.location.search);
-      const projectId = urlParams.get('project') || localStorage.getItem('cubot-ide-last-project');
+      const urlProjectId = urlParams.get('project');
+      const projectId = urlProjectId || localStorage.getItem('cubot-ide-last-project');
       
       if (projectId) {
         try {
+          setCurrentProject(null); // clear stale project before fetching new one
           await loadProject(projectId);
           localStorage.setItem('cubot-ide-last-project', projectId);
           console.log('Project loaded from MongoDB:', projectId);
