@@ -174,6 +174,9 @@ jobs:
           DD_VERSION=$IMAGE_TAG
           EC2_EOF
 
+          # ── Remove any standalone dd-agent container (replaced by compose service) ──
+          docker rm -f dd-agent 2>/dev/null || true
+
           # ── Deploy ────────────────────────────────────────────
           docker compose -f docker-compose.yml -f docker-compose.prod.yml pull --parallel backend frontend
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
