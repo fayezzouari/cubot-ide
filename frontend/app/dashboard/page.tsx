@@ -22,6 +22,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from '@/components/ui/dialog';
 
 export default function DashboardPage() {
@@ -288,7 +289,7 @@ export default function DashboardPage() {
         <DialogContent className="max-w-sm bg-[#0e0e0e] border border-white/[0.08] rounded-xl p-0 gap-0 shadow-2xl overflow-hidden">
           <div className="px-5 pt-5 pb-4 border-b border-white/[0.06] flex items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-white leading-none mb-1">Project limit reached</p>
+              <DialogTitle className="text-sm font-semibold text-white leading-none mb-1">Project limit reached</DialogTitle>
               <p className="text-xs text-white/40">You&apos;ve reached the maximum of {PROJECT_LIMIT} projects.</p>
             </div>
             <button
