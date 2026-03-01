@@ -38,6 +38,12 @@ services:
       - ALLOWED_ORIGINS=http://localhost,https://${DOMAIN:-localhost}
       - COMPILE_WORKDIR=/compile_tmp
       - COMPILE_WORKDIR_HOST=${COMPILE_HOST_DIR:-/opt/cubot/compiles}
+      - DD_AGENT_HOST=datadog
+      - DD_SERVICE=cubot-backend
+      - DD_ENV=${DD_ENV:-production}
+      - DD_VERSION=${DD_VERSION:-1.0.0}
+      - DD_TRACE_ANALYTICS_ENABLED=true
+      - DD_LOGS_INJECTION=true
     group_add:
       - "${DOCKER_GID:-984}"
     volumes:
@@ -58,8 +64,34 @@ services:
     container_name: cubot-frontend
     restart: unless-stopped
     env_file: frontend/.env.local
+    environment:
+      - DD_AGENT_HOST=datadog
+      - DD_SERVICE=cubot-frontend
+      - DD_ENV=${DD_ENV:-production}
+      - DD_VERSION=${DD_VERSION:-1.0.0}
     depends_on:
       - backend
+    networks:
+      - cubot-network
+
+  datadog:
+    image: registry.datadoghq.com/agent:7
+    container_name: dd-agent
+    restart: unless-stopped
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.eu}
+      - DD_APM_ENABLED=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_LOGS_ENABLED=true
+      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
+      - DD_CONTAINER_EXCLUDE=name:dd-agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     networks:
       - cubot-network
 

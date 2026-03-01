@@ -102,6 +102,8 @@ jobs:
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_SITE: ${{ secrets.DD_SITE }}
         run: |
           ECR_PASSWORD=$(aws ecr get-login-password --region "$AWS_REGION")
 
@@ -128,6 +130,10 @@ jobs:
           AWS_REGION=$AWS_REGION
           ECR_REGISTRY=$ECR_REGISTRY
           IMAGE_TAG=$IMAGE_TAG
+          DD_API_KEY=$DD_API_KEY
+          DD_SITE=$DD_SITE
+          DD_ENV=production
+          DD_VERSION=$IMAGE_TAG
           EC2_EOF
 
           # ── Write backend/.env ────────────────────────────────
@@ -142,9 +148,16 @@ jobs:
           BEDROCK_MODEL_ID=$AWS_BEDROCK_MODEL_ID
           DAYTONA_API_KEY=$DAYTONA_API_KEY
           SECRET_KEY=$SECRET_KEY
+          NEXTAUTH_SECRET=$NEXTAUTH_SECRET
           ALLOWED_ORIGINS=https://$DOMAIN
           COMPILE_WORKDIR=/compile_tmp
           COMPILE_WORKDIR_HOST=$COMPILE_HOST_DIR
+          DD_AGENT_HOST=datadog
+          DD_SERVICE=cubot-backend
+          DD_ENV=production
+          DD_VERSION=$IMAGE_TAG
+          DD_TRACE_ANALYTICS_ENABLED=true
+          DD_LOGS_INJECTION=true
           EC2_EOF
 
           # ── Write frontend/.env.local ─────────────────────────
@@ -155,6 +168,10 @@ jobs:
           NEXTAUTH_SECRET=$NEXTAUTH_SECRET
           GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
           GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
+          DD_AGENT_HOST=datadog
+          DD_SERVICE=cubot-frontend
+          DD_ENV=production
+          DD_VERSION=$IMAGE_TAG
           EC2_EOF
 
           # ── Deploy ────────────────────────────────────────────
