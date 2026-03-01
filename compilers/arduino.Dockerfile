@@ -11,4 +11,6 @@ RUN curl -fsSL https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux
 RUN arduino-cli core update-index && \
     arduino-cli core install arduino:avr
 
+LABEL cubot.keep="true"
+
 WORKDIR /src

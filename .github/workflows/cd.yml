@@ -185,7 +185,7 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T nginx nginx -s reload || true
 
           # ── Cleanup old images (including old tagged ECR images) ─
-          docker image prune -a -f --filter "until=1h"
+          docker image prune -a -f --filter "until=1h" --filter "label!=cubot.keep=true"
 
           echo "Deploy complete: \$(date) — image $IMAGE_TAG"
           RUNNER_EOF
