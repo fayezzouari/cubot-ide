@@ -135,6 +135,7 @@ jobs:
           DD_ENV=production
           DD_VERSION=$IMAGE_TAG
           EC2_EOF
+          echo "DOCKER_GID=\$(getent group docker | cut -d: -f3)" >> .env
 
           # ── Write backend/.env ────────────────────────────────
           mkdir -p backend
