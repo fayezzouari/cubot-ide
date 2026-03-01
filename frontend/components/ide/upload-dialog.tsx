@@ -105,7 +105,7 @@ export default function UploadDialog({ open, onOpenChange, onCompile }: UploadDi
     if (p === 'idle')      return -1;
     if (p === 'compiling') return 0;
     if (p === 'flashing')  return 1;
-    if (p === 'done')      return 2;
+    if (p === 'done')      return 3;
     return -1; // error — keep last active step highlighted
   };
   const currentStep = stepIndex(phase);
