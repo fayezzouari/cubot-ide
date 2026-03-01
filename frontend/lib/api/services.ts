@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { authHeaders } from './auth-header';
 import type {
   FileResponse,
   FileCreate,
@@ -155,7 +156,7 @@ export const cadService = {
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
     const response = await fetch(`${API_BASE_URL}/cad/export-stl`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify({ cadquery_code: cadqueryCode }),
     });
     if (!response.ok) {
@@ -173,7 +174,7 @@ export const cadService = {
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
     const response = await fetch(`${API_BASE_URL}/cad/${sessionId}/generate-planned`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify(data),
     });
 

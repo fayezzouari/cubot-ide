@@ -2,6 +2,8 @@
  * API client for custom components (sensors/actuators)
  */
 
+import { authHeaders } from './auth-header'
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 export enum ComponentType {
@@ -65,7 +67,7 @@ export const componentsApi = {
   async createComponent(component: Omit<Component, 'id' | 'created_at' | 'updated_at'>): Promise<Component> {
     const response = await fetch(`${API_BASE}/components`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify(component),
     });
     if (!response.ok) throw new Error('Failed to create component');
@@ -76,13 +78,13 @@ export const componentsApi = {
     const params = new URLSearchParams();
     if (componentType) params.append('component_type', componentType);
     
-    const response = await fetch(`${API_BASE}/components?${params}`);
+    const response = await fetch(`${API_BASE}/components?${params}`, { headers: await authHeaders() });
     if (!response.ok) throw new Error('Failed to fetch components');
     return response.json();
   },
 
   async getComponent(id: string): Promise<Component> {
-    const response = await fetch(`${API_BASE}/components/${id}`);
+    const response = await fetch(`${API_BASE}/components/${id}`, { headers: await authHeaders() });
     if (!response.ok) throw new Error('Failed to fetch component');
     return response.json();
   },
@@ -90,7 +92,7 @@ export const componentsApi = {
   async updateComponent(id: string, updates: Partial<Component>): Promise<Component> {
     const response = await fetch(`${API_BASE}/components/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify(updates),
     });
     if (!response.ok) throw new Error('Failed to update component');
@@ -100,6 +102,7 @@ export const componentsApi = {
   async deleteComponent(id: string): Promise<void> {
     const response = await fetch(`${API_BASE}/components/${id}`, {
       method: 'DELETE',
+      headers: await authHeaders(),
     });
     if (!response.ok) throw new Error('Failed to delete component');
   },

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useSession } from 'next-auth/react';
 import { FolderSync, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
   ref,
 ) {
   const { currentProject } = useProject();
+  const { data: session } = useSession();
   const isRosProject = currentProject?.project_type === 'ros';
 
   const terminalDivRef = useRef<HTMLDivElement>(null);
@@ -138,7 +140,8 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
     const wsBase = apiBase.startsWith('/')
       ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${apiBase}`
       : apiBase.replace(/^http/, 'ws');
-    const wsUrl = `${wsBase}/ws/pty/${wsId}`;
+    const token = (session as any)?.backendToken;
+    const wsUrl = `${wsBase}/ws/pty/${wsId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
@@ -221,7 +224,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
       xtermRef.current?.write('\r\n\x1b[31m[WebSocket error]\x1b[0m\r\n');
     };
-  }, []);
+  }, [session]);
 
   // ── 3. Create workspace then connect ─────────────────────────────────────
   const ensureWorkspace = useCallback(async (): Promise<string | null> => {

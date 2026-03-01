@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.database import connect_to_mongo, close_mongo_connection
+from core.auth import get_current_user
 from routes import (
     files_router,
     projects_router,
@@ -45,17 +46,18 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(files_router, prefix="/api")
-app.include_router(projects_router, prefix="/api")
-app.include_router(compile_router, prefix="/api")
-app.include_router(chat_router, prefix="/api")
-app.include_router(serial_router, prefix="/api")
-app.include_router(simulator_router)
-app.include_router(wiring_router, prefix="/api")
-app.include_router(cad_router, prefix="/api")
-app.include_router(blocks_router, prefix="/api")
-app.include_router(components_router, prefix="/api")
-app.include_router(daytona_router, prefix="/api")
+_auth = [Depends(get_current_user)]
+app.include_router(files_router, prefix="/api", dependencies=_auth)
+app.include_router(projects_router, prefix="/api", dependencies=_auth)
+app.include_router(compile_router, prefix="/api", dependencies=_auth)
+app.include_router(chat_router, prefix="/api", dependencies=_auth)
+app.include_router(serial_router, prefix="/api", dependencies=_auth)
+app.include_router(simulator_router)  # WebSocket — auth handled via token query param
+app.include_router(wiring_router, prefix="/api", dependencies=_auth)
+app.include_router(cad_router, prefix="/api", dependencies=_auth)
+app.include_router(blocks_router, prefix="/api", dependencies=_auth)
+app.include_router(components_router, prefix="/api", dependencies=_auth)
+app.include_router(daytona_router, prefix="/api", dependencies=_auth)
 
 
 @app.get("/")

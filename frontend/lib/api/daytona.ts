@@ -2,6 +2,8 @@
  * API client for Daytona workspace management
  */
 
+import { authHeaders } from './auth-header'
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 export enum WorkspaceState {
@@ -65,7 +67,7 @@ export const daytonaApi = {
   async createWorkspace(projectId: string, repositoryUrl?: string): Promise<DaytonaWorkspace> {
     const response = await fetch(`${API_BASE}/daytona/workspaces`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify({
         project_id: projectId,
         repository_url: repositoryUrl,
@@ -78,7 +80,7 @@ export const daytonaApi = {
   },
 
   async getWorkspace(workspaceId: string): Promise<DaytonaWorkspace> {
-    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}`);
+    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}`, { headers: await authHeaders() });
     if (!response.ok) throw new Error('Failed to fetch workspace');
     return response.json();
   },
@@ -86,6 +88,7 @@ export const daytonaApi = {
   async stopWorkspace(workspaceId: string): Promise<void> {
     const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}`, {
       method: 'DELETE',
+      headers: await authHeaders(),
     });
     if (!response.ok) throw new Error('Failed to stop workspace');
   },
@@ -93,7 +96,7 @@ export const daytonaApi = {
   async syncFiles(workspaceId: string, projectId: string): Promise<SyncFilesResponse> {
     const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/sync`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify({ project_id: projectId }),
     });
     if (!response.ok) throw new Error('Failed to sync files');
@@ -103,7 +106,7 @@ export const daytonaApi = {
   async executeCode(request: CodeExecutionRequest): Promise<CodeExecutionResponse> {
     const response = await fetch(`${API_BASE}/daytona/execute`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify(request),
     });
     if (!response.ok) throw new Error('Failed to execute code');
@@ -111,7 +114,7 @@ export const daytonaApi = {
   },
 
   async listFiles(workspaceId: string): Promise<SandboxFileListResponse> {
-    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/files`);
+    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/files`, { headers: await authHeaders() });
     if (!response.ok) throw new Error('Failed to list sandbox files');
     return response.json();
   },
@@ -119,7 +122,8 @@ export const daytonaApi = {
   async getFileContent(workspaceId: string, filePath: string): Promise<SandboxFileContentResponse> {
     const encoded = encodeURIComponent(filePath);
     const response = await fetch(
-      `${API_BASE}/daytona/workspaces/${workspaceId}/file-content?path=${encoded}`
+      `${API_BASE}/daytona/workspaces/${workspaceId}/file-content?path=${encoded}`,
+      { headers: await authHeaders() }
     );
     if (!response.ok) throw new Error('Failed to fetch file content');
     return response.json();
@@ -129,6 +133,7 @@ export const daytonaApi = {
     const encoded = encodeURIComponent(path);
     const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/files?path=${encoded}`, {
       method: 'DELETE',
+      headers: await authHeaders(),
     });
     if (!response.ok) {
       const text = await response.text();
