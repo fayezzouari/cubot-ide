@@ -14,6 +14,7 @@ from routes import (
     wiring_router,
     cad_router,
     blocks_router,
+    arm_ws_router,
     components_router,
     daytona_router,
 )
@@ -52,7 +53,8 @@ app.include_router(projects_router, prefix="/api", dependencies=_auth)
 app.include_router(compile_router, prefix="/api", dependencies=_auth)
 app.include_router(chat_router, prefix="/api", dependencies=_auth)
 app.include_router(serial_router, prefix="/api", dependencies=_auth)
-app.include_router(simulator_router)  # WebSocket — auth handled via token query param
+app.include_router(simulator_router)   # WebSocket — auth handled via token query param
+app.include_router(arm_ws_router, prefix="/api")
 app.include_router(wiring_router, prefix="/api", dependencies=_auth)
 app.include_router(cad_router, prefix="/api", dependencies=_auth)
 app.include_router(blocks_router, prefix="/api", dependencies=_auth)

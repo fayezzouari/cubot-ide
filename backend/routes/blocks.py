@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 from typing import List
 from datetime import datetime
 from bson import ObjectId
+import asyncio
+import json
 import math
 
 from core.database import get_collection
@@ -14,6 +16,7 @@ from schemas.blocks import (
 from services.inverse_kinematics import ArmKinematics
 
 router = APIRouter(tags=["blocks"])
+arm_ws_router = APIRouter(tags=["blocks-ws"])
 
 # In-memory arm state (in production, this could be in Redis or database)
 arm_state = {
@@ -21,6 +24,43 @@ arm_state = {
     "joints": [0, 0, 0, 0, 0, 0],
     "is_moving": False,
 }
+
+# Connected WebSocket clients for arm status streaming
+_arm_ws_clients: set[asyncio.Queue] = set()
+
+
+async def _broadcast_arm_state():
+    """Push current arm_state to all connected WebSocket clients."""
+    if not _arm_ws_clients:
+        return
+    msg = json.dumps(arm_state)
+    for q in list(_arm_ws_clients):
+        try:
+            q.put_nowait(msg)
+        except asyncio.QueueFull:
+            pass
+
+
+@arm_ws_router.websocket("/ws/arm/status")
+async def arm_status_ws(websocket: WebSocket):
+    """Stream real-time arm state to the client while a program is running."""
+    await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+    _arm_ws_clients.add(queue)
+    try:
+        # Send current state immediately on connect
+        await websocket.send_text(json.dumps(arm_state))
+        while True:
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=30)
+                await websocket.send_text(msg)
+            except asyncio.TimeoutError:
+                # Send a ping-style keepalive so the connection doesn't idle-close
+                await websocket.send_text(json.dumps(arm_state))
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        _arm_ws_clients.discard(queue)
 
 
 def block_program_helper(program) -> dict:
@@ -202,12 +242,13 @@ async def move_arm_position(x: float, y: float, z: float):
     # Store the actual achieved position (from FK) instead of assuming target
     arm_state["position"] = {"x": actual_x, "y": actual_y, "z": actual_z}
     arm_state["joints"] = joint_angles
-    
+    await _broadcast_arm_state()
+
     # Simulate gradual movement
-    import asyncio
     await asyncio.sleep(movement_time)
-    
+
     arm_state["is_moving"] = False
+    await _broadcast_arm_state()
     
     return {
         "status": "success",
@@ -235,12 +276,13 @@ async def move_arm_joint(joint: int, angle: float):
     
     arm_state["is_moving"] = True
     arm_state["joints"][joint - 1] = angle
-    
+    await _broadcast_arm_state()
+
     # Simulate gradual movement
-    import asyncio
     await asyncio.sleep(movement_time)
-    
+
     arm_state["is_moving"] = False
+    await _broadcast_arm_state()
     
     return {
         "status": "success",
@@ -258,5 +300,6 @@ async def reset_arm():
     arm_state["position"] = {"x": 0, "y": 0, "z": 0}
     arm_state["joints"] = [0, 0, 0, 0, 0, 0]
     arm_state["is_moving"] = False
-    
+    await _broadcast_arm_state()
+
     return {"status": "success", "message": "Arm reset to home position"}
