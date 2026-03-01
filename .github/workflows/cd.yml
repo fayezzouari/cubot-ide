@@ -181,8 +181,11 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.prod.yml pull --parallel backend frontend
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
 
-          # ── Cleanup old images ────────────────────────────────
-          docker system prune -f --filter "until=24h"
+          # ── Reload nginx to pick up any config changes ─────────
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T nginx nginx -s reload || true
+
+          # ── Cleanup old images (including old tagged ECR images) ─
+          docker image prune -a -f --filter "until=24h"
 
           echo "Deploy complete: \$(date) — image $IMAGE_TAG"
           RUNNER_EOF

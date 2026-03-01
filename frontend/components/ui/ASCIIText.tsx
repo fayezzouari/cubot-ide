@@ -333,6 +333,15 @@ class CanvAscii {
   }
 
   setMesh() {
+    // Clean up previous mesh before rebuilding (called on resize too)
+    if (this.mesh) {
+      this.scene.remove(this.mesh);
+      (this.mesh as any) = undefined;
+    }
+    if (this.geometry) { this.geometry.dispose(); this.geometry = undefined; }
+    if (this.material) { this.material.dispose(); this.material = undefined; }
+    if (this.texture) { this.texture.dispose(); }
+
     this.textCanvas = new CanvasTxt(this.textString, {
       fontSize: this.textFontSize,
       fontFamily: 'IBM Plex Mono',
@@ -345,9 +354,16 @@ class CanvAscii {
     this.texture.minFilter = THREE.NearestFilter;
 
     const textAspect = this.textCanvas.width / this.textCanvas.height;
-    const baseH = this.planeBaseHeight;
-    const planeW = baseH * textAspect;
-    const planeH = baseH;
+
+    // Compute visible frustum dimensions at z=0 so the plane always fits the viewport
+    const fovRad = (this.camera.fov * Math.PI) / 180;
+    const visibleH = 2 * Math.tan(fovRad / 2) * this.camera.position.z;
+    const visibleW = visibleH * (this.width / this.height);
+
+    // Cap planeBaseHeight so text never overflows horizontally (88% of visible width)
+    const maxHFromWidth = (visibleW * 0.88) / textAspect;
+    const planeH = Math.min(this.planeBaseHeight, maxHFromWidth);
+    const planeW = planeH * textAspect;
 
     this.geometry = new THREE.PlaneGeometry(planeW, planeH, 36, 36);
     this.material = new THREE.ShaderMaterial({
@@ -385,6 +401,7 @@ class CanvAscii {
   }
 
   setSize(w: number, h: number) {
+    const prevAspect = this.width / this.height;
     this.width = w;
     this.height = h;
 
@@ -394,6 +411,11 @@ class CanvAscii {
     this.filter.setSize(w, h);
 
     this.center = { x: w / 2, y: h / 2 };
+
+    // Rebuild plane geometry when aspect ratio changes so text refits the new viewport
+    if (Math.abs((w / h) - prevAspect) > 0.05) {
+      this.setMesh();
+    }
   }
 
   load() {

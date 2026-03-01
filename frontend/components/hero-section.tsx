@@ -58,7 +58,7 @@ export default function HeroSection() {
       {/* ── MASSIVE ASCII title ── */}
       <div
         className="hi pointer-events-none relative w-full"
-        style={{ height: '420px', '--d': '60ms' } as React.CSSProperties}
+        style={{ height: 'clamp(150px, 30vw, 420px)', '--d': '60ms' } as React.CSSProperties}
       >
         <ASCIIText
           text="CuBot"

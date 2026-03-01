@@ -1,6 +1,16 @@
 import { NextAuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
-import * as jose from "jose"
+import { createHmac } from "crypto"
+
+function makeBackendToken(payload: Record<string, unknown>, secret: string): string {
+  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")
+  const now = Math.floor(Date.now() / 1000)
+  const body = Buffer.from(
+    JSON.stringify({ ...payload, iat: now, exp: now + 86400 })
+  ).toString("base64url")
+  const sig = createHmac("sha256", secret).update(`${header}.${body}`).digest("base64url")
+  return `${header}.${body}.${sig}`
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -14,18 +24,10 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async jwt({ token }) {
-      // Regenerate a fresh short-lived HS256 token the backend can verify.
-      // Runs server-side only; signing is ~1ms so always refreshing is fine.
-      const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET!)
-      token.backendToken = await new jose.SignJWT({
-        sub: token.sub,
-        email: token.email,
-        name: token.name,
-      })
-        .setProtectedHeader({ alg: "HS256" })
-        .setIssuedAt()
-        .setExpirationTime("1d")
-        .sign(secret)
+      token.backendToken = makeBackendToken(
+        { sub: token.sub, email: token.email, name: token.name },
+        process.env.NEXTAUTH_SECRET!
+      )
       return token
     },
     async session({ session, token }) {
