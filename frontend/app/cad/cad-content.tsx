@@ -266,9 +266,14 @@ export default function CadPageContent() {
         <ResizableHandle className="bg-white/[0.04] hover:bg-white/[0.08] transition-colors w-px" />
         <ResizablePanel defaultSize={70}>
           <CadViewer
-            assemblyParts={planSteps
-              .filter(s => s.status === 'success' && s.stl_base64)
-              .map(s => ({ id: s.id, name: s.name, stl_base64: s.stl_base64! }))}
+            assemblyParts={(() => {
+              const successParts = planSteps
+                .filter(s => s.status === 'success' && s.stl_base64)
+                .map(s => ({ id: s.id, name: s.name, stl_base64: s.stl_base64! }));
+              if (successParts.length > 0) return successParts;
+              if (currentStl) return [{ id: 'current', name: 'Model', stl_base64: currentStl }];
+              return [];
+            })()}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
