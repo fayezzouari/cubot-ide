@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Cubot IDE"
     PROJECT_VERSION: str = "0.1.0"
     
+    # Auth
+    NEXTAUTH_SECRET: str
+
     # MongoDB
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGODB_DB_NAME: str = "cubot_ide"
