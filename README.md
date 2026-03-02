@@ -1,6 +1,13 @@
-# CuBot IDE
+<p align="center">
+  <img src="frontend/public/cubot.svg" alt="CuBot IDE Logo" width="80" />
+</p>
 
-A production-grade web-based IDE for embedded systems and robotics development. CuBot IDE combines a code editor, hardware simulator, AI assistant, CAD design studio, and visual block programming — all in one platform.
+<h1 align="center">CuBot IDE</h1>
+
+<p align="center">
+  A web-based IDE for embedded systems and robotics development.<br/>
+  Code editor · Hardware simulator · AI assistant · CAD studio · Visual block programming — all in one platform.
+</p>
 
 ---
 
