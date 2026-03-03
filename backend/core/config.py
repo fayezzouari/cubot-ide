@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # Exa Web Search
     EXA_API_KEY: Optional[str] = None
 
+    # CORS
+    ALLOWED_ORIGINS: str = "*"
+
     class Config:
         env_file = ".env"
         extra = "allow"
