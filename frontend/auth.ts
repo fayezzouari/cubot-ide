@@ -23,11 +23,28 @@ export const authOptions: NextAuthOptions = {
     signIn: '/',
   },
   callbacks: {
-    async jwt({ token }) {
+    async jwt({ token, account }) {
       token.backendToken = makeBackendToken(
-        { sub: token.sub, email: token.email, name: token.name },
+        { sub: token.sub, email: token.email, name: token.name, picture: token.picture },
         process.env.NEXTAUTH_SECRET!
       )
+
+      // On first sign-in (account is present), sync user with backend
+      if (account) {
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
+          await fetch(`${apiUrl}/users/sync`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token.backendToken}`,
+            },
+          })
+        } catch {
+          // Non-fatal — user sync will be retried on next sign-in
+        }
+      }
+
       return token
     },
     async session({ session, token }) {
