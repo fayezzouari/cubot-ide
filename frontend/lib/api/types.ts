@@ -70,6 +70,7 @@ export interface ProjectResponse {
   description: string;
   target_compiler: string;
   project_type: ProjectType;
+  user_id?: string;
   created_at: string;
   updated_at: string;
   file_count: number;
