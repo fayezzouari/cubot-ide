@@ -13,7 +13,7 @@ class ProjectService:
     COLLECTION_NAME = "projects"
     
     @classmethod
-    async def create_project(cls, project_data: ProjectCreate) -> ProjectResponse:
+    async def create_project(cls, project_data: ProjectCreate, user_id: Optional[str] = None) -> ProjectResponse:
         """Create a new project"""
         collection = get_collection(cls.COLLECTION_NAME)
 
@@ -23,6 +23,7 @@ class ProjectService:
             "target_compiler": project_data.target_compiler.value,
             "project_type": project_data.project_type.value,
             "sandbox_id": project_data.sandbox_id,
+            "user_id": user_id,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -36,6 +37,7 @@ class ProjectService:
             description=doc["description"],
             target_compiler=doc["target_compiler"],
             project_type=doc["project_type"],
+            user_id=doc.get("user_id"),
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             file_count=0,
@@ -59,11 +61,12 @@ class ProjectService:
             description=doc.get("description", ""),
             target_compiler=doc["target_compiler"],
             project_type=doc.get("project_type", "embedded"),
+            user_id=doc.get("user_id"),
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             file_count=len(files),
         )
-    
+
     @classmethod
     async def get_project_with_files(cls, project_id: str) -> Optional[ProjectWithFiles]:
         """Get a project with all its files"""
@@ -81,6 +84,7 @@ class ProjectService:
             description=doc.get("description", ""),
             target_compiler=doc["target_compiler"],
             project_type=doc.get("project_type", "embedded"),
+            user_id=doc.get("user_id"),
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
             file_count=len(files),
@@ -88,28 +92,30 @@ class ProjectService:
         )
     
     @classmethod
-    async def get_all_projects(cls) -> List[ProjectResponse]:
-        """Get all projects"""
+    async def get_all_projects(cls, user_id: Optional[str] = None) -> List[ProjectResponse]:
+        """Get all projects, optionally filtered by user_id"""
         collection = get_collection(cls.COLLECTION_NAME)
-        
-        cursor = collection.find({})
+
+        query = {"user_id": user_id} if user_id else {}
+        cursor = collection.find(query)
         projects = []
-        
+
         async for doc in cursor:
             project_id = str(doc["_id"])
             files = await file_service.get_files_by_project(project_id)
-            
+
             projects.append(ProjectResponse(
                 id=project_id,
                 name=doc["name"],
                 description=doc.get("description", ""),
                 target_compiler=doc["target_compiler"],
                 project_type=doc.get("project_type", "embedded"),
+                user_id=doc.get("user_id"),
                 created_at=doc["created_at"],
                 updated_at=doc["updated_at"],
                 file_count=len(files),
             ))
-        
+
         return projects
     
     @classmethod

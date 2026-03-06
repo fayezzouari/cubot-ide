@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from typing import List
 
+from core.auth import CurrentUser
 from models.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectWithFiles
 from services.project_service import project_service
 
@@ -26,9 +27,9 @@ async def _provision_ros_sandbox(project_id: str) -> None:
 
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(project_data: ProjectCreate, background_tasks: BackgroundTasks):
+async def create_project(project_data: ProjectCreate, background_tasks: BackgroundTasks, current_user: CurrentUser):
     """Create a new project. For ROS projects, a sandbox is provisioned in the background."""
-    project = await project_service.create_project(project_data)
+    project = await project_service.create_project(project_data, user_id=current_user["sub"])
 
     if project.project_type == "ros":
         background_tasks.add_task(_provision_ros_sandbox, project.id)
@@ -37,9 +38,9 @@ async def create_project(project_data: ProjectCreate, background_tasks: Backgrou
 
 
 @router.get("/", response_model=List[ProjectResponse])
-async def get_all_projects():
-    """Get all projects"""
-    projects = await project_service.get_all_projects()
+async def get_all_projects(current_user: CurrentUser):
+    """Get all projects for the authenticated user"""
+    projects = await project_service.get_all_projects(user_id=current_user["sub"])
     return projects
 
 
