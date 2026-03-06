@@ -17,6 +17,7 @@ from routes import (
     arm_ws_router,
     components_router,
     daytona_router,
+    users_router,
 )
 import uvicorn
 
@@ -60,6 +61,7 @@ app.include_router(cad_router, prefix="/api", dependencies=_auth)
 app.include_router(blocks_router, prefix="/api", dependencies=_auth)
 app.include_router(components_router, prefix="/api", dependencies=_auth)
 app.include_router(daytona_router, prefix="/api", dependencies=_auth)
+app.include_router(users_router, prefix="/api", dependencies=_auth)
 
 
 @app.get("/")
