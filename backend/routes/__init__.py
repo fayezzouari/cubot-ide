@@ -9,6 +9,7 @@ from routes.cad import router as cad_router
 from routes.blocks import router as blocks_router, arm_ws_router
 from routes.components import router as components_router
 from routes.daytona import router as daytona_router
+from routes.users import router as users_router
 
 __all__ = [
     "files_router",
@@ -23,4 +24,5 @@ __all__ = [
     "arm_ws_router",
     "components_router",
     "daytona_router",
+    "users_router",
 ]
