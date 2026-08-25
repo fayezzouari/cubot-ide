@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="frontend/public/cubot.svg" alt="CuBot IDE Logo" width="80" />
 </p>
@@ -72,7 +74,7 @@ flowchart TD
         direction TB
         Pull["docker compose pull\n(latest images from ECR)"]
         Up["docker compose up -d\n(rolling restart)"]
-        Cleanup["Image Cleanup\n(remove images older than 24h\nexcept cubot.keep=true)"]
+        Cleanup["Image Cleanup\n(remove images older than 1h\nexcept cubot.keep=true)"]
 
         Pull --> Up --> Cleanup
     end
