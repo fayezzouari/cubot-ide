@@ -9,6 +9,10 @@
   Code editor · Hardware simulator · AI assistant · CAD studio · Visual block programming — all in one platform.
 </p>
 
+> [!NOTE]
+> I'm running CuBot on my own, and keeping the backend online costs more than I can cover right now, so the live deployment is paused for the moment.
+> If you'd like to see what it does, here's a short demo: https://lnkd.in/p/eVDMFRsW
+
 ---
 
 ## Architecture

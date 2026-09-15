@@ -3,6 +3,7 @@
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
+import HostingNotice from '@/components/hosting-notice';
 
 export default function LoginPage() {
   const handleGoogleSignIn = () => {
@@ -38,6 +39,8 @@ export default function LoginPage() {
           <h1 className="text-3xl font-semibold text-white tracking-tight mb-2">Login</h1>
           <p className="text-sm text-white/40">Sign in to access your projects and workspace</p>
         </div>
+
+        <HostingNotice />
 
         {/* Login Card */}
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-8">
