@@ -203,15 +203,23 @@ jobs:
           echo "SSM Command ID: $COMMAND_ID"
 
           # Wait for the command to finish (30 retries × 30 s = 15 min max)
+          # The waiter exits non-zero when the command fails; swallow that so
+          # we always reach the status/log dump below.
           AWS_MAX_ATTEMPTS=30 aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID"
+            --instance-id "$INSTANCE_ID" || true
 
-          # Print stderr if the command failed
           STATUS=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$INSTANCE_ID" \
             --query "Status" --output text)
+
+          echo "::group::Remote stdout"
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query "StandardOutputContent" --output text
+          echo "::endgroup::"
 
           if [ "$STATUS" != "Success" ]; then
             echo "Deploy failed ($STATUS) — stderr:"
