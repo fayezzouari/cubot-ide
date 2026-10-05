@@ -1,4 +1,4 @@
-import { daytonaApi, type SandboxFileEntry } from '@/lib/api/daytona';
+import { sandboxApi, type SandboxFileEntry } from '@/lib/api/sandbox';
 import { syncSandboxToProject } from './fileHandlers';
 
 export async function handleWorkspaceCreate({
@@ -21,7 +21,7 @@ export async function handleWorkspaceCreate({
   setActiveWorkspaceId(wsId);
   setIsSandboxLoading(true);
   try {
-    const result = await daytonaApi.listFiles(wsId);
+    const result = await sandboxApi.listFiles(wsId);
     setSandboxEntries(result.entries);
     await syncSandboxToProject({
       wsId,
@@ -55,7 +55,7 @@ export async function handleSyncComplete({
 }) {
   setIsSandboxLoading(true);
   try {
-    const result = await daytonaApi.listFiles(wsId);
+    const result = await sandboxApi.listFiles(wsId);
     setSandboxEntries(result.entries);
     await syncSandboxToProject({
       wsId,

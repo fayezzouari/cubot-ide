@@ -40,7 +40,7 @@ async def clear_chat_history(project_id: str):
 async def execute_step(project_id: str, request: StepExecutionRequest):
     """
     Execute a single plan step with the AI agent.
-    The agent uses file tools (and optionally the Daytona sandbox) to complete the task.
+    The agent uses file tools (and optionally the sandbox pod) to complete the task.
     """
     response = await ai_service.execute_step(project_id, request)
     return response

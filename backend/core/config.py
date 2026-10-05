@@ -35,10 +35,16 @@ class Settings(BaseSettings):
     COMPILE_TIMEOUT: int = 60  # seconds
     MAX_OUTPUT_SIZE: int = 1024 * 1024  # 1MB
 
-    # Daytona
-    DAYTONA_API_URL: Optional[str] = None
-    DAYTONA_API_KEY: Optional[str] = None
-    DAYTONA_ROS_SNAPSHOT: Optional[str] = None  # Daytona snapshot name for ROS Humble env
+    # Kubernetes sandboxes (ROS projects). Cluster credentials come from the
+    # in-cluster service account, else $KUBECONFIG / ~/.kube/config.
+    SANDBOX_NAMESPACE: str = "cubot-sandboxes"
+    SANDBOX_IMAGE: str = "ros:humble-ros-base"
+    SANDBOX_STARTUP_TIMEOUT: int = 300  # seconds; first image pull can be slow
+    SANDBOX_CPU_REQUEST: str = "250m"
+    SANDBOX_CPU_LIMIT: str = "2"
+    SANDBOX_MEMORY_REQUEST: str = "512Mi"
+    SANDBOX_MEMORY_LIMIT: str = "2Gi"
+    SANDBOX_DISK_LIMIT: str = "5Gi"
 
     # Exa Web Search
     EXA_API_KEY: Optional[str] = None

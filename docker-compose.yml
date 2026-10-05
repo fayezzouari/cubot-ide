@@ -44,11 +44,16 @@ services:
       - DD_VERSION=${DD_VERSION:-1.0.0}
       - DD_TRACE_ANALYTICS_ENABLED=true
       - DD_LOGS_INJECTION=true
+      # ROS sandbox pods: kubeconfig written by scripts/setup-k3s.sh
+      - KUBECONFIG=/kube/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     group_add:
       - "${DOCKER_GID:-984}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${COMPILE_HOST_DIR:-/opt/cubot/compiles}:/compile_tmp
+      - ${KUBE_CONFIG_DIR:-/opt/cubot/kube}:/kube:ro
     depends_on:
       - mongodb
     networks:

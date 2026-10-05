@@ -320,17 +320,17 @@ async def tool_list_files(project_id: str) -> Dict[str, Any]:
 
 async def tool_execute_in_sandbox(workspace_id: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Tool: Run a shell command inside the Daytona sandbox workspace.
+    Tool: Run a shell command inside the sandbox pod.
 
     Args:
-        workspace_id: Daytona workspace ID
+        workspace_id: Sandbox workspace ID
         tool_input: Dictionary with 'command' and optional 'timeout'
 
     Returns:
         Dictionary with stdout, stderr, exit_code, and success flag
     """
-    from services.daytona_service import daytona_service
-    from schemas.daytona import CodeExecutionRequest
+    from services.sandbox_service import sandbox_service
+    from schemas.sandbox import CodeExecutionRequest
 
     command = tool_input.get("command", "").strip()
     timeout = min(int(tool_input.get("timeout", 60)), 120)
@@ -341,7 +341,7 @@ async def tool_execute_in_sandbox(workspace_id: str, tool_input: Dict[str, Any])
     logger.info(f"execute_in_sandbox: workspace={workspace_id} command={command!r}")
 
     try:
-        result = await daytona_service.execute_code(
+        result = await sandbox_service.execute_code(
             CodeExecutionRequest(
                 workspace_id=workspace_id,
                 code=command,

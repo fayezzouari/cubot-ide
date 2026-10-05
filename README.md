@@ -31,7 +31,7 @@ graph LR
     BE --> CAD["CAD Engine\nCadQuery + OCP"]
     BE --> Compilers["Compilers\nArduino / ARM / ESP32\n(Docker)"]
     BE --> Simulator["Simulator\nsimavr (Docker)"]
-    BE --> Daytona["Daytona\nCloud ROS Sandboxes"]
+    BE --> K8s["Kubernetes (k3s)\nROS Sandbox Pods"]
     Nginx --> Frontend
 ```
 
@@ -120,7 +120,7 @@ The IDE is built around Monaco Editor — the same engine that powers VS Code.
 
 **Project Types**
 - **Embedded** — Arduino, ESP32, and TI ARM projects with hardware-specific toolchains
-- **ROS** — Linux-based projects backed by cloud Daytona sandboxes
+- **ROS** — Linux-based projects backed by Kubernetes sandbox pods
 
 **Compilation**
 - Compiler runs in an isolated Docker container per toolchain
@@ -232,17 +232,17 @@ Run compiled Arduino firmware in a browser-connected software emulator — no ha
 
 ---
 
-### ROS / Daytona Sandbox Integration
+### ROS / Kubernetes Sandbox Integration
 
-For ROS projects, CuBot IDE provisions a cloud-hosted Linux workspace via the Daytona API.
+For ROS projects, CuBot IDE runs a ROS Humble pod per project on a Kubernetes cluster (k3s in production) and drives it through the `pods/exec` API — the same mechanism as `kubectl exec`.
 
 **Workspace Lifecycle**
-- Create a Daytona workspace tied to a project
+- Create a sandbox pod tied to a project (`ros-project-<project id>` in the `cubot-sandboxes` namespace)
 - File sync in both directions (IDE files ↔ sandbox filesystem)
-- Workspace persists until explicitly deleted
+- Pod persists until explicitly deleted; a restarted backend reconnects to it
 
 **Terminal Access**
-- xterm.js terminal connected directly to the Daytona sandbox shell
+- xterm.js terminal connected to an interactive shell in the pod
 - Run ROS nodes, `colcon build`, `ros2 launch`, etc. from the browser
 - Full Linux environment with ROS pre-installed
 
@@ -297,7 +297,7 @@ Automatically generate circuit diagrams from component selections.
 | **CAD** | CadQuery 2.4.0, OCP 7.7.2 |
 | **Compilers** | Docker (avr-gcc, arm-none-eabi-gcc, xtensa) |
 | **Simulation** | simavr (ATmega328p), Docker |
-| **Cloud Sandboxes** | Daytona API |
+| **Sandboxes** | Kubernetes (k3s) pods |
 | **Auth** | NextAuth.js, Google OAuth, JWT |
 | **Observability** | Datadog APM, Logs, Tracing |
 | **Infra** | Docker Compose, nginx, AWS EC2, AWS ECR |
@@ -337,7 +337,9 @@ cubot-ide/
 │   ├── arduino/
 │   └── ti-arm/
 ├── scripts/
-│   └── deploy.sh           # Manual deploy / rollback helper
+│   ├── deploy.sh           # Manual deploy / rollback helper
+│   └── setup-k3s.sh        # One-time k3s install for ROS sandbox pods
+├── k8s/                    # Sandbox namespace, RBAC, network policy
 ├── nginx/                  # Reverse proxy config
 ├── .github/workflows/      # CI and CD pipelines
 └── docker-compose.yml      # Service orchestration
@@ -358,7 +360,8 @@ cubot-ide/
 | `AWS_ACCESS_KEY_ID` | AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key |
 | `BEDROCK_MODEL_ID` | Bedrock model identifier |
-| `DAYTONA_API_KEY` | Daytona cloud sandbox API key |
+| `KUBE_CONFIG_DIR` | Host directory with the backend kubeconfig (default `/opt/cubot/kube`, written by `scripts/setup-k3s.sh`) |
+| `SANDBOX_NAMESPACE` / `SANDBOX_IMAGE` | Namespace and image for ROS sandbox pods (backend `.env`) |
 | `SECRET_KEY` | FastAPI JWT signing key |
 | `ALLOWED_ORIGINS` | CORS allowed origins |
 | `DD_API_KEY` | Datadog API key |
@@ -396,3 +399,13 @@ cd frontend
 npm install
 npm run dev
 ```
+
+### ROS sandboxes locally
+
+ROS projects need a Kubernetes cluster. Any local one works (Docker Desktop's built-in Kubernetes, kind, minikube). The backend uses your current `kubectl` context:
+
+```bash
+kubectl apply -f k8s/sandboxes.yaml
+```
+
+In production, `scripts/setup-k3s.sh` installs k3s on the EC2 host and writes a namespace-scoped kubeconfig that `docker-compose.yml` mounts into the backend container. The CD pipeline runs it on every deploy (it is idempotent). Keep port 6443 closed in the security group.

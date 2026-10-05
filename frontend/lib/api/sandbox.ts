@@ -1,5 +1,5 @@
 /**
- * API client for Daytona workspace management
+ * API client for Kubernetes sandbox workspace management
  */
 
 import { authHeaders } from './auth-header'
@@ -13,7 +13,7 @@ export enum WorkspaceState {
   ERROR = 'error',
 }
 
-export interface DaytonaWorkspace {
+export interface SandboxWorkspace {
   workspace_id: string;
   project_id: string;
   state: WorkspaceState;
@@ -63,9 +63,9 @@ export interface SandboxFileContentResponse {
   content: string;
 }
 
-export const daytonaApi = {
-  async createWorkspace(projectId: string, repositoryUrl?: string): Promise<DaytonaWorkspace> {
-    const response = await fetch(`${API_BASE}/daytona/workspaces`, {
+export const sandboxApi = {
+  async createWorkspace(projectId: string, repositoryUrl?: string): Promise<SandboxWorkspace> {
+    const response = await fetch(`${API_BASE}/sandbox/workspaces`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify({
@@ -79,14 +79,14 @@ export const daytonaApi = {
     return response.json();
   },
 
-  async getWorkspace(workspaceId: string): Promise<DaytonaWorkspace> {
-    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}`, { headers: await authHeaders() });
+  async getWorkspace(workspaceId: string): Promise<SandboxWorkspace> {
+    const response = await fetch(`${API_BASE}/sandbox/workspaces/${workspaceId}`, { headers: await authHeaders() });
     if (!response.ok) throw new Error('Failed to fetch workspace');
     return response.json();
   },
 
   async stopWorkspace(workspaceId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}`, {
+    const response = await fetch(`${API_BASE}/sandbox/workspaces/${workspaceId}`, {
       method: 'DELETE',
       headers: await authHeaders(),
     });
@@ -94,7 +94,7 @@ export const daytonaApi = {
   },
 
   async syncFiles(workspaceId: string, projectId: string): Promise<SyncFilesResponse> {
-    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/sync`, {
+    const response = await fetch(`${API_BASE}/sandbox/workspaces/${workspaceId}/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify({ project_id: projectId }),
@@ -104,7 +104,7 @@ export const daytonaApi = {
   },
 
   async executeCode(request: CodeExecutionRequest): Promise<CodeExecutionResponse> {
-    const response = await fetch(`${API_BASE}/daytona/execute`, {
+    const response = await fetch(`${API_BASE}/sandbox/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify(request),
@@ -114,7 +114,7 @@ export const daytonaApi = {
   },
 
   async listFiles(workspaceId: string): Promise<SandboxFileListResponse> {
-    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/files`, { headers: await authHeaders() });
+    const response = await fetch(`${API_BASE}/sandbox/workspaces/${workspaceId}/files`, { headers: await authHeaders() });
     if (!response.ok) throw new Error('Failed to list sandbox files');
     return response.json();
   },
@@ -122,7 +122,7 @@ export const daytonaApi = {
   async getFileContent(workspaceId: string, filePath: string): Promise<SandboxFileContentResponse> {
     const encoded = encodeURIComponent(filePath);
     const response = await fetch(
-      `${API_BASE}/daytona/workspaces/${workspaceId}/file-content?path=${encoded}`,
+      `${API_BASE}/sandbox/workspaces/${workspaceId}/file-content?path=${encoded}`,
       { headers: await authHeaders() }
     );
     if (!response.ok) throw new Error('Failed to fetch file content');
@@ -131,7 +131,7 @@ export const daytonaApi = {
 
   async deletePath(workspaceId: string, path: string): Promise<void> {
     const encoded = encodeURIComponent(path);
-    const response = await fetch(`${API_BASE}/daytona/workspaces/${workspaceId}/files?path=${encoded}`, {
+    const response = await fetch(`${API_BASE}/sandbox/workspaces/${workspaceId}/files?path=${encoded}`, {
       method: 'DELETE',
       headers: await authHeaders(),
     });

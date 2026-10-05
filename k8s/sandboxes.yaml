@@ -1,0 +1,98 @@
+# Cluster resources for CuBot ROS sandboxes.
+#
+#   kubectl apply -f k8s/sandboxes.yaml
+#
+# The backend creates one pod per ROS project in the `cubot-sandboxes` namespace
+# and talks to it through pods/exec. The `cubot-backend` service account below
+# can only manage pods in that namespace.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cubot-sandboxes
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cubot-backend
+  namespace: cubot-sandboxes
+---
+# Long-lived token for the backend when it runs outside the cluster
+# (docker compose on EC2). scripts/setup-k3s.sh builds a kubeconfig from it.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cubot-backend-token
+  namespace: cubot-sandboxes
+  annotations:
+    kubernetes.io/service-account.name: cubot-backend
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cubot-sandbox-manager
+  namespace: cubot-sandboxes
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cubot-sandbox-manager
+  namespace: cubot-sandboxes
+subjects:
+  - kind: ServiceAccount
+    name: cubot-backend
+    namespace: cubot-sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cubot-sandbox-manager
+---
+# Sandboxes run user code. They may reach the internet (apt, pip, git) but not
+# private networks or the cloud metadata endpoint (169.254.169.254), which would
+# otherwise expose the host's IAM credentials.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-isolation
+  namespace: cubot-sandboxes
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+---
+# Caps total sandbox usage so a burst of projects can't starve the node.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sandbox-quota
+  namespace: cubot-sandboxes
+spec:
+  hard:
+    pods: "20"
+    limits.cpu: "16"
+    limits.memory: 32Gi

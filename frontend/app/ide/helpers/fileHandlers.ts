@@ -1,4 +1,4 @@
-import { daytonaApi, type SandboxFileEntry } from '@/lib/api/daytona';
+import { sandboxApi, type SandboxFileEntry } from '@/lib/api/sandbox';
 import { fileService } from '@/lib/api';
 import type { FileNode } from '@/lib/mock-data';
 
@@ -25,7 +25,7 @@ export async function importSandboxFile({
   setEditedContent: (content: string) => void;
   setFileContents: (cb: (prev: Record<string, string>) => Record<string, string>) => void;
 }) {
-  const { content } = await daytonaApi.getFileContent(wsId, entry.path);
+  const { content } = await sandboxApi.getFileContent(wsId, entry.path);
   const parts = entry.path.split('/');
   const fileName = parts[parts.length - 1];
   const filePath = parts.slice(0, -1).join('/') || '/';
@@ -47,7 +47,7 @@ export async function importSandboxFile({
     }
   }
 
-  const newFile = await createFile(fileName, filePath, content, fileType, 'daytona');
+  const newFile = await createFile(fileName, filePath, content, fileType, 'sandbox');
   setSelectedFile(newFile.id);
   setEditedContent(content);
   setFileContents(prev => ({ ...prev, [newFile.id]: content }));
@@ -73,7 +73,7 @@ export async function syncSandboxToProject({
   let imported = 0;
   for (const entry of missing) {
     try {
-      const { content } = await daytonaApi.getFileContent(wsId, entry.path);
+      const { content } = await sandboxApi.getFileContent(wsId, entry.path);
       const parts = entry.path.split('/');
       const fileName = parts[parts.length - 1];
       const filePath = parts.slice(0, -1).join('/');
@@ -84,7 +84,7 @@ export async function syncSandboxToProject({
         path: filePath,
         content,
         file_type: (FILE_TYPE_MAP[ext] ?? 'other') as any,
-        origin: 'daytona',
+        origin: 'sandbox',
       });
       imported++;
     } catch (err) {

@@ -1,4 +1,4 @@
-# ROS Humble Development Environment
+# ROS Humble Development Environment (optional custom SANDBOX_IMAGE for sandbox pods)
 FROM ubuntu:22.04
 
 # Prevent interactive prompts during package installation
@@ -45,8 +45,8 @@ RUN rosdep init || true \
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
 # Create workspace directory
-RUN mkdir -p /home/daytona/project
-WORKDIR /home/daytona/project
+RUN mkdir -p /root/project
+WORKDIR /root/project
 
 # Set up entrypoint to source ROS
 RUN echo '#!/bin/bash\nsource /opt/ros/humble/setup.bash\nexec "$@"' > /entrypoint.sh \

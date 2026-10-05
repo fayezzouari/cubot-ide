@@ -5,7 +5,7 @@ import logging
 from models.file import FileCreate, FileUpdate, FileResponse
 from services.file_service import file_service
 from bson import ObjectId
-from services.daytona_service import daytona_service
+from services.sandbox_service import sandbox_service
 
 logger = logging.getLogger(__name__)
 
@@ -17,18 +17,18 @@ async def create_file(file_data: FileCreate):
     """Create a new file"""
     file = await file_service.create_file(file_data)
 
-    # Sync to Daytona sandbox
+    # Sync to sandbox pod
     try:
-        # If the file originated from Daytona, don't re-sync back into the sandbox.
-        if getattr(file_data, 'origin', None) != 'daytona':
-            await daytona_service.sync_file_add(
+        # If the file originated from the sandbox, don't re-sync back into the sandbox.
+        if getattr(file_data, 'origin', None) not in ('sandbox', 'daytona'):
+            await sandbox_service.sync_file_add(
                 project_id=file.project_id,
                 file_path=file.path,
                 file_name=file.name,
                 content=file.content
             )
     except Exception as e:
-        logger.warning(f"Failed to sync file to Daytona: {e}")
+        logger.warning(f"Failed to sync file to sandbox: {e}")
 
     return file
 
@@ -96,7 +96,7 @@ async def update_file(file_id: str, file_update: FileUpdate):
             detail=f"File with id {file_id} not found"
         )
 
-    # Sync to Daytona sandbox
+    # Sync to sandbox pod
     try:
         # Check if it's a rename/move operation
         name_changed = file_update.name is not None and file_update.name != old_file.name
@@ -104,7 +104,7 @@ async def update_file(file_id: str, file_update: FileUpdate):
 
         if name_changed or path_changed:
             # Handle rename/move
-            await daytona_service.sync_file_rename(
+            await sandbox_service.sync_file_rename(
                 project_id=file.project_id,
                 old_path=old_file.path,
                 old_name=old_file.name,
@@ -113,14 +113,14 @@ async def update_file(file_id: str, file_update: FileUpdate):
             )
         elif file_update.content is not None:
             # Handle content update
-            await daytona_service.sync_file_update(
+            await sandbox_service.sync_file_update(
                 project_id=file.project_id,
                 file_path=file.path,
                 file_name=file.name,
                 content=file.content
             )
     except Exception as e:
-        logger.warning(f"Failed to sync file update to Daytona: {e}")
+        logger.warning(f"Failed to sync file update to sandbox: {e}")
 
     return file
 
@@ -135,7 +135,7 @@ async def delete_file(file_id: str):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid file id: {file_id}"
         )
-    # Get the file data before deletion for Daytona sync
+    # Get the file data before deletion for sandbox sync
     file = await file_service.get_file(file_id)
     if not file:
         raise HTTPException(
@@ -151,14 +151,14 @@ async def delete_file(file_id: str):
             detail=f"File with id {file_id} not found"
         )
 
-    # Sync deletion to Daytona sandbox
+    # Sync deletion to sandbox pod
     try:
-        await daytona_service.sync_file_delete(
+        await sandbox_service.sync_file_delete(
             project_id=file.project_id,
             file_path=file.path,
             file_name=file.name
         )
     except Exception as e:
-        logger.warning(f"Failed to sync file deletion to Daytona: {e}")
+        logger.warning(f"Failed to sync file deletion to sandbox: {e}")
 
     return None
