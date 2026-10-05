@@ -1,15 +1,14 @@
 'use client';
 
-// import { signIn } from 'next-auth/react';
+import { signIn } from 'next-auth/react';
 import Link from 'next/link';
-// import { ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import HostingNotice from '@/components/hosting-notice';
 
 export default function LoginPage() {
-  // Sign-in disabled while the backend is paused. Restore with the login card below.
-  // const handleGoogleSignIn = () => {
-  //   signIn('google', { callbackUrl: '/dashboard' });
-  // };
+  const handleGoogleSignIn = () => {
+    signIn('google', { callbackUrl: '/dashboard' });
+  };
 
   return (
     <main className="min-h-screen bg-black text-foreground font-sans flex items-center justify-center px-6">
@@ -43,8 +42,7 @@ export default function LoginPage() {
 
         <HostingNotice />
 
-        {/* Login Card — disabled while the backend is paused. Uncomment to restore sign-in. */}
-        {/*
+        {/* Login Card */}
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-8">
           <button
             onClick={handleGoogleSignIn}
@@ -68,7 +66,6 @@ export default function LoginPage() {
             By signing in, you agree to our terms of service
           </p>
         </div>
-        */}
 
         {/* Footer link */}
         <p className="text-xs text-white/25 text-center mt-8">
