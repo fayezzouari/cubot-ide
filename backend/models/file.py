@@ -44,7 +44,7 @@ class CompilerType(str, Enum):
 
 class ProjectType(str, Enum):
     EMBEDDED = "embedded"  # Arduino, ESP32, etc.
-    ROS = "ros"  # ROS/ROS2 projects with Daytona sandbox access
+    ROS = "ros"  # ROS/ROS2 projects with Kubernetes sandbox access
 
 
 class FileBase(BaseModel):
@@ -53,7 +53,7 @@ class FileBase(BaseModel):
     path: str = Field(..., description="Virtual path in the project, e.g., 'src/main.c'")
     content: str = Field(default="")
     file_type: FileType = Field(default=FileType.OTHER)
-    origin: Optional[str] = Field(default=None, description="Optional origin/source of the file, e.g. 'daytona'")
+    origin: Optional[str] = Field(default=None, description="Optional origin/source of the file, e.g. 'sandbox'")
     
 
 class FileCreate(FileBase):

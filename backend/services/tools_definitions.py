@@ -9,7 +9,7 @@ from typing import Dict, Any
 _EXECUTE_IN_SANDBOX_TOOL = {
     "toolSpec": {
         "name": "execute_in_sandbox",
-        "description": "Execute a shell command in the Daytona sandbox workspace. Use this to run builds, install packages, run tests, or verify code. Returns stdout, stderr, and exit code.",
+        "description": "Execute a shell command in the sandbox workspace. Use this to run builds, install packages, run tests, or verify code. Returns stdout, stderr, and exit code.",
         "inputSchema": {
             "json": {
                 "type": "object",

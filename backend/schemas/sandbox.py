@@ -1,6 +1,6 @@
 """
-Schemas for Daytona workspace integration
-Daytona sandboxes are only available for ROS projects.
+Schemas for Kubernetes sandbox workspaces
+Sandboxes are only available for ROS projects.
 """
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
@@ -14,8 +14,8 @@ class WorkspaceState(str, Enum):
     ERROR = "error"
 
 
-class DaytonaWorkspaceCreate(BaseModel):
-    """Request to create a Daytona workspace"""
+class SandboxWorkspaceCreate(BaseModel):
+    """Request to create a sandbox workspace"""
     project_id: str
     repository_url: Optional[str] = None
     branch: Optional[str] = "main"
@@ -23,8 +23,8 @@ class DaytonaWorkspaceCreate(BaseModel):
     env_vars: Dict[str, str] = {}
 
 
-class DaytonaWorkspaceResponse(BaseModel):
-    """Daytona workspace information"""
+class SandboxWorkspaceResponse(BaseModel):
+    """Sandbox workspace information"""
     workspace_id: str
     project_id: str
     state: WorkspaceState
@@ -50,7 +50,7 @@ class SyncFilesResponse(BaseModel):
 
 
 class CodeExecutionRequest(BaseModel):
-    """Request to execute code in Daytona workspace"""
+    """Request to execute code in a sandbox workspace"""
     workspace_id: str
     code: str
     language: str = "python"

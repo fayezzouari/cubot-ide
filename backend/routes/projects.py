@@ -12,12 +12,12 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 async def _provision_ros_sandbox(project_id: str) -> None:
-    """Background task: create & fully initialise a Daytona sandbox for a ROS project."""
-    from services.daytona_service import daytona_service
-    from schemas.daytona import DaytonaWorkspaceCreate
+    """Background task: create & fully initialise a sandbox pod for a ROS project."""
+    from services.sandbox_service import sandbox_service
+    from schemas.sandbox import SandboxWorkspaceCreate
     try:
         logger.info(f"[bg] Provisioning ROS sandbox for project {project_id}…")
-        await daytona_service.create_workspace(DaytonaWorkspaceCreate(project_id=project_id))
+        await sandbox_service.create_workspace(SandboxWorkspaceCreate(project_id=project_id))
         logger.info(f"[bg] Sandbox ready for project {project_id}")
     except Exception as exc:
         logger.error(

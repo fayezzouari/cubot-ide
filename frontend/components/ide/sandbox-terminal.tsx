@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { FolderSync, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { Button } from '@/components/ui/button';
-import { daytonaApi } from '@/lib/api/daytona';
+import { sandboxApi } from '@/lib/api/sandbox';
 import { useProject } from '@/contexts/project-context';
 import { toast } from 'sonner';
 
@@ -231,7 +231,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
     if (currentWorkspaceId) return currentWorkspaceId;
 
     if (!isRosProject) {
-      xtermRef.current?.write('\r\n\x1b[31mDaytona sandboxes are only available for ROS projects\x1b[0m\r\n');
+      xtermRef.current?.write('\r\n\x1b[31mSandboxes are only available for ROS projects\x1b[0m\r\n');
       return null;
     }
 
@@ -245,7 +245,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
       setInitStage('syncing');
       xtermRef.current?.write('\x1b[33mSyncing project files…\x1b[0m\r\n');
 
-      const workspace = await daytonaApi.createWorkspace(projectId);
+      const workspace = await sandboxApi.createWorkspace(projectId);
       const wsId = workspace.workspace_id;
 
       setCurrentWorkspaceId(wsId);
@@ -325,7 +325,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
     setInitStage('syncing');
     xtermRef.current?.write('\r\n\x1b[33mRe-syncing project files…\x1b[0m\r\n');
     try {
-      const result = await daytonaApi.syncFiles(currentWorkspaceId, currentProject.id);
+      const result = await sandboxApi.syncFiles(currentWorkspaceId, currentProject.id);
       xtermRef.current?.write(
         `\x1b[32m✓ Synced ${result.files_synced} file${result.files_synced !== 1 ? 's' : ''}\x1b[0m\r\n`
       );
@@ -347,7 +347,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
     wsRef.current = null;
     setIsConnected(false);
     if (currentWorkspaceId) {
-      try { await daytonaApi.stopWorkspace(currentWorkspaceId); } catch { /* ignore */ }
+      try { await sandboxApi.stopWorkspace(currentWorkspaceId); } catch { /* ignore */ }
     }
     setCurrentWorkspaceId(undefined);
     setInitStage('idle');

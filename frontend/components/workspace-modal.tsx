@@ -79,7 +79,7 @@ const PROJECT_TYPES = [
   {
     id: 'ros' as const,
     label: 'ROS / ROS2',
-    description: 'Robotics projects with full Daytona terminal access for running nodes.',
+    description: 'Robotics projects with full sandbox terminal access for running nodes.',
     badge: '✦ Sandbox Terminal',
   },
 ];

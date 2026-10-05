@@ -11,7 +11,7 @@ class ProjectBase(BaseModel):
     description: Optional[str] = Field(default="")
     target_compiler: CompilerType = Field(default=CompilerType.ARDUINO)
     project_type: ProjectType = Field(default=ProjectType.EMBEDDED)
-    sandbox_id: Optional[str] = Field(default=None, description="Daytona sandbox ID for this project")
+    sandbox_id: Optional[str] = Field(default=None, description="Sandbox pod name for this project")
     user_id: Optional[str] = Field(default=None, description="Google sub of the owning user")
 
 

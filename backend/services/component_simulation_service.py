@@ -2,7 +2,7 @@
 Component Simulation Service
 
 Manages simulation of custom sensors and actuators with user-defined scripts.
-Integrates with Daytona for sandboxed execution.
+Integrates with Kubernetes sandbox pods for sandboxed execution.
 """
 import asyncio
 import json
@@ -15,8 +15,8 @@ from schemas.components import (
     SimulationConfig,
     ComponentResponse,
 )
-from services.daytona_service import daytona_service
-from schemas.daytona import CodeExecutionRequest
+from services.sandbox_service import sandbox_service
+from schemas.sandbox import CodeExecutionRequest
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class ComponentSimulationService:
             session_id: Unique simulation identifier
             config: Simulation configuration
             components_library: Available component definitions
-            workspace_id: Daytona workspace ID for code execution
+            workspace_id: Sandbox workspace ID for code execution
             on_component_update: Callback for component state changes
             on_pin_change: Callback for pin state changes
             on_serial: Callback for serial output
@@ -288,7 +288,7 @@ if __name__ == "__main__":
         language: str,
         timeout: int = 10
     ) -> Any:
-        """Execute component code in Daytona workspace"""
+        """Execute component code in sandbox workspace"""
         request = CodeExecutionRequest(
             workspace_id=workspace_id,
             code=code,
@@ -296,7 +296,7 @@ if __name__ == "__main__":
             timeout=timeout,
         )
         
-        return await daytona_service.execute_code(request)
+        return await sandbox_service.execute_code(request)
     
     async def set_arduino_pin(
         self,

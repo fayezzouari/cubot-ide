@@ -13,8 +13,6 @@ dependencies = [
     "aiofiles==24.1.0",
     "docker==7.0.0",
     "boto3==1.42.56",
-    "daytona==0.141.0",
-    "daytona-sdk==0.141.0",
     "google-genai==1.62.0",
     "google-cloud-aiplatform==1.136.0",
     "openai==2.17.0",
@@ -30,6 +28,7 @@ dependencies = [
     "pyserial==3.5",
     "websockets==15.0.1",
     "numpy<2.0",
+    "kubernetes==35.0.0",
 ]
 
 [tool.ruff]

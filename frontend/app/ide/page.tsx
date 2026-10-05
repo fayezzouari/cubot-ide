@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { daytonaApi, type SandboxFileEntry } from '@/lib/api/daytona';
+import { sandboxApi, type SandboxFileEntry } from '@/lib/api/sandbox';
 import { compileService, chatService, projectService, fileService } from '@/lib/api';
 import type { CompilerType, ProjectWithFiles } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
@@ -559,13 +559,13 @@ export default function IDEPage() {
   // Handles both file and folder deletion
   const handleDeleteFile = async (nodeId: string) => {
     // If this is a folder node (UI id like 'folder-<name>'), delete all files under it using their real IDs.
-    // If it's a sandbox folder (id like 'sandbox-folder:...'), call the Daytona API to delete the path.
+    // If it's a sandbox folder (id like 'sandbox-folder:...'), call the sandbox API to delete the path.
     if (nodeId.startsWith('sandbox-folder:')) {
       const folderPath = nodeId.replace(/^sandbox-folder:/, '');
       if (!activeWorkspaceId) return;
       if (!window.confirm(`Delete sandbox folder "${folderPath}" and all its contents? This cannot be undone.`)) return;
       try {
-        await daytonaApi.deletePath(activeWorkspaceId, folderPath);
+        await sandboxApi.deletePath(activeWorkspaceId, folderPath);
         // Refresh the sandbox file list and import any new files back into project
         if (activeWorkspaceId) await handleSyncComplete(activeWorkspaceId);
       } catch (err) {

@@ -36,8 +36,8 @@ const features = [
   {
     icon: Terminal,
     title: 'ROS Development',
-    description: 'Provision cloud sandboxes via Daytona for full ROS development. Integrated terminal, file sync between IDE and sandbox, and full package build support.',
-    detail: 'Daytona sandboxes',
+    description: 'Provision Kubernetes sandbox pods for full ROS development. Integrated terminal, file sync between IDE and sandbox, and full package build support.',
+    detail: 'Kubernetes sandboxes',
   },
 ];
 
