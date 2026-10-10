@@ -21,6 +21,7 @@ browser. This version is built around a single, well-defined program model.
 | **Teach pendant** | Jog the tool in mm, teach named poses, and move to them. Blocks refer to poses by name, so re-teaching one pose updates every block that uses it. |
 | **Environment editor** | Build your own cell: add conveyors, bins, pallets, a CNC machine, parts trays, tables, fences, a stack light and your own 3D models (GLB, glTF, STL, OBJ); drag them in the 3D view or type their position, rotation and size. Presets, a personal library, and JSON import/export. |
 | **Cell & I/O panel** | Production KPIs (picks, placed, parts/min, bin and pallet counts), live digital I/O, joint readouts with limit warnings, and scene setup (part colours, defect rate, feed limit, tool trail). |
+| **Sensors** | Rendered camera feeds with OpenCV-style colour detection you can tune live, plus readings for photo-eyes, gripper, joints and I/O. |
 | **Console** | Run log, problems, live variables, and MQTT telemetry. |
 | **Export** | Standalone Python (IK, serial controller, MQTT via paho, OpenCV colour vision), Arduino controller firmware, and a JSON project file. |
 | **Hardware mode** | *Connect arm* uses Web Serial to send every motion, gripper and output command to a real controller, and waits for the controller to acknowledge each one. |
@@ -129,6 +130,29 @@ The Vision inspect block reads the part at a conveyor pick point, or the part in
 * **STEP / IGES / native CAD files** are not read in the browser. Export STL (for a single part) or glTF/GLB (for assemblies with colours) from your CAD tool, or convert with FreeCAD or Blender.
 * **Try it:** `docs/samples/workbench_mm_zup.stl` (800 × 500 × 740 mm workbench, mm, Z-up) and `docs/samples/crate_mm.obj` (300 mm crate).
 * **Robot vendor models:** cell components from vendor libraries (grippers, conveyors, fences) usually come as STEP — convert as above.
+
+## Sensors and vision
+
+Cameras are simulated sensors, the way MuJoCo does it: each one renders a real image of the scene from where it is mounted, and **Vision inspect** runs colour detection on that image. Placement, field of view, lighting and occlusion all matter — a part outside the view, or hidden behind the arm, reads `none`.
+
+| Camera | Where | Used by Vision inspect |
+| --- | --- | --- |
+| Conveyor camera | On a pole beside each conveyor, looking at its pick point | `auto` when a part waits there, or by the conveyor's name |
+| Wrist camera | Beside the gripper, looking down between the fingers | `auto` while holding a part, or `wrist` |
+
+**Detection** mirrors OpenCV, and the exported Python runs the identical pipeline with `cv2`:
+
+1. Crop the centre of the 160×120 image (ROI).
+2. Convert to HSV (H 0–180, S/V 0–255) and `inRange` each colour class; red wraps around H = 0.
+3. `countNonZero` per class: the largest class covering at least *min area* of the ROI wins.
+4. Centroid (moments) and bounding box of the winning mask.
+5. Defect: dark pixels (V below the threshold) enclosed by the part's mask — the mark on a defective part.
+
+Vision inspect sets `part_color`, `part_defect`, `part_ok`, `part_area` (% of the ROI) and `part_cx` / `part_cy` (centroid, −1…1), so programs can also correct a pick position from the image.
+
+**Sensors tab.** Live feed of each camera with the mask, ROI, bounding box and centroid drawn on top (hover a pixel to read its HSV values), *Inspect now*, the last inspection, the colour classes and thresholds (saved with the program and exported to the Python `VISION` config), and live readings of the other sensors: photo-eyes, gripper, TCP, joints, machine and digital I/O.
+
+**Defaults.** Red H 170→8, yellow 18–35, green 40–85, blue 95–130 (S ≥ 90). The gap at H ≈ 11 keeps the robot's orange joints from reading as parts. Without a 3D view (headless tests) inspections fall back to the simulation state and are labelled *ground truth* in the log.
 
 ## Physics model
 
