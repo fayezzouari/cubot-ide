@@ -16,11 +16,14 @@
 import {
   armSamples,
   checkLimits,
+  FINGER,
   forwardKinematics,
   HOME_JOINTS,
   inverseKinematics,
   JOINT_LIMITS,
+  rollFor,
   toolYaw,
+  wrap180,
   UnreachableError,
 } from './kinematics';
 import {
@@ -37,6 +40,7 @@ import {
   PART_SIZE,
   param,
   posesForLayout,
+  rectsOverlap,
   stationBoxes,
   toLocal,
   toWorld,
@@ -97,7 +101,13 @@ interface Rest {
   push: { x: number; z: number } | null; // shift that would resolve an unstable rest
 }
 
+// A move target: a TCP position plus an optional tool angle (see Pose.rz).
+export type Target = Vec3 & { rz?: number | null };
+
 const GRAVITY = 9810; // mm/s²
+// Gripper opening, 0 = closed on nothing, 1 = fully open.
+const HOLD_WIDTH = (FINGER.holding - FINGER.closed) / (FINGER.open - FINGER.closed);
+export const fingerOffset = (width: number) => FINGER.closed + (FINGER.open - FINGER.closed) * width;
 const QUEUE_GAP = 1; // accumulating conveyor: parts touch
 
 export class AbortError extends Error {
@@ -392,7 +402,7 @@ export class World {
     }
 
     // Gripper animation
-    const targetWidth = this.gripperClosed ? (this.held ? 0.45 : 0) : 1;
+    const targetWidth = this.gripperClosed ? (this.held ? HOLD_WIDTH : 0) : 1;
     this.gripperWidth += Math.sign(targetWidth - this.gripperWidth) * Math.min(Math.abs(targetWidth - this.gripperWidth), dt * 4);
 
     const tcp = this.tcp;
@@ -528,6 +538,33 @@ export class World {
         if (o === held || o.fall) continue;
         if (Math.abs(o.pos.x - tcp.x) < PART_SIZE - 4 && Math.abs(o.pos.z - tcp.z) < PART_SIZE - 4 && Math.abs(o.pos.y - tcp.y) < PART_SIZE - 4) {
           return { key: `part-${o.id}`, what, name: 'another part' };
+        }
+      }
+    }
+    // Gripper fingers: two thin plates either side of the tool axis, from the
+    // fingertips (at the TCP) up their length.
+    const yaw = toolYaw(this.joints);
+    const ax = Math.cos((yaw * Math.PI) / 180);
+    const az = -Math.sin((yaw * Math.PI) / 180);
+    const off = fingerOffset(this.gripperWidth);
+    const fingerLow = tcp.y - 2.5;
+    const fingerHigh = tcp.y + FINGER.length - 2.5;
+    for (const side of [-1, 1]) {
+      const finger = { x: tcp.x + ax * off * side, z: tcp.z + az * off * side, yaw, w: FINGER.thickness, d: FINGER.depth };
+      for (const o of this.parts) {
+        if (o === held || o.fall) continue;
+        if (o.pos.y + half < fingerLow + 1 || o.pos.y - half > fingerHigh) continue;
+        if (rectsOverlap(finger, { x: o.pos.x, z: o.pos.z, yaw: o.yaw, w: PART_SIZE, d: PART_SIZE }, -1)) {
+          return { key: `finger-${o.id}`, what: 'a gripper finger', name: 'another part' };
+        }
+      }
+      for (const st of this.layout.stations) {
+        for (const b of stationBoxes(st)) {
+          if (fingerLow >= b.top - 3) continue;
+          const c = toWorld(st, b.cx, b.cz);
+          if (rectsOverlap(finger, { x: c.x, z: c.z, yaw: st.rot, w: b.w, d: b.d })) {
+            return { key: `finger-${st.id}`, what: 'a gripper finger', name: st.name };
+          }
         }
       }
     }
@@ -742,38 +779,67 @@ export class World {
 (s) => from.map((q, i) => q + (target[i] - q) * s));
   }
 
-  moveTo(target: Vec3, mode: 'joint' | 'linear', speedPct: number): Promise<void> {
-    let goal: number[];
-    try {
-      goal = inverseKinematics(target, this.joints[5]);
-    } catch (e) {
-      return Promise.reject(new FaultError((e as Error).message));
+  // Moves the TCP to `target`. With `rz` the tool turns to that angle;
+  // without, it keeps its current angle in the cell (both move types). Linear moves hold the tool angle
+  // fixed along the path (turning smoothly to the new one), like a real
+  // robot's straight-line motion.
+  moveTo(target: Target, mode: 'joint' | 'linear', speedPct: number): Promise<void> {
+    const fromRoll = this.joints[5];
+    const startYaw = toolYaw(this.joints);
+    const endYaw = typeof target.rz === 'number' ? target.rz : startYaw;
+    const rollAt = (p: Vec3, yawDeg: number, near: number) => {
+      const r = rollFor(p, yawDeg, near);
+      if (r === null) throw new UnreachableError(p, `tool angle ${yawDeg.toFixed(0)}° needs J6 outside ±180°`);
+      return r;
+    };
+
+    if (mode === 'joint') {
+      let goal: number[];
+      try {
+        // Without an angle the tool keeps its current orientation in the cell,
+        // so a part stays square to the fingers however far the base turns.
+        const roll = rollAt(target, endYaw, fromRoll);
+        goal = inverseKinematics(target, roll);
+      } catch (e) {
+        return Promise.reject(new FaultError((e as Error).message));
+      }
+      return this.moveJoints(goal, speedPct);
     }
-    if (mode === 'joint') return this.moveJoints(goal, speedPct);
 
     const from = this.tcp;
     const dist = Math.hypot(target.x - from.x, target.y - from.y, target.z - from.z);
+    const turn = wrap180(endYaw - startYaw);
     const lerp = (s: number): Vec3 => ({
       x: from.x + (target.x - from.x) * s,
       y: from.y + (target.y - from.y) * s,
       z: from.z + (target.z - from.z) * s,
     });
-    // Validate the whole straight-line path up front.
-    for (let i = 1; i <= 24; i++) {
+    // Solve the whole path up front: it must be reachable, and J6 must follow
+    // continuously (no flips through ±180°).
+    const steps = Math.max(24, Math.ceil(dist / 10), Math.ceil(Math.abs(turn) / 3));
+    const path: number[][] = [];
+    let roll = fromRoll;
+    for (let i = 0; i <= steps; i++) {
+      const p = lerp(i / steps);
       try {
-        inverseKinematics(lerp(i / 24));
+        roll = rollAt(p, startYaw + turn * (i / steps), roll);
+        path.push(inverseKinematics(p, roll));
       } catch (e) {
         const reason = e instanceof UnreachableError ? e.message : String(e);
         return Promise.reject(new FaultError(`Linear path is not feasible — ${reason}`));
       }
+      if (i > 0 && Math.abs(path[i][5] - path[i - 1][5]) > 30) {
+        return Promise.reject(new FaultError('Linear path is not feasible — J6 would flip; teach the pose with a different tool angle'));
+      }
     }
-    const roll = this.joints[5];
-    const duration = dist / (LINEAR_SPEED * clampSpeed(speedPct));
-    return this.startMotion(
-      duration,
-      (s) => inverseKinematics(lerp(s), roll),
-      Math.max(1, Math.ceil(dist / 20)),
-    );
+    const duration = Math.max(dist / (LINEAR_SPEED * clampSpeed(speedPct)), Math.abs(turn) / (JOINT_SPEED * clampSpeed(speedPct)));
+    const at = (s: number) => {
+      const f = s * steps;
+      const i = Math.min(steps - 1, Math.floor(f));
+      const t = f - i;
+      return path[i].map((q, k) => q + (path[i + 1][k] - q) * t);
+    };
+    return this.startMotion(duration, at, Math.max(1, Math.ceil(dist / 20), Math.ceil(Math.abs(turn) / 10)));
   }
 
   async setGripper(close: boolean): Promise<boolean> {

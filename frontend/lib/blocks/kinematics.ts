@@ -78,6 +78,27 @@ export function armSamples(j: number[]): { p: Vec3; r: number }[] {
   return out;
 }
 
+// Parallel gripper, measured from the tool axis to the middle of each finger
+// (mm). Fully open the inner faces clear a 50 mm part by 8 mm a side: enough
+// to drop over it, little enough to fit between neighbours 20 mm apart.
+export const FINGER = { closed: 8, open: 37, holding: 29, thickness: 8, depth: 34, length: 55 };
+
+export const wrap180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
+
+// J6 that gives tool angle `rz` at target `t`, chosen closest to `near` and
+// within the J6 limits; null if none fits.
+export function rollFor(t: Vec3, rz: number, near: number): number | null {
+  const base = deg(Math.atan2(t.x, t.z)) - rz;
+  const [lo, hi] = JOINT_LIMITS[5];
+  let best: number | null = null;
+  for (let k = -2; k <= 2; k++) {
+    const c = base + 360 * k;
+    if (c < lo || c > hi) continue;
+    if (best === null || Math.abs(c - near) < Math.abs(best - near)) best = c;
+  }
+  return best;
+}
+
 // Tool yaw about +Y for a downward-pointing tool (degrees). J6 turns the tool
 // about its own axis, which points down, so it subtracts from the base yaw.
 export function toolYaw(j: number[]): number {

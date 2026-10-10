@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Crosshair, Navigation, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { toolYaw, wrap180 } from '@/lib/blocks/kinematics';
 import type { Pose } from '@/lib/blocks/types';
 import type { World } from '@/lib/blocks/workcell';
 import { useWorldVersion } from '@/lib/blocks/useWorld';
@@ -39,7 +40,7 @@ export function PosesPanel({
     move({ x: tcp.x, y: tcp.y, z: tcp.z, [axis]: tcp[axis] + dir * step }, 'linear');
 
   const teach = (name: string) => {
-    const here = { name, x: Math.round(tcp.x), y: Math.round(tcp.y), z: Math.round(tcp.z) };
+    const here = { name, x: Math.round(tcp.x), y: Math.round(tcp.y), z: Math.round(tcp.z), rz: Math.round(wrap180(toolYaw(world.joints))) };
     const exists = poses.some((p) => p.name === name);
     onChange(exists ? poses.map((p) => (p.name === name ? here : p)) : [...poses, here]);
     toast.success(`Taught ${name} at (${here.x}, ${here.y}, ${here.z})`);
@@ -95,15 +96,16 @@ export function PosesPanel({
       <div>
         <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">Taught poses (mm)</div>
         <div className="space-y-1">
-          <div className="grid grid-cols-[1fr_52px_52px_52px_56px] gap-1 px-1 text-[9px] uppercase text-white/30">
+          <div className="grid grid-cols-[1fr_48px_48px_48px_42px_56px] gap-1 px-1 text-[9px] uppercase text-white/30">
             <span>Name</span>
             <span className="text-right">X</span>
             <span className="text-right">Y</span>
             <span className="text-right">Z</span>
+            <span className="text-right" title="Tool angle (°): the direction the fingers close. Blank keeps the current angle.">Rz°</span>
             <span />
           </div>
           {poses.map((p) => (
-            <div key={p.name} className="grid grid-cols-[1fr_52px_52px_52px_56px] items-center gap-1 rounded px-1 py-0.5 hover:bg-white/[0.03]">
+            <div key={p.name} className="grid grid-cols-[1fr_48px_48px_48px_42px_56px] items-center gap-1 rounded px-1 py-0.5 hover:bg-white/[0.03]">
               <span className="truncate font-mono text-[11px] text-white/80" title={p.name}>
                 {p.name}
               </span>
@@ -119,6 +121,21 @@ export function PosesPanel({
                   className={numCls}
                 />
               ))}
+              <input
+                type="number"
+                value={typeof p.rz === 'number' ? p.rz : ''}
+                placeholder="—"
+                disabled={disabled}
+                title="Tool angle (°): the direction the fingers close. Blank keeps the current angle."
+                onChange={(e) =>
+                  onChange(
+                    poses.map((q) =>
+                      q.name === p.name ? { ...q, rz: e.target.value === '' ? null : wrap180(Number(e.target.value) || 0) } : q,
+                    ),
+                  )
+                }
+                className={numCls}
+              />
               <div className="flex justify-end gap-0.5">
                 <button title="Move here" disabled={busy} onClick={() => move(p)} className="rounded p-1 text-white/40 hover:text-sky-300 disabled:opacity-30">
                   <Navigation size={12} />

@@ -8,7 +8,7 @@
 // A station can own a pose (e.g. a bin owns BIN_RED). When the station moves,
 // its pose moves with it, so programs keep working after a layout change.
 
-import { forwardKinematics, HOME_JOINTS, isReachable } from './kinematics';
+import { forwardKinematics, HOME_JOINTS, isReachable, wrap180 } from './kinematics';
 import type { Pose, Vec3 } from './types';
 
 export const PART_SIZE = 50;
@@ -255,11 +255,18 @@ export function anchorLocal(s: Station): Vec3 | null {
   }
 }
 
+// Tool angle for a station's own pose. Conveyor parts queue nose to tail, so
+// the fingers must close across the belt, never along it.
+export function anchorRz(s: Station): number | undefined {
+  return s.kind === 'conveyor' ? wrap180(s.rot + 90) : undefined;
+}
+
 export function anchorPose(s: Station): Pose | null {
   const a = anchorLocal(s);
   if (!a || !s.pose) return null;
   const p = toWorld(s, a.x, a.z);
-  return { name: s.pose, x: Math.round(p.x), y: Math.round(a.y), z: Math.round(p.z) };
+  const rz = anchorRz(s);
+  return { name: s.pose, x: Math.round(p.x), y: Math.round(a.y), z: Math.round(p.z), ...(rz !== undefined ? { rz } : {}) };
 }
 
 // Moves a pose rigidly from one station placement to another, keeping any
@@ -273,7 +280,8 @@ export function carryPose(p: Pose, from: Station, to: Station): Pose {
   const dz = a0 && a1 ? a1.z - a0.z : 0;
   const dy = a0 && a1 ? a1.y - a0.y : 0;
   const w = toWorld(to, l.x + dx, l.z + dz);
-  return { name: p.name, x: Math.round(w.x), y: Math.round(p.y + dy), z: Math.round(w.z) };
+  const rz = typeof p.rz === 'number' ? { rz: wrap180(p.rz + to.rot - from.rot) } : {};
+  return { name: p.name, x: Math.round(w.x), y: Math.round(p.y + dy), z: Math.round(w.z), ...rz };
 }
 
 // Applies a station edit to the pose list.
@@ -347,6 +355,42 @@ export function faceRobotRotation(s: Station): number {
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
+
+// Do two rectangles on the floor overlap? Each is a centre, a yaw (degrees,
+// same convention as station rotation) and its extents along its own x and z.
+export interface Rect {
+  x: number;
+  z: number;
+  yaw: number;
+  w: number;
+  d: number;
+}
+export function rectsOverlap(a: Rect, b: Rect, margin = 0): boolean {
+  const corners = (r: Rect) => {
+    const hw = r.w / 2 + margin / 2;
+    const hd = r.d / 2 + margin / 2;
+    return [
+      [-hw, -hd],
+      [hw, -hd],
+      [hw, hd],
+      [-hw, hd],
+    ].map(([lx, lz]) => toWorld({ x: r.x, z: r.z, rot: r.yaw }, lx, lz));
+  };
+  const pa = corners(a);
+  const pb = corners(b);
+  for (const poly of [pa, pb]) {
+    for (let i = 0; i < 4; i++) {
+      const p = poly[i];
+      const q = poly[(i + 1) % 4];
+      const nx = q.z - p.z;
+      const nz = p.x - q.x;
+      const ra = pa.map((v) => v.x * nx + v.z * nz);
+      const rb = pb.map((v) => v.x * nx + v.z * nz);
+      if (Math.max(...ra) <= Math.min(...rb) || Math.max(...rb) <= Math.min(...ra)) return false;
+    }
+  }
+  return true;
+}
 
 function corners(s: Station, b: Box, margin = 0): { x: number; z: number }[] {
   const hw = b.w / 2 + margin;

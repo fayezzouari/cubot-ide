@@ -121,6 +121,8 @@ The simulator aims for believable behaviour at interactive speed, not a full rig
 * **Stability:** a part stays where it lands only if its centre of mass is over its support — one part, several parts bridged at the same height, or a station surface. Otherwise it tips off that edge. Parts left unsupported (the part below was picked) fall too.
 * **Bins:** bin poses release just above the rim. Dropped parts settle into the lowest free spot, so bins fill layer by layer instead of as a tower.
 * **Gripping:** a part is gripped only if it sits between the fingers (centred within 18 mm, fingertips at its middle). It turns with the tool (J1 and J6).
+* **Gripper fingers:** fully open, the fingers clear a 50 mm part by 8 mm a side, and they are collision-checked against parts and stations. They cannot fit between parts queued nose to tail, so they must close across the belt, and a tool turned diagonally to a cube hits its corners.
+* **Tool angle:** a pose can carry a tool angle `Rz` (the direction the fingers close; editable in the Poses tab, captured when you teach). Without one, the tool keeps its current angle in the cell. Linear moves hold the angle fixed and turn smoothly to a new one, like a real robot. A conveyor's PICK pose comes with the angle across its belt and turns with the conveyor.
 * **Conveyor:** an accumulating belt; parts queue touching each other, and a part being lifted out of the lane blocks the queue until it clears.
 * **Timing:** when a move or wait finishes, the clock stops at that instant before the next block starts, so cycle times are the same at any simulation speed or frame rate.
 

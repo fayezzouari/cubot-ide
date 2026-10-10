@@ -16,7 +16,7 @@ import { Canvas, extend, useFrame, useThree, type ThreeEvent } from '@react-thre
 import { ContactShadows, Environment, Html, Lightformer, OrbitControls, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { ARM, isReachable } from '@/lib/blocks/kinematics';
+import { ARM, FINGER, isReachable } from '@/lib/blocks/kinematics';
 import {
   BIN_WALL,
   CONVEYOR_STOP_INSET,
@@ -34,7 +34,7 @@ import {
   type CellLayout,
   type Station,
 } from '@/lib/blocks/layout';
-import { PART_SIZE, type Part, type World } from '@/lib/blocks/workcell';
+import { fingerOffset, PART_SIZE, type Part, type World } from '@/lib/blocks/workcell';
 import { useWorldVersion } from '@/lib/blocks/useWorld';
 import {
   beltTexture,
@@ -89,9 +89,9 @@ function Arm({ world }: { world: World }) {
     if (j[3].current) j[3].current.rotation.y = rad(q[3]);
     if (j[4].current) j[4].current.rotation.x = rad(q[4]);
     if (j[5].current) j[5].current.rotation.y = rad(q[5]);
-    const gap = 12 + 30 * world.gripperWidth;
-    if (fingerL.current) fingerL.current.position.x = -gap - 4;
-    if (fingerR.current) fingerR.current.position.x = gap + 4;
+    const off = fingerOffset(world.gripperWidth);
+    if (fingerL.current) fingerL.current.position.x = -off;
+    if (fingerR.current) fingerR.current.position.x = off;
   });
 
   const body = '#eef0f3';
@@ -162,15 +162,15 @@ function Arm({ world }: { world: World }) {
                     <cylinderGeometry args={[32, 32, 70, 40]} />
                     <Brushed color="#71757d" />
                   </mesh>
-                  <RoundedBox args={[112, 26, 46]} radius={5} smoothness={3} position={[0, 90, 0]} castShadow>
+                  <RoundedBox args={[2 * FINGER.open + 24, 26, 46]} radius={5} smoothness={3} position={[0, 90, 0]} castShadow>
                     <Painted color="#33363b" rough={0.45} />
                   </RoundedBox>
-                  <mesh ref={fingerL} position={[-40, 125, 0]} castShadow>
-                    <boxGeometry args={[8, 55, 34]} />
+                  <mesh ref={fingerL} position={[-FINGER.open, 125, 0]} castShadow>
+                    <boxGeometry args={[FINGER.thickness, FINGER.length, FINGER.depth]} />
                     <Brushed />
                   </mesh>
-                  <mesh ref={fingerR} position={[40, 125, 0]} castShadow>
-                    <boxGeometry args={[8, 55, 34]} />
+                  <mesh ref={fingerR} position={[FINGER.open, 125, 0]} castShadow>
+                    <boxGeometry args={[FINGER.thickness, FINGER.length, FINGER.depth]} />
                     <Brushed />
                   </mesh>
                 </group>

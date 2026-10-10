@@ -23,6 +23,7 @@ class PoseSchema(BaseModel):
     x: float
     y: float
     z: float
+    rz: Optional[float] = None  # tool angle in degrees; None keeps the current angle
 
 
 class BlockProgramCreate(BaseModel):

@@ -212,7 +212,7 @@ export const TEMPLATES: Template[] = [
           b('pick', { pose: 'PICK', speed: 90 }),
           {
             if: 'part_ok',
-            then: [b('place', { pose: 'PALLET', dx: '(count % 3) * 70', dz: 'floor(count / 3) % 3 * 70', speed: 90 })],
+            then: [b('place', { pose: 'PALLET', dx: '(count % 3) * 70', dy: 'floor(count / 9) * 50', dz: 'floor(count / 3) % 3 * 70', speed: 90 })],
             else: [b('place', { pose: 'BIN_REJECT', speed: 90 }), b('change_var', { var: 'defects', by: 1 })],
           },
           b('change_var', { var: 'count', by: 1 }),

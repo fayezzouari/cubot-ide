@@ -3,7 +3,7 @@
 import { interpolate, type CompiledProgram, type Stmt } from './compiler';
 import { evaluate, truthy, type Ast, type Value } from './expression';
 import type { Pose, Vec3 } from './types';
-import { AbortError, FaultError, HOME, type World } from './workcell';
+import { AbortError, FaultError, HOME, type Target, type World } from './workcell';
 
 export interface LogEntry {
   id: number;
@@ -133,13 +133,14 @@ export class Interpreter {
     return n;
   }
 
-  private pose(name: string, f: Record<string, Ast | string>): Vec3 {
+  private pose(name: string, f: Record<string, Ast | string>): Target {
     const p = this.poses.find((x) => x.name === name);
     if (!p) throw new FaultError(`Pose "${name}" is not taught`);
     return {
       x: p.x + (f.dx !== undefined ? this.num(f.dx, 'Offset X') : 0),
       y: p.y + (f.dy !== undefined ? this.num(f.dy, 'Offset Y') : 0),
       z: p.z + (f.dz !== undefined ? this.num(f.dz, 'Offset Z') : 0),
+      rz: typeof p.rz === 'number' ? p.rz : null,
     };
   }
 

@@ -77,6 +77,9 @@ export interface Pose {
   x: number;
   y: number;
   z: number;
+  // Tool angle about the vertical axis (degrees): the direction the gripper
+  // fingers close along, 0 = world X. Omitted: keep the current tool angle.
+  rz?: number | null;
 }
 
 export type PartColor = 'red' | 'green' | 'blue' | 'yellow';

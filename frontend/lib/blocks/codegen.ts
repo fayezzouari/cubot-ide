@@ -182,7 +182,10 @@ export function generatePython(program: CompiledProgram, poses: Pose[], name: st
     'pallet_dx = pallet_dy = pallet_dz = 0',
     ...vars.filter((v) => !v.startsWith('part_') && !v.startsWith('pallet_')).map((v) => `${pyName(v)} = 0`),
   ];
-  const poseLines = poses.map((p) => `    ${JSON.stringify(p.name)}: (${p.x}, ${p.y}, ${p.z}),`);
+  // (x, y, z, rz): rz is the tool angle in degrees, None = keep the current one.
+  const poseLines = poses.map(
+    (p) => `    ${JSON.stringify(p.name)}: (${p.x}, ${p.y}, ${p.z}, ${typeof p.rz === 'number' ? p.rz : 'None'}),`,
+  );
 
   return `${PY_HEADER(name)}
 POSES = {
@@ -239,7 +242,20 @@ def clamp(v, lo, hi):
 
 
 def offset(p, dx=0, dy=0, dz=0):
-    return (p[0] + dx, p[1] + dy, p[2] + dz)
+    return (p[0] + dx, p[1] + dy, p[2] + dz) + tuple(p[3:])
+
+
+def wrap180(a):
+    return (a + 180) % 360 - 180
+
+
+def roll_for(t, rz, near):
+    # J6 that turns the tool to angle rz at t, closest to near, within the limits.
+    base = math.degrees(math.atan2(t[0], t[2])) - rz
+    options = [base + 360 * k for k in range(-2, 3) if LIMITS[5][0] <= base + 360 * k <= LIMITS[5][1]]
+    if not options:
+        raise RobotFault(f"tool angle {rz:.0f} deg needs J6 outside its limits")
+    return min(options, key=lambda c: abs(c - near))
 
 
 def pallet_slot(i, cols, rows, pitch_x, pitch_z, layer_height):
@@ -268,7 +284,7 @@ def fk(j):
 
 
 def ik(t, roll=0.0):
-    x, y, z = t
+    x, y, z = t[:3]
     r = math.hypot(x, z)
     wy = y + ARM["tool"] - ARM["shoulder"]
     d = math.hypot(r, wy)
@@ -323,16 +339,24 @@ class Robot:
         self.joints = list(target)
 
     def move_to(self, target, mode="joint", speed=60):
+        # target = (x, y, z) or (x, y, z, rz); linear moves keep the tool angle
+        # fixed along the path, turning smoothly to rz if one is given.
+        rz = target[3] if len(target) > 3 else None
         if mode == "joint":
-            return self.move_joints(ik(target, self.joints[5]), speed)
+            yaw = rz if rz is not None else self.joints[0] - self.joints[5]
+            roll = roll_for(target, yaw, self.joints[5])
+            return self.move_joints(ik(target, roll), speed)
         start = self.tcp()
-        dist = math.dist(start, target)
-        steps = max(1, int(dist / 20))
+        dist = math.dist(start, target[:3])
+        yaw0 = self.joints[0] - self.joints[5]
+        turn = wrap180((rz if rz is not None else yaw0) - yaw0)
+        steps = max(1, int(dist / 20), int(abs(turn) / 10))
+        scale = clamp(speed, 1, 100) / 100
+        secs = max(dist / (LINEAR_SPEED * scale), abs(turn) / (JOINT_SPEED * scale)) / steps
         for i in range(1, steps + 1):
             s = i / steps
-            p = tuple(a + (b - a) * s for a, b in zip(start, target))
-            j = ik(p, self.joints[5])
-            secs = dist / steps / (LINEAR_SPEED * clamp(speed, 1, 100) / 100)
+            p = tuple(a + (b - a) * s for a, b in zip(start, target[:3]))
+            j = ik(p, roll_for(p, yaw0 + turn * s, self.joints[5]))
             self._cmd("J " + " ".join(f"{a:.1f}" for a in j) + f" {secs:.2f}")
             self.joints = j
 
