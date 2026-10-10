@@ -3,7 +3,6 @@
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import HostingNotice from '@/components/hosting-notice';
 
 export default function LoginPage() {
   const handleGoogleSignIn = () => {
@@ -40,13 +39,11 @@ export default function LoginPage() {
           <p className="text-sm text-white/40">Sign in to access your projects and workspace</p>
         </div>
 
-        <HostingNotice />
-
         {/* Login Card */}
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-8">
           <button
             onClick={handleGoogleSignIn}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm rounded-lg transition-all group cursor-pointer "
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-white/90 text-black font-medium text-sm rounded-lg transition-all group cursor-pointer"
           >
             <svg
               className="w-4 h-4"
