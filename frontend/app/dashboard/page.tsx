@@ -111,26 +111,26 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-black text-foreground font-sans">
       <Header />
-      {/* Animated CRT background, fixed behind the page content */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
+      {/* Animated CRT background, kept faint so it stays behind the content */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-45">
         <CRTWarp
-          color="#e9dcef"
-          backgroundColor="#05010a"
-          speed={0.5}
+          color="#b9aec2"
+          backgroundColor="#000000"
+          speed={0.25}
           curvature={0.25}
-          scanlineStrength={0.25}
+          scanlineStrength={0.2}
           scanlineFrequency={200}
           waveAmplitude={0.3}
           waveFrequency={2.5}
-          bloom={1.5}
+          bloom={0.6}
           bloomRadius={1}
-          noise={0.1}
-          vignette={0}
-          brightness={1.25}
+          noise={0.04}
+          vignette={0.6}
+          brightness={0.5}
           pixelation={1}
-          rgbShift={0.015}
+          rgbShift={0.006}
           mouseReact
-          mouseStrength={0.5}
+          mouseStrength={0.25}
           dpr={1}
           fps={30}
           paused={false}
