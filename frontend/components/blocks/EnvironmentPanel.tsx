@@ -501,6 +501,21 @@ export function EnvironmentPanel({
             {selected.kind === 'conveyor' && (
               <NumField label="Length" unit="mm" value={param(selected, 'length')} step={50} min={300} max={1600} disabled={disabled} onCommit={(length) => onChange(selected.id, { length })} />
             )}
+            {selected.kind === 'conveyor' && (
+              <label className="flex items-center gap-2">
+                <span className="w-20 shrink-0 text-[11px] text-white/50">Camera side</span>
+                <select
+                  value={selected.camSide === -1 ? '-1' : '1'}
+                  disabled={disabled}
+                  onChange={(e) => onChange(selected.id, { camSide: e.target.value === '-1' ? -1 : 1 })}
+                  className="rounded border border-white/[0.08] bg-[#111] px-1.5 py-0.5 text-[11px] text-white/80"
+                >
+                  <option value="1">Left of the flow</option>
+                  <option value="-1">Right of the flow</option>
+                </select>
+                <span className="text-[10px] text-white/30">keep it away from the robot</span>
+              </label>
+            )}
             {(selected.kind === 'bin' || selected.kind === 'pallet') && (
               <NumField
                 label="Size"

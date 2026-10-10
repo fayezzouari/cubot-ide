@@ -50,6 +50,7 @@ export interface Station {
   d?: number; // table
   h?: number; // table, fence
   cycle?: number; // machine, seconds
+  camSide?: 1 | -1; // conveyor: which side of the belt the camera pole stands on
   model?: ModelSource; // model
   scale?: number; // model
   solid?: boolean; // model: blocks the tool and holds parts on top
@@ -186,12 +187,34 @@ export interface Box {
   w: number; // along local x
   d: number; // along local z
   top: number;
+  bottom?: number; // underside height for overhanging parts; 0 (floor) when omitted
+  label?: string; // what to call this part of the station in collision messages
+}
+
+// Vision camera above a conveyor's pick point (conveyor frame). The pole
+// stands beside the belt on `camSide`; a bracket at its top holds the camera
+// head, which looks down at the part waiting at the end stop.
+export function conveyorCamera(s: Station) {
+  const side = s.camSide === -1 ? -1 : 1;
+  const stop = conveyorEnds(s).stop;
+  const pole = { x: stop - 120, z: 120 * side };
+  const head = { x: stop - 55, y: 590, z: 62 * side };
+  const target = { x: stop, y: CONVEYOR_TOP + 25, z: 0 };
+  return { side, pole, poleTop: 610, head, target };
 }
 
 export function stationBoxes(s: Station): Box[] {
   switch (s.kind) {
-    case 'conveyor':
-      return [{ cx: 0, cz: 0, w: param(s, 'length'), d: CONVEYOR_WIDTH, top: CONVEYOR_TOP }];
+    case 'conveyor': {
+      const cam = conveyorCamera(s);
+      return [
+        { cx: 0, cz: 0, w: param(s, 'length'), d: CONVEYOR_WIDTH, top: CONVEYOR_TOP },
+        // camera pole
+        { cx: cam.pole.x, cz: cam.pole.z, w: 28, d: 28, top: cam.poleTop, label: 'camera pole' },
+        // bracket and camera head, hanging above the belt edge
+        { cx: (cam.pole.x + cam.head.x) / 2, cz: (cam.pole.z + cam.head.z) / 2, w: 110, d: 110, top: cam.poleTop + 20, bottom: cam.head.y - 45, label: 'camera' },
+      ];
+    }
     case 'pallet':
       return [{ cx: 0, cz: 0, w: param(s, 'size'), d: param(s, 'size'), top: PALLET_TOP }];
     case 'machine':
@@ -560,7 +583,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
     layout: {
       stations: [
         st('conveyor', 'Infeed A', -420, 470, { pose: 'PICK', length: 700 }),
-        st('conveyor', 'Infeed B', 420, 470, { pose: 'PICK_B', length: 700, rot: 180 }),
+        st('conveyor', 'Infeed B', 420, 470, { pose: 'PICK_B', length: 700, rot: 180, camSide: -1 }),
         ...['Red', 'Green', 'Blue', 'Yellow', 'Purple', 'Reject'].map((name, i) => {
           const a = ((-75 + i * 30) * Math.PI) / 180;
           const x = Math.round(560 * Math.sin(a));

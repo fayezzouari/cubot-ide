@@ -22,6 +22,7 @@ import {
   CONVEYOR_STOP_INSET,
   CONVEYOR_TOP,
   CONVEYOR_WIDTH,
+  conveyorCamera,
   FENCE_THICKNESS,
   FIXTURE_TOP,
   FLOOR,
@@ -320,21 +321,74 @@ function ConveyorModel({ world, s }: { world: World; s: Station }) {
         <cylinderGeometry args={[1.5, 1.5, W + 20, 6]} />
         <meshBasicMaterial ref={beam} color="#ef4444" transparent opacity={0.7} />
       </mesh>
-      {/* camera on a post above the pick point */}
-      <mesh position={[stop - 120, 330, 120]} castShadow>
-        <cylinderGeometry args={[12, 12, 500, 16]} />
+      <VisionCamera world={world} s={s} />
+      <pointLight ref={flash} position={[stop, 300, 0]} color="#bfdbfe" intensity={0} distance={800} />
+    </group>
+  );
+}
+
+// Industrial vision camera on a pole beside the belt: a bracket holds the head,
+// whose lens points at the pick point. A faint cone shows its field of view and
+// flashes when the camera takes an image.
+function VisionCamera({ world, s }: { world: World; s: Station }) {
+  const cam = conveyorCamera(s);
+  const cone = useRef<THREE.MeshBasicMaterial>(null);
+  useFrame(() => {
+    if (cone.current) cone.current.opacity = 0.05 + world.visionFlash * 0.3;
+  });
+  // Orient the head so its +Z axis looks at the pick point.
+  const look = useMemo(() => {
+    const eye = new THREE.Vector3(cam.head.x, cam.head.y, cam.head.z);
+    const target = new THREE.Vector3(cam.target.x, cam.target.y, cam.target.z);
+    const m = new THREE.Matrix4().lookAt(target, eye, new THREE.Vector3(0, 1, 0));
+    return { q: new THREE.Quaternion().setFromRotationMatrix(m), dist: eye.distanceTo(target) };
+  }, [cam.head.x, cam.head.y, cam.head.z, cam.target.x, cam.target.y, cam.target.z]);
+  const armLen = Math.hypot(cam.head.x - cam.pole.x, cam.head.z - cam.pole.z);
+  const armYaw = Math.atan2(-(cam.head.z - cam.pole.z), cam.head.x - cam.pole.x);
+  const fov = 55; // cone radius at the belt, mm
+  return (
+    <group>
+      {/* pole with base plate */}
+      <mesh position={[cam.pole.x, 4, cam.pole.z]} castShadow>
+        <boxGeometry args={[70, 8, 70]} />
+        <Brushed color="#8b9097" rough={0.5} />
+      </mesh>
+      <mesh position={[cam.pole.x, cam.poleTop / 2, cam.pole.z]} castShadow>
+        <cylinderGeometry args={[12, 12, cam.poleTop, 16]} />
         <Brushed color="#8b9097" rough={0.45} />
       </mesh>
-      <group position={[stop - 60, 560, 60]} rotation={[0.6, 0, -0.6]}>
-        <RoundedBox args={[60, 44, 84]} radius={8} smoothness={3} castShadow>
+      {/* bracket from the pole top out over the belt edge */}
+      <mesh
+        position={[(cam.pole.x + cam.head.x) / 2, cam.poleTop - 8, (cam.pole.z + cam.head.z) / 2]}
+        rotation={[0, armYaw, 0]}
+        castShadow
+      >
+        <boxGeometry args={[armLen + 24, 16, 22]} />
+        <Brushed color="#8b9097" rough={0.45} />
+      </mesh>
+      {/* camera head: body, lens hood, glass and status LED */}
+      <group position={[cam.head.x, cam.head.y, cam.head.z]} quaternion={look.q}>
+        <RoundedBox args={[56, 56, 90]} radius={8} smoothness={3} position={[0, 0, -20]} castShadow>
           <Painted color="#1c1d21" rough={0.45} />
         </RoundedBox>
-        <mesh position={[0, -24, 0]}>
-          <cylinderGeometry args={[16, 16, 8, 24]} />
-          <meshPhysicalMaterial color="#0b1220" roughness={0.05} metalness={0.2} clearcoat={1} />
+        <mesh position={[0, 0, 36]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+          <cylinderGeometry args={[22, 19, 22, 24]} />
+          <Painted color="#2a2c31" rough={0.5} />
+        </mesh>
+        <mesh position={[0, 0, 47.5]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[15, 15, 1, 24]} />
+          <meshPhysicalMaterial color="#1e3a8a" roughness={0.05} metalness={0.3} clearcoat={1} />
+        </mesh>
+        <mesh position={[0, 30, -40]}>
+          <sphereGeometry args={[4, 12, 12]} />
+          <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={1.5} />
+        </mesh>
+        {/* field of view */}
+        <mesh position={[0, 0, 48 + (look.dist - 48) / 2]} rotation={[-Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[fov, look.dist - 48, 32, 1, true]} />
+          <meshBasicMaterial ref={cone} color="#93c5fd" transparent opacity={0.05} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
       </group>
-      <pointLight ref={flash} position={[stop, 400, 0]} color="#bfdbfe" intensity={0} distance={800} />
     </group>
   );
 }

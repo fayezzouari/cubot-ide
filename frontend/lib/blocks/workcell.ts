@@ -520,17 +520,17 @@ export class World {
     const bottom = held ? tcp.y - half : tcp.y;
     const what = held ? 'the held part' : 'the gripper';
     if (bottom < -2) return { key: 'floor', what, name: 'the floor' };
-    const pointHits = (p: Vec3, r: number, floorY: number) => {
+    const pointHits = (p: Vec3, r: number, floorY: number, ceilY: number) => {
       for (const s of this.layout.stations) {
         const l = toLocal(s, p.x, p.z);
         for (const b of stationBoxes(s)) {
-          if (inBox(b, l.x, l.z, r) && floorY < b.top - 3) return s;
+          if (inBox(b, l.x, l.z, r) && floorY < b.top - 3 && ceilY > (b.bottom ?? 0)) return { id: s.id, name: hitName(s, b) };
         }
       }
       return null;
     };
     // Tool tip, or the held part's footprint.
-    const s = pointHits(tcp, held ? half - 4 : 0, bottom);
+    const s = pointHits(tcp, held ? half - 4 : 0, bottom, tcp.y + FINGER.length);
     if (s) return { key: s.id, what, name: s.name };
     // Held part against parts resting in the cell.
     if (held) {
@@ -560,10 +560,10 @@ export class World {
       }
       for (const st of this.layout.stations) {
         for (const b of stationBoxes(st)) {
-          if (fingerLow >= b.top - 3) continue;
+          if (fingerLow >= b.top - 3 || fingerHigh <= (b.bottom ?? 0)) continue;
           const c = toWorld(st, b.cx, b.cz);
           if (rectsOverlap(finger, { x: c.x, z: c.z, yaw: st.rot, w: b.w, d: b.d })) {
-            return { key: `finger-${st.id}`, what: 'a gripper finger', name: st.name };
+            return { key: `finger-${st.id}`, what: 'a gripper finger', name: hitName(st, b) };
           }
         }
       }
@@ -574,7 +574,9 @@ export class World {
       for (const st of this.layout.stations) {
         const l = toLocal(st, p.x, p.z);
         for (const b of stationBoxes(st)) {
-          if (inBox(b, l.x, l.z, r) && p.y - r < b.top) return { key: `arm-${st.id}`, what: 'the arm', name: st.name };
+          if (inBox(b, l.x, l.z, r) && p.y - r < b.top && p.y + r > (b.bottom ?? 0)) {
+            return { key: `arm-${st.id}`, what: 'the arm', name: hitName(st, b) };
+          }
         }
       }
     }
@@ -635,6 +637,7 @@ export class World {
     for (const s of this.layout.stations) {
       const l = toLocal(s, x, z);
       for (const b of stationBoxes(s)) {
+        if (b.bottom) continue; // overhangs (camera heads) don't hold parts
         if (inBox(b, l.x, l.z) && b.top > top && b.top <= p.pos.y - half + 1) {
           top = b.top;
           belt = s.kind === 'conveyor' ? s.id : null;
@@ -646,7 +649,7 @@ export class World {
     for (const s of this.layout.stations) {
       const l = toLocal(s, x, z);
       for (const b of stationBoxes(s)) {
-        if (b.top <= top + 1 || !inBox(b, l.x, l.z, half)) continue;
+        if (b.top <= top + 1 || (b.bottom ?? 0) >= top + PART_SIZE || !inBox(b, l.x, l.z, half)) continue;
         const px = b.w / 2 + half - Math.abs(l.x - b.cx);
         const pz = b.d / 2 + half - Math.abs(l.z - b.cz);
         const local = px < pz ? { x: Math.sign(l.x - b.cx || 1) * (px + 1), z: 0 } : { x: 0, z: Math.sign(l.z - b.cz || 1) * (pz + 1) };
@@ -922,6 +925,10 @@ export class World {
       });
     });
   }
+}
+
+function hitName(s: Station, b: { label?: string }) {
+  return b.label ? `${s.name} ${b.label}` : s.name;
 }
 
 function clampSpeed(pct: number) {
