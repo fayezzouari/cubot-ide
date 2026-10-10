@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header';
+import CRTWarp from '@/components/ui/CRTWarp';
 import WorkspaceModal from '@/components/workspace-modal';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
@@ -110,16 +111,33 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-black text-foreground font-sans">
       <Header />
-            {/* Subtle dot grid background */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 3px, transparent 0)',
-          backgroundSize: '32px 32px',
-        }}
-      />
+      {/* Animated CRT background, fixed behind the page content */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <CRTWarp
+          color="#e9dcef"
+          backgroundColor="#05010a"
+          speed={0.5}
+          curvature={0.25}
+          scanlineStrength={0.25}
+          scanlineFrequency={200}
+          waveAmplitude={0.3}
+          waveFrequency={2.5}
+          bloom={1.5}
+          bloomRadius={1}
+          noise={0.1}
+          vignette={0}
+          brightness={1.25}
+          pixelation={1}
+          rgbShift={0.015}
+          mouseReact
+          mouseStrength={0.5}
+          dpr={1}
+          fps={30}
+          paused={false}
+        />
+      </div>
 
-      <div className="max-w-5xl mx-auto px-6 pt-28 pb-16">
+      <div className="relative z-10 max-w-5xl mx-auto px-6 pt-28 pb-16">
 
         {/* Page header */}
         <div className="mb-8">
