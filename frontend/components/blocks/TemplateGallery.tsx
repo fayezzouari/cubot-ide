@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Factory, GraduationCap } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { BLOCKS_THEME } from './theme';
 import { Button } from '@/components/ui/button';
 import { TEMPLATES, type Template } from '@/lib/blocks/templates';
 
@@ -20,7 +21,7 @@ export function TemplateGallery({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden border-white/10 bg-[#0c0c0d] p-0 text-white">
+      <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden border-white/10 bg-[#0c0c0d] p-0 text-white" style={BLOCKS_THEME}>
         <DialogHeader className="border-b border-white/[0.08] px-6 pb-4 pt-5">
           <DialogTitle>Start from a use case</DialogTitle>
           <DialogDescription className="text-white/50">

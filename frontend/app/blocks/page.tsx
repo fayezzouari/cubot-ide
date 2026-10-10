@@ -89,6 +89,7 @@ import { EnvironmentPanel } from '@/components/blocks/EnvironmentPanel';
 import { ConsolePanel } from '@/components/blocks/ConsolePanel';
 import { TemplateGallery } from '@/components/blocks/TemplateGallery';
 import { CodeDialog, type CodeFile } from '@/components/blocks/CodeDialog';
+import { BLOCKS_THEME } from '@/components/blocks/theme';
 
 const WorkcellView = dynamic(() => import('@/components/blocks/WorkcellView'), { ssr: false });
 
@@ -673,7 +674,7 @@ function BlocksIDE() {
   const saveLabel = { saved: 'Saved', dirty: 'Unsaved', saving: 'Saving…', offline: 'Not saved (no project)' }[saveState];
 
   return (
-    <div className="flex h-screen flex-col bg-[#080808] text-foreground">
+    <div className="flex h-screen flex-col bg-[#080808] text-foreground" style={BLOCKS_THEME}>
       {/* Top bar */}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/[0.08] bg-[#0a0a0a] px-3">
         <Link href="/dashboard" className="flex items-center gap-2">

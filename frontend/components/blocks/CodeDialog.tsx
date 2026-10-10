@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Copy, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { BLOCKS_THEME } from './theme';
 import { Button } from '@/components/ui/button';
 
 export interface CodeFile {
@@ -39,7 +40,7 @@ export function CodeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[88vh] max-w-5xl flex-col overflow-hidden border-white/10 bg-[#0c0c0d] p-0 text-white">
+      <DialogContent className="flex max-h-[88vh] max-w-5xl flex-col overflow-hidden border-white/10 bg-[#0c0c0d] p-0 text-white" style={BLOCKS_THEME}>
         <DialogHeader className="border-b border-white/[0.08] px-6 pb-3 pt-5">
           <DialogTitle>Export program</DialogTitle>
           <DialogDescription className="text-white/50">
