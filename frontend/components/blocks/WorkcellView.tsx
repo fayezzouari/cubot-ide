@@ -4,12 +4,16 @@
 // inside a 0.001-scaled group, and every frame reads the World directly so the
 // React tree only re-renders when parts are added or removed.
 //
+// Lighting comes from an environment built from light panels in code (no HDR
+// download), so painted, plastic and metal surfaces get realistic reflections;
+// textures are procedural (sceneTextures.ts).
+//
 // Stations are drawn from the cell layout. In edit mode they can be selected,
 // dragged on the floor, rotated (R) and nudged (arrow keys).
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, extend, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { Html, OrbitControls } from '@react-three/drei';
+import { ContactShadows, Environment, Html, Lightformer, OrbitControls, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { ARM, isReachable } from '@/lib/blocks/kinematics';
@@ -32,6 +36,16 @@ import {
 } from '@/lib/blocks/layout';
 import { PART_SIZE, type Part, type World } from '@/lib/blocks/workcell';
 import { useWorldVersion } from '@/lib/blocks/useWorld';
+import {
+  beltTexture,
+  brushedRoughness,
+  concreteTexture,
+  hazardTexture,
+  meshTexture,
+  roundedPartGeometry,
+  tiled,
+  woodTexture,
+} from './sceneTextures';
 
 // @ts-ignore — registering the full namespace is valid at runtime
 extend(THREE);
@@ -44,6 +58,16 @@ const PART_COLORS: Record<string, string> = {
   blue: '#3b82f6',
   yellow: '#facc15',
 };
+
+// ── Materials ───────────────────────────────────────────────────────────────
+
+function Painted({ color, rough = 0.4 }: { color: string; rough?: number }) {
+  return <meshPhysicalMaterial color={color} roughness={rough} metalness={0.05} clearcoat={0.35} clearcoatRoughness={0.4} />;
+}
+
+function Brushed({ color = '#c4c7cc', rough = 0.38, metal = 0.9 }: { color?: string; rough?: number; metal?: number }) {
+  return <meshStandardMaterial color={color} metalness={metal} roughness={rough} roughnessMap={brushedRoughness()} />;
+}
 
 function Arm({ world }: { world: World }) {
   const j = [
@@ -70,59 +94,84 @@ function Arm({ world }: { world: World }) {
     if (fingerR.current) fingerR.current.position.x = gap + 4;
   });
 
-  const body = '#e5e7eb';
-  const joint = '#f97316';
+  const body = '#eef0f3';
+  const joint = '#f26b1d';
+  const cap = '#2a2a2e';
   return (
     <group>
-      <mesh position={[0, 30, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[130, 150, 60, 40]} />
-        <meshStandardMaterial color="#27272a" metalness={0.4} roughness={0.5} />
+      {/* floor plate with anchor bolts */}
+      <mesh position={[0, 6, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[175, 175, 12, 48]} />
+        <Brushed color="#5b5f66" rough={0.55} />
+      </mesh>
+      {Array.from({ length: 8 }, (_, i) => {
+        const a = (i / 8) * Math.PI * 2;
+        return (
+          <mesh key={i} position={[Math.cos(a) * 152, 15, Math.sin(a) * 152]} castShadow>
+            <cylinderGeometry args={[9, 9, 8, 6]} />
+            <Brushed color="#9ca3af" rough={0.3} />
+          </mesh>
+        );
+      })}
+      <mesh position={[0, 36, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[125, 140, 48, 48]} />
+        <Painted color={cap} rough={0.5} />
       </mesh>
       <group ref={j[0]} position={[0, 60, 0]}>
-        <mesh position={[0, (ARM.shoulderHeight - 60) / 2, 0]} castShadow>
-          <cylinderGeometry args={[85, 100, ARM.shoulderHeight - 60, 32]} />
-          <meshStandardMaterial color={body} metalness={0.2} roughness={0.4} />
+        <mesh position={[0, (ARM.shoulderHeight - 60) / 2, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[82, 100, ARM.shoulderHeight - 60, 48]} />
+          <Painted color={body} />
         </mesh>
         <group ref={j[1]} position={[0, ARM.shoulderHeight - 60, 0]}>
           <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[70, 70, 170, 32]} />
-            <meshStandardMaterial color={joint} metalness={0.3} roughness={0.4} />
+            <cylinderGeometry args={[72, 72, 170, 48]} />
+            <Painted color={joint} rough={0.35} />
           </mesh>
-          <mesh position={[0, ARM.upperArm / 2, 0]} castShadow>
-            <boxGeometry args={[90, ARM.upperArm, 90]} />
-            <meshStandardMaterial color={body} metalness={0.2} roughness={0.4} />
-          </mesh>
+          {[-1, 1].map((sx) => (
+            <mesh key={sx} position={[sx * 87, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[52, 52, 6, 48]} />
+              <Brushed color="#b6bac0" rough={0.35} />
+            </mesh>
+          ))}
+          <RoundedBox args={[92, ARM.upperArm, 92]} radius={22} smoothness={4} position={[0, ARM.upperArm / 2, 0]} castShadow receiveShadow>
+            <Painted color={body} />
+          </RoundedBox>
           <group ref={j[2]} position={[0, ARM.upperArm, 0]}>
             <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-              <cylinderGeometry args={[55, 55, 140, 32]} />
-              <meshStandardMaterial color={joint} metalness={0.3} roughness={0.4} />
+              <cylinderGeometry args={[56, 56, 140, 48]} />
+              <Painted color={joint} rough={0.35} />
             </mesh>
-            <group ref={j[3]}>
-              <mesh position={[0, ARM.forearm / 2, 0]} castShadow>
-                <boxGeometry args={[70, ARM.forearm, 70]} />
-                <meshStandardMaterial color={body} metalness={0.2} roughness={0.4} />
+            {[-1, 1].map((sx) => (
+              <mesh key={sx} position={[sx * 72, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[40, 40, 5, 40]} />
+                <Brushed color="#b6bac0" rough={0.35} />
               </mesh>
+            ))}
+            <group ref={j[3]}>
+              <RoundedBox args={[72, ARM.forearm, 72]} radius={18} smoothness={4} position={[0, ARM.forearm / 2, 0]} castShadow receiveShadow>
+                <Painted color={body} />
+              </RoundedBox>
               <group ref={j[4]} position={[0, ARM.forearm, 0]}>
                 <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-                  <cylinderGeometry args={[40, 40, 100, 24]} />
-                  <meshStandardMaterial color={joint} metalness={0.3} roughness={0.4} />
+                  <cylinderGeometry args={[40, 40, 100, 40]} />
+                  <Painted color={joint} rough={0.35} />
                 </mesh>
                 <group ref={j[5]}>
+                  {/* tool flange and gripper body */}
                   <mesh position={[0, 45, 0]} castShadow>
-                    <cylinderGeometry args={[30, 30, 70, 24]} />
-                    <meshStandardMaterial color="#52525b" metalness={0.6} roughness={0.3} />
+                    <cylinderGeometry args={[32, 32, 70, 40]} />
+                    <Brushed color="#71757d" />
                   </mesh>
-                  <mesh position={[0, 90, 0]} castShadow>
-                    <boxGeometry args={[110, 24, 44]} />
-                    <meshStandardMaterial color="#3f3f46" metalness={0.5} roughness={0.4} />
-                  </mesh>
+                  <RoundedBox args={[112, 26, 46]} radius={5} smoothness={3} position={[0, 90, 0]} castShadow>
+                    <Painted color="#33363b" rough={0.45} />
+                  </RoundedBox>
                   <mesh ref={fingerL} position={[-40, 125, 0]} castShadow>
                     <boxGeometry args={[8, 55, 34]} />
-                    <meshStandardMaterial color="#a1a1aa" metalness={0.7} roughness={0.3} />
+                    <Brushed />
                   </mesh>
                   <mesh ref={fingerR} position={[40, 125, 0]} castShadow>
                     <boxGeometry args={[8, 55, 34]} />
-                    <meshStandardMaterial color="#a1a1aa" metalness={0.7} roughness={0.3} />
+                    <Brushed />
                   </mesh>
                 </group>
               </group>
@@ -136,24 +185,25 @@ function Arm({ world }: { world: World }) {
 
 function PartMesh({ world, part }: { world: World; part: Part }) {
   const ref = useRef<THREE.Mesh>(null);
-  const mat = useRef<THREE.MeshStandardMaterial>(null);
+  const mat = useRef<THREE.MeshPhysicalMaterial>(null);
   useFrame(() => {
     if (!ref.current) return;
     ref.current.position.set(part.pos.x, part.pos.y, part.pos.z);
     if (world.held === part) ref.current.rotation.y = rad(world.joints[0]);
     if (mat.current) {
-      mat.current.color.set(part.machined ? '#a8a29e' : PART_COLORS[part.color]);
-      mat.current.metalness = part.machined ? 0.8 : 0.1;
+      mat.current.color.set(part.machined ? '#b8bcc2' : PART_COLORS[part.color]);
+      mat.current.metalness = part.machined ? 0.9 : 0;
+      mat.current.roughness = part.machined ? 0.28 : 0.42;
+      mat.current.clearcoat = part.machined ? 0 : 0.5;
     }
   });
   return (
-    <mesh ref={ref} castShadow receiveShadow>
-      <boxGeometry args={[PART_SIZE, PART_SIZE, PART_SIZE]} />
-      <meshStandardMaterial ref={mat} color={PART_COLORS[part.color]} roughness={0.5} />
+    <mesh ref={ref} geometry={roundedPartGeometry()} castShadow receiveShadow>
+      <meshPhysicalMaterial ref={mat} color={PART_COLORS[part.color]} roughness={0.42} clearcoat={0.5} clearcoatRoughness={0.3} />
       {part.defect && (
         <mesh position={[0, PART_SIZE / 2 + 0.5, 0]} rotation={[-Math.PI / 2, 0, 0.6]}>
-          <planeGeometry args={[34, 7]} />
-          <meshBasicMaterial color="#111" />
+          <planeGeometry args={[34, 6]} />
+          <meshStandardMaterial color="#0a0a0a" roughness={0.9} />
         </mesh>
       )}
     </mesh>
@@ -187,56 +237,100 @@ function Label({ y, z = 0, children, tone }: { y: number; z?: number; children: 
   );
 }
 
+const BELT_TILE = 200; // mm of belt per texture tile
+
 function ConveyorModel({ world, s }: { world: World; s: Station }) {
   const beam = useRef<THREE.MeshBasicMaterial>(null);
-  const belt = useRef<THREE.MeshStandardMaterial>(null);
   const flash = useRef<THREE.PointLight>(null);
   const length = param(s, 'length');
   const stop = length / 2 - CONVEYOR_STOP_INSET;
   const W = CONVEYOR_WIDTH;
-  useFrame(() => {
+  const T = CONVEYOR_TOP;
+  const belt = useMemo(() => tiled(beltTexture(), length / BELT_TILE, 1), [length]);
+  const hazard = useMemo(() => tiled(hazardTexture(), 1, 0.4), []);
+  useEffect(() => () => belt.dispose(), [belt]);
+  useFrame((_, dt) => {
     if (beam.current) beam.current.color.set(world.conveyorHasPart(s) ? '#22c55e' : '#ef4444');
-    if (belt.current) belt.current.color.set(world.conveyorRunning ? '#3f3f46' : '#27272a');
     if (flash.current) flash.current.intensity = world.visionFlash * 3;
+    // Scroll the belt surface with the simulated belt speed.
+    if (world.conveyorRunning && !world.paused) belt.offset.x -= (world.conveyorSpeed * world.speed * Math.min(dt, 0.1)) / BELT_TILE;
   });
+  const legs = Math.max(2, Math.round(length / 450) + 1);
   return (
     <group>
-      <mesh position={[0, CONVEYOR_TOP - 10, 0]} receiveShadow>
-        <boxGeometry args={[length, 20, W]} />
-        <meshStandardMaterial ref={belt} color="#27272a" roughness={0.9} />
+      {/* belt */}
+      <mesh position={[0, T - 6, 0]} receiveShadow castShadow>
+        <boxGeometry args={[length - 30, 12, W - 16]} />
+        <meshStandardMaterial map={belt} roughness={0.85} />
       </mesh>
-      <mesh position={[0, (CONVEYOR_TOP - 20) / 2, 0]}>
-        <boxGeometry args={[Math.max(10, length - 40), CONVEYOR_TOP - 20, W - 30]} />
-        <meshStandardMaterial color="#52525b" metalness={0.6} roughness={0.4} />
-      </mesh>
+      {/* end rollers */}
+      {[-1, 1].map((sx) => (
+        <mesh key={sx} position={[sx * (length / 2 - 18), T - 18, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+          <cylinderGeometry args={[18, 18, W - 16, 24]} />
+          <Brushed color="#9ca3af" />
+        </mesh>
+      ))}
+      {/* aluminium side rails */}
+      {[-1, 1].map((sz) => (
+        <mesh key={sz} position={[0, T - 16, sz * (W / 2 - 4)]} castShadow receiveShadow>
+          <boxGeometry args={[length, 40, 8]} />
+          <Brushed color="#c9ccd1" />
+        </mesh>
+      ))}
+      {/* legs and cross braces */}
+      {Array.from({ length: legs }, (_, i) => {
+        const x = -length / 2 + 40 + (i * (length - 80)) / (legs - 1);
+        return (
+          <group key={i} position={[x, 0, 0]}>
+            {[-1, 1].map((sz) => (
+              <mesh key={sz} position={[0, (T - 36) / 2, sz * (W / 2 - 18)]} castShadow>
+                <boxGeometry args={[30, T - 36, 30]} />
+                <Brushed color="#8b9097" rough={0.5} />
+              </mesh>
+            ))}
+            <mesh position={[0, 14, 0]}>
+              <boxGeometry args={[20, 10, W - 36]} />
+              <Brushed color="#8b9097" rough={0.5} />
+            </mesh>
+          </group>
+        );
+      })}
       {/* end stop */}
-      <mesh position={[length / 2 - 8, CONVEYOR_TOP + 20, 0]}>
+      <mesh position={[length / 2 - 8, T + 20, 0]} castShadow>
         <boxGeometry args={[16, 40, W]} />
-        <meshStandardMaterial color="#f59e0b" />
+        <meshStandardMaterial map={hazard} roughness={0.6} />
       </mesh>
-      {/* feed direction arrow */}
-      <mesh position={[-length / 2 + 40, CONVEYOR_TOP + 1, 0]} rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
-        <circleGeometry args={[22, 3]} />
-        <meshBasicMaterial color="#a1a1aa" />
+      {/* feed direction arrow, painted on the side rail */}
+      <mesh position={[-length / 2 + 50, T - 16, W / 2 + 0.5]}>
+        <circleGeometry args={[14, 3]} />
+        <meshStandardMaterial color="#e4e4e7" roughness={0.6} />
       </mesh>
-      {/* photo-eye */}
-      <mesh position={[stop, CONVEYOR_TOP + 25, -W / 2 - 15]}>
-        <boxGeometry args={[20, 50, 20]} />
-        <meshStandardMaterial color="#18181b" />
+      {/* photo-eye and reflector */}
+      <RoundedBox args={[22, 50, 22]} radius={4} smoothness={2} position={[stop, T + 25, -W / 2 - 15]} castShadow>
+        <Painted color="#1c1d21" rough={0.5} />
+      </RoundedBox>
+      <mesh position={[stop, T + 25, W / 2 + 8]}>
+        <boxGeometry args={[18, 30, 4]} />
+        <meshStandardMaterial color="#fbbf24" roughness={0.2} metalness={0.3} />
       </mesh>
-      <mesh position={[stop, CONVEYOR_TOP + 25, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh position={[stop, T + 25, 0]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[1.5, 1.5, W + 20, 6]} />
         <meshBasicMaterial ref={beam} color="#ef4444" transparent opacity={0.7} />
       </mesh>
       {/* camera on a post above the pick point */}
-      <mesh position={[stop - 120, 330, 120]}>
-        <boxGeometry args={[20, 500, 20]} />
-        <meshStandardMaterial color="#3f3f46" />
+      <mesh position={[stop - 120, 330, 120]} castShadow>
+        <cylinderGeometry args={[12, 12, 500, 16]} />
+        <Brushed color="#8b9097" rough={0.45} />
       </mesh>
-      <mesh position={[stop - 60, 560, 60]} rotation={[0.6, 0, -0.6]}>
-        <boxGeometry args={[60, 40, 80]} />
-        <meshStandardMaterial color="#18181b" />
-      </mesh>
+      <group position={[stop - 60, 560, 60]} rotation={[0.6, 0, -0.6]}>
+        <RoundedBox args={[60, 44, 84]} radius={8} smoothness={3} castShadow>
+          <Painted color="#1c1d21" rough={0.45} />
+        </RoundedBox>
+        <mesh position={[0, -24, 0]}>
+          <cylinderGeometry args={[16, 16, 8, 24]} />
+          <meshPhysicalMaterial color="#0b1220" roughness={0.05} metalness={0.2} clearcoat={1} />
+        </mesh>
+      </group>
       <pointLight ref={flash} position={[stop, 400, 0]} color="#bfdbfe" intensity={0} distance={800} />
     </group>
   );
@@ -248,9 +342,9 @@ function BinModel({ s }: { s: Station }) {
   const t = 8;
   return (
     <group>
-      <mesh position={[0, 2, 0]} receiveShadow>
-        <boxGeometry args={[size, 4, size]} />
-        <meshStandardMaterial color="#18181b" />
+      <mesh position={[0, 3, 0]} receiveShadow>
+        <boxGeometry args={[size - 4, 6, size - 4]} />
+        <meshPhysicalMaterial color={color} roughness={0.5} clearcoat={0.2} />
       </mesh>
       {[
         [0, size / 2, size, t],
@@ -258,10 +352,17 @@ function BinModel({ s }: { s: Station }) {
         [size / 2, 0, t, size],
         [-size / 2, 0, t, size],
       ].map(([dx, dz, w, d], i) => (
-        <mesh key={i} position={[dx, BIN_WALL / 2, dz]} castShadow>
-          <boxGeometry args={[w, BIN_WALL, d]} />
-          <meshStandardMaterial color={color} transparent opacity={0.55} />
-        </mesh>
+        <group key={i}>
+          <mesh position={[dx, BIN_WALL / 2, dz]} castShadow>
+            <boxGeometry args={[w, BIN_WALL, d]} />
+            <meshPhysicalMaterial color={color} transparent opacity={0.62} roughness={0.22} clearcoat={0.8} clearcoatRoughness={0.15} />
+          </mesh>
+          {/* rolled rim */}
+          <mesh position={[dx, BIN_WALL - 3, dz]}>
+            <boxGeometry args={[w + 4, 8, d + 4]} />
+            <meshPhysicalMaterial color={color} roughness={0.35} clearcoat={0.5} />
+          </mesh>
+        </group>
       ))}
     </group>
   );
@@ -270,51 +371,103 @@ function BinModel({ s }: { s: Station }) {
 function PalletModel({ s }: { s: Station }) {
   const size = param(s, 'size');
   const step = size / 2 - 30;
+  const wood = useMemo(() => tiled(woodTexture(), size / 250, 0.25), [size]);
+  const blockWood = useMemo(() => tiled(woodTexture(), 0.4, 0.4), []);
+  useEffect(() => () => wood.dispose(), [wood]);
+  const planks = 5;
+  const plankW = size / planks - 8;
   return (
     <group>
-      {[-1, 0, 1].map((i) => (
-        <mesh key={i} position={[0, PALLET_TOP / 2 - 5, i * step]} castShadow receiveShadow>
-          <boxGeometry args={[size, PALLET_TOP - 10, 50]} />
-          <meshStandardMaterial color="#a16207" roughness={0.9} />
+      {/* stringer blocks */}
+      {[-1, 0, 1].map((i) =>
+        [-1, 0, 1].map((k) => (
+          <mesh key={`${i}${k}`} position={[k * step, (PALLET_TOP - 10) / 2, i * step]} castShadow receiveShadow>
+            <boxGeometry args={[60, PALLET_TOP - 10, 50]} />
+            <meshStandardMaterial map={blockWood} color="#c9a273" roughness={0.9} />
+          </mesh>
+        )),
+      )}
+      {/* deck boards */}
+      {Array.from({ length: planks }, (_, i) => (
+        <mesh key={i} position={[0, PALLET_TOP - 5, -size / 2 + (i + 0.5) * (size / planks)]} castShadow receiveShadow>
+          <boxGeometry args={[size, 10, plankW]} />
+          <meshStandardMaterial map={wood} color="#e2c49c" roughness={0.85} />
         </mesh>
       ))}
-      <mesh position={[0, PALLET_TOP - 4, 0]} receiveShadow>
-        <boxGeometry args={[size, 8, size]} />
-        <meshStandardMaterial color="#ca8a04" roughness={0.9} />
-      </mesh>
     </group>
   );
 }
 
 function MachineModel({ world }: { world: World }) {
   const lamp = useRef<THREE.MeshStandardMaterial>(null);
-  const door = useRef<THREE.Mesh>(null);
+  const door = useRef<THREE.Group>(null);
+  const screen = useRef<THREE.MeshStandardMaterial>(null);
   useFrame(() => {
     const running = world.machineRunning;
+    const state = running ? '#f59e0b' : world.machineDone ? '#22c55e' : '#3f3f46';
     if (lamp.current) {
-      lamp.current.color.set(running ? '#f59e0b' : world.machineDone ? '#22c55e' : '#3f3f46');
-      lamp.current.emissive.set(running ? '#f59e0b' : world.machineDone ? '#22c55e' : '#000');
+      lamp.current.color.set(state);
+      lamp.current.emissive.set(running || world.machineDone ? state : '#000');
     }
+    if (screen.current) screen.current.emissive.set(running ? '#1d4ed8' : '#0f172a');
     if (door.current) door.current.position.y = running ? 220 : 480;
   });
   return (
     <group>
-      <mesh position={[-230, 300, 0]} castShadow receiveShadow>
-        <boxGeometry args={[220, 600, 420]} />
-        <meshStandardMaterial color="#334155" metalness={0.3} roughness={0.5} />
+      {/* plinth and cabinet */}
+      <mesh position={[-230, 15, 0]} castShadow receiveShadow>
+        <boxGeometry args={[230, 30, 430]} />
+        <Painted color="#26292e" rough={0.6} />
       </mesh>
-      <mesh position={[0, FIXTURE_TOP / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[110, FIXTURE_TOP, 110]} />
-        <meshStandardMaterial color="#64748b" metalness={0.6} roughness={0.3} />
+      <RoundedBox args={[220, 570, 420]} radius={14} smoothness={4} position={[-230, 315, 0]} castShadow receiveShadow>
+        <Painted color="#d6dbe1" rough={0.38} />
+      </RoundedBox>
+      {/* dark viewing window on the front */}
+      <mesh position={[-119, 380, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[300, 220]} />
+        <meshPhysicalMaterial color="#0b1220" roughness={0.08} metalness={0.1} clearcoat={1} />
       </mesh>
+      {/* control panel with screen */}
+      <group position={[-160, 420, 222]}>
+        <RoundedBox args={[90, 140, 24]} radius={6} smoothness={3} castShadow>
+          <Painted color="#2a2d33" rough={0.5} />
+        </RoundedBox>
+        <mesh position={[0, 25, 12.5]}>
+          <planeGeometry args={[70, 50]} />
+          <meshStandardMaterial ref={screen} color="#0f172a" emissive="#0f172a" emissiveIntensity={1.2} roughness={0.2} />
+        </mesh>
+        <mesh position={[0, -35, 14]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[10, 10, 6, 20]} />
+          <meshStandardMaterial color="#dc2626" roughness={0.4} />
+        </mesh>
+      </group>
+      {/* fixture with vice jaws */}
+      <mesh position={[0, FIXTURE_TOP / 2 - 10, 0]} castShadow receiveShadow>
+        <boxGeometry args={[110, FIXTURE_TOP - 20, 110]} />
+        <Brushed color="#9aa1aa" rough={0.42} />
+      </mesh>
+      {[-1, 1].map((sz) => (
+        <mesh key={sz} position={[0, FIXTURE_TOP - 6, sz * 46]} castShadow>
+          <boxGeometry args={[100, 32, 14]} />
+          <Brushed color="#c4c8ce" rough={0.3} />
+        </mesh>
+      ))}
       {/* sliding guard door: drops in front of the fixture during a cycle */}
-      <mesh ref={door} position={[80, 480, 0]}>
-        <boxGeometry args={[8, 300, 260]} />
-        <meshStandardMaterial color="#93c5fd" transparent opacity={0.25} />
-      </mesh>
+      <group ref={door} position={[80, 480, 0]}>
+        <mesh>
+          <boxGeometry args={[6, 300, 260]} />
+          <meshPhysicalMaterial color="#bfdbfe" transparent opacity={0.22} roughness={0.05} clearcoat={1} />
+        </mesh>
+        {[-1, 1].map((sz) => (
+          <mesh key={sz} position={[0, 0, sz * 132]}>
+            <boxGeometry args={[12, 300, 8]} />
+            <Brushed color="#9ca3af" />
+          </mesh>
+        ))}
+      </group>
       <mesh position={[-230, 640, 150]}>
-        <cylinderGeometry args={[18, 18, 40, 16]} />
-        <meshStandardMaterial ref={lamp} color="#3f3f46" emissiveIntensity={1.5} />
+        <cylinderGeometry args={[18, 18, 40, 24]} />
+        <meshStandardMaterial ref={lamp} color="#3f3f46" emissiveIntensity={2} roughness={0.3} />
       </mesh>
     </group>
   );
@@ -332,14 +485,13 @@ function TrayModel({ s }: { s: Station }) {
   }
   return (
     <group>
-      <mesh position={[0, TRAY_TOP / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[w, TRAY_TOP, d]} />
-        <meshStandardMaterial color="#0f766e" roughness={0.7} />
-      </mesh>
+      <RoundedBox args={[w, TRAY_TOP, d]} radius={6} smoothness={3} position={[0, TRAY_TOP / 2, 0]} castShadow receiveShadow>
+        <meshPhysicalMaterial color="#0f766e" roughness={0.5} clearcoat={0.3} />
+      </RoundedBox>
       {pockets.map(([x, z], i) => (
-        <mesh key={i} position={[x, TRAY_TOP + 0.5, z]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[56, 56]} />
-          <meshBasicMaterial color="#134e4a" />
+        <mesh key={i} position={[x, TRAY_TOP + 0.5, z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[58, 58]} />
+          <meshStandardMaterial color="#0b3d38" roughness={0.8} />
         </mesh>
       ))}
     </group>
@@ -351,12 +503,13 @@ function TableModel({ s }: { s: Station }) {
   const d = param(s, 'd');
   const h = param(s, 'h');
   const slab = Math.min(30, h);
+  const wood = useMemo(() => tiled(woodTexture(), w / 300, d / 300), [w, d]);
+  useEffect(() => () => wood.dispose(), [wood]);
   return (
     <group>
-      <mesh position={[0, h - slab / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[w, slab, d]} />
-        <meshStandardMaterial color="#78716c" roughness={0.8} />
-      </mesh>
+      <RoundedBox args={[w, slab, d]} radius={Math.min(6, slab / 2 - 0.5)} smoothness={3} position={[0, h - slab / 2, 0]} castShadow receiveShadow>
+        <meshPhysicalMaterial map={wood} color="#f1dfc2" roughness={0.55} clearcoat={0.4} clearcoatRoughness={0.35} />
+      </RoundedBox>
       {[
         [1, 1],
         [1, -1],
@@ -365,7 +518,7 @@ function TableModel({ s }: { s: Station }) {
       ].map(([sx, sz], i) => (
         <mesh key={i} position={[sx * (w / 2 - 25), (h - slab) / 2, sz * (d / 2 - 25)]} castShadow>
           <boxGeometry args={[30, Math.max(1, h - slab), 30]} />
-          <meshStandardMaterial color="#44403c" />
+          <Brushed color="#8b9097" rough={0.45} />
         </mesh>
       ))}
     </group>
@@ -376,50 +529,68 @@ function FenceModel({ s }: { s: Station }) {
   const length = param(s, 'length');
   const h = param(s, 'h');
   const posts = Math.max(2, Math.round(length / 400) + 1);
+  const wire = useMemo(() => tiled(meshTexture(), length / 50, h / 50), [length, h]);
+  useEffect(() => () => wire.dispose(), [wire]);
   return (
     <group>
-      <mesh position={[0, h / 2, 0]}>
-        <boxGeometry args={[length, h, 6]} />
-        <meshStandardMaterial color="#facc15" transparent opacity={0.18} side={THREE.DoubleSide} />
+      <mesh position={[0, h / 2 + 40, 0]} castShadow>
+        <planeGeometry args={[length, h - 80]} />
+        <meshStandardMaterial map={wire} alphaTest={0.4} metalness={0.7} roughness={0.4} side={THREE.DoubleSide} />
       </mesh>
       {Array.from({ length: posts }, (_, i) => (
-        <mesh key={i} position={[-length / 2 + (i * length) / (posts - 1), h / 2, 0]} castShadow>
-          <boxGeometry args={[FENCE_THICKNESS, h, FENCE_THICKNESS]} />
-          <meshStandardMaterial color="#ca8a04" />
+        <group key={i} position={[-length / 2 + (i * length) / (posts - 1), 0, 0]}>
+          <mesh position={[0, h / 2, 0]} castShadow>
+            <boxGeometry args={[FENCE_THICKNESS, h, FENCE_THICKNESS]} />
+            <Painted color="#eab308" rough={0.45} />
+          </mesh>
+          <mesh position={[0, 3, 0]}>
+            <boxGeometry args={[80, 6, 80]} />
+            <Brushed color="#8b9097" rough={0.5} />
+          </mesh>
+        </group>
+      ))}
+      {[h - 10, 50].map((y) => (
+        <mesh key={y} position={[0, y, 0]} castShadow>
+          <boxGeometry args={[length, 20, 20]} />
+          <Painted color="#eab308" rough={0.45} />
         </mesh>
       ))}
-      <mesh position={[0, h - 10, 0]}>
-        <boxGeometry args={[length, 20, 20]} />
-        <meshStandardMaterial color="#ca8a04" />
-      </mesh>
     </group>
   );
 }
 
 function BeaconModel({ world }: { world: World }) {
-  const green = useRef<THREE.MeshStandardMaterial>(null);
-  const red = useRef<THREE.MeshStandardMaterial>(null);
+  const green = useRef<THREE.MeshPhysicalMaterial>(null);
+  const red = useRef<THREE.MeshPhysicalMaterial>(null);
   useFrame(() => {
     green.current?.emissive.set(world.outputs[2] ? '#22c55e' : '#000');
     red.current?.emissive.set(world.outputs[3] ? '#ef4444' : '#000');
   });
   return (
     <group>
-      <mesh position={[0, 5, 0]}>
-        <cylinderGeometry args={[30, 30, 10, 16]} />
-        <meshStandardMaterial color="#27272a" />
+      <mesh position={[0, 5, 0]} castShadow>
+        <cylinderGeometry args={[30, 34, 10, 24]} />
+        <Painted color="#27272a" rough={0.5} />
       </mesh>
-      <mesh position={[0, 200, 0]}>
-        <cylinderGeometry args={[6, 6, 400, 8]} />
-        <meshStandardMaterial color="#3f3f46" />
+      <mesh position={[0, 200, 0]} castShadow>
+        <cylinderGeometry args={[6, 6, 400, 12]} />
+        <Brushed color="#9ca3af" />
       </mesh>
-      <mesh position={[0, 420, 0]}>
-        <cylinderGeometry args={[20, 20, 40, 16]} />
-        <meshStandardMaterial ref={green} color="#14532d" emissiveIntensity={2} />
+      <mesh position={[0, 404, 0]}>
+        <cylinderGeometry args={[21, 21, 8, 24]} />
+        <Painted color="#27272a" rough={0.5} />
       </mesh>
-      <mesh position={[0, 462, 0]}>
-        <cylinderGeometry args={[20, 20, 40, 16]} />
-        <meshStandardMaterial ref={red} color="#7f1d1d" emissiveIntensity={2} />
+      <mesh position={[0, 428, 0]}>
+        <cylinderGeometry args={[20, 20, 40, 24]} />
+        <meshPhysicalMaterial ref={green} color="#166534" transparent opacity={0.9} roughness={0.15} clearcoat={1} emissiveIntensity={2.2} />
+      </mesh>
+      <mesh position={[0, 470, 0]}>
+        <cylinderGeometry args={[20, 20, 40, 24]} />
+        <meshPhysicalMaterial ref={red} color="#991b1b" transparent opacity={0.9} roughness={0.15} clearcoat={1} emissiveIntensity={2.2} />
+      </mesh>
+      <mesh position={[0, 494, 0]}>
+        <cylinderGeometry args={[18, 21, 8, 24]} />
+        <Painted color="#27272a" rough={0.5} />
       </mesh>
     </group>
   );
@@ -648,6 +819,24 @@ function Trail({ world }: { world: World }) {
   return <primitive object={line} />;
 }
 
+// Concrete floor with a painted keep-out ring around the robot base.
+function Floor() {
+  const map = useMemo(() => tiled(concreteTexture(), (FLOOR.halfX * 2) / 1000, (FLOOR.halfZ * 2) / 1000), []);
+  const stripes = useMemo(() => tiled(hazardTexture(), 24, 1), []);
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[FLOOR.halfX * 2, FLOOR.halfZ * 2]} />
+        <meshStandardMaterial map={map} roughness={0.82} metalness={0} />
+      </mesh>
+      <mesh position={[0, 0.3, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <ringGeometry args={[205, 225, 96]} />
+        <meshStandardMaterial map={stripes} roughness={0.7} />
+      </mesh>
+    </>
+  );
+}
+
 // A lost WebGL context never comes back on the same <canvas>: r3f calls
 // forceContextLoss() (deferred) when a Canvas unmounts, which kills a renderer
 // re-created on that element by Fast Refresh, and GPU resets do the same in
@@ -755,19 +944,38 @@ export default function WorkcellView({
       onPointerDown={() => editing && wrapper.current?.focus({ preventScroll: true })}
       className="relative h-full w-full bg-[#09090b] outline-none"
     >
-      <Canvas key={generation} shadows camera={{ position: [1.5, 1.35, 1.7], fov: 45, near: 0.05, far: 50 }}>
-        <color attach="background" args={['#09090b']} />
-        <ambientLight intensity={0.45} />
-        <directionalLight position={[3, 5, 2]} intensity={1.4} castShadow shadow-mapSize={[2048, 2048]}>
+      <Canvas
+        key={generation}
+        shadows={{ type: THREE.PCFSoftShadowMap }}
+        dpr={[1, 2]}
+        camera={{ position: [1.5, 1.35, 1.7], fov: 45, near: 0.05, far: 50 }}
+      >
+        <color attach="background" args={['#0b0b0e']} />
+        <fog attach="fog" args={['#0b0b0e', 4.5, 9]} />
+        <hemisphereLight args={['#dbeafe', '#1c1917', 0.35]} />
+        <directionalLight
+          position={[2.5, 5, 2]}
+          intensity={2.2}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-bias={-0.0004}
+          shadow-normalBias={0.02}
+        >
           <orthographicCamera attach="shadow-camera" args={[-2, 2, 2, -2, 0.1, 15]} />
         </directionalLight>
-        <directionalLight position={[-3, 2, -2]} intensity={0.3} />
+        <directionalLight position={[-3, 2, -2]} intensity={0.35} color="#c7d2fe" />
+        {/* Factory-hall light panels, rendered once into the environment map. */}
+        <Environment resolution={256} environmentIntensity={0.75}>
+          <Lightformer form="rect" intensity={2.5} position={[0, 4, 0]} rotation-x={Math.PI / 2} scale={[8, 1.5, 1]} />
+          <Lightformer form="rect" intensity={2} position={[0, 4, -2.5]} rotation-x={Math.PI / 2} scale={[8, 1, 1]} />
+          <Lightformer form="rect" intensity={2} position={[0, 4, 2.5]} rotation-x={Math.PI / 2} scale={[8, 1, 1]} />
+          <Lightformer form="rect" intensity={0.8} position={[-5, 1.5, 0]} rotation-y={Math.PI / 2} scale={[10, 2, 1]} color="#e0e7ff" />
+          <Lightformer form="rect" intensity={0.6} position={[5, 1.5, 0]} rotation-y={-Math.PI / 2} scale={[10, 2, 1]} color="#fff7ed" />
+        </Environment>
+        <ContactShadows position={[0, 0.0007, 0]} scale={[2.8, 2.4]} resolution={512} blur={2.2} far={0.8} opacity={0.55} />
         <group scale={0.001}>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <planeGeometry args={[FLOOR.halfX * 2, FLOOR.halfZ * 2]} />
-            <meshStandardMaterial color="#141417" roughness={1} />
-          </mesh>
-          <gridHelper args={[2600, 26, '#27272a', '#1c1c1f']} position={[0, 0.5, 0]} />
+          <Floor />
+          {editing && <gridHelper args={[2600, 26, '#3f3f46', '#26262b']} position={[0, 0.5, 0]} />}
           <Arm world={world} />
           <Stations world={world} layout={layout} edit={edit} />
           <Parts world={world} />
