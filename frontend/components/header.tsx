@@ -61,7 +61,7 @@ export default function Header() {
             {pathname !== '/dashboard' && (
               <Link
                 href="/dashboard"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-lg transition-all group"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-white hover:bg-white/[0.06] font-medium text-xs rounded-lg transition-all group"
               >
                 Dashboard
                 <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
@@ -86,15 +86,15 @@ export default function Header() {
                 crossOrigin="anonymous"
               />
             ) : (
-              <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
-                <User size={14} className="text-primary" />
+              <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+                <User size={14} className="text-white/80" />
               </div>
             )}
           </div>
         ) : (
           <Link
             href="/login"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs rounded-lg transition-all group flex-shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-white hover:bg-white/[0.06] font-medium text-xs rounded-lg transition-all group flex-shrink-0"
           >
             Login
             <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
