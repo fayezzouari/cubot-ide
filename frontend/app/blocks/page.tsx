@@ -52,6 +52,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { useProject } from '@/contexts/project-context';
 import { blocksApi } from '@/lib/api/blocks';
 import { tidyNodes } from '@/lib/blocks/autolayout';
+import { DEFAULT_VISION, parseVision, type VisionConfig } from '@/lib/blocks/vision';
 import { compile } from '@/lib/blocks/compiler';
 import { generateFirmware, generatePython } from '@/lib/blocks/codegen';
 import type { Value } from '@/lib/blocks/expression';
@@ -86,6 +87,7 @@ import { Inspector } from '@/components/blocks/Inspector';
 import { PosesPanel } from '@/components/blocks/PosesPanel';
 import { CellPanel } from '@/components/blocks/CellPanel';
 import { EnvironmentPanel } from '@/components/blocks/EnvironmentPanel';
+import { SensorsPanel } from '@/components/blocks/SensorsPanel';
 import { ConsolePanel } from '@/components/blocks/ConsolePanel';
 import { TemplateGallery } from '@/components/blocks/TemplateGallery';
 import { CodeDialog, type CodeFile } from '@/components/blocks/CodeDialog';
@@ -96,7 +98,7 @@ const WorkcellView = dynamic(() => import('@/components/blocks/WorkcellView'), {
 const nodeTypes = Object.fromEntries(Object.keys(BLOCK_BY_TYPE).map((t) => [t, FlowNode]));
 
 type RunState = 'idle' | 'running' | 'paused';
-type SideTab = 'properties' | 'cell' | 'environment' | 'poses';
+type SideTab = 'properties' | 'cell' | 'environment' | 'sensors' | 'poses';
 
 const EDGE_COLORS: Record<string, string> = { true: '#4ade80', false: '#f87171', body: '#a78bfa' };
 
@@ -142,6 +144,7 @@ function BlocksIDE() {
   const [scene, setScene] = useState<SceneConfig>(DEFAULT_SCENE);
   const [layout, setLayout] = useState<CellLayout>(() => cloneLayout(DEFAULT_LAYOUT));
   const [stationId, setStationId] = useState<string | null>(null);
+  const [vision, setVision] = useState<VisionConfig>(() => structuredClone(DEFAULT_VISION));
   const [programName, setProgramName] = useState('Untitled program');
   const [programId, setProgramId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<'saved' | 'dirty' | 'saving' | 'offline'>('offline');
@@ -196,8 +199,12 @@ function BlocksIDE() {
       poses: Pose[];
       scene: SceneConfig;
       layout?: CellLayout | null;
+      vision?: VisionConfig;
       trail?: boolean;
     }) => {
+      const nextVision = doc.vision ?? structuredClone(DEFAULT_VISION);
+      setVision(nextVision);
+      world.vision = nextVision;
       const nextLayout = cloneLayout(doc.layout ?? DEFAULT_LAYOUT);
       setNodes(doc.nodes);
       setEdges(doc.edges);
@@ -236,6 +243,7 @@ function BlocksIDE() {
           poses: latest.poses?.length ? latest.poses : DEFAULT_POSES,
           scene: latest.settings?.scene ?? DEFAULT_SCENE,
           layout: parseLayout(latest.settings?.layout),
+          vision: parseVision(latest.settings?.vision),
         });
         setSaveState('saved');
       })
@@ -253,9 +261,9 @@ function BlocksIDE() {
         nodes: serializeNodes(nodes),
         edges: serializeEdges(edges),
         poses,
-        settings: { scene, layout },
+        settings: { scene, layout, vision },
       }),
-    [programName, nodes, edges, poses, scene, layout],
+    [programName, nodes, edges, poses, scene, layout, vision],
   );
 
   const save = useCallback(async () => {
@@ -607,7 +615,7 @@ function BlocksIDE() {
     version: 2,
     name: programName,
     poses,
-    settings: { scene, layout },
+    settings: { scene, layout, vision },
     nodes: serializeNodes(nodes),
     edges: serializeEdges(edges),
   });
@@ -623,6 +631,7 @@ function BlocksIDE() {
         poses: Array.isArray(doc.poses) && doc.poses.length ? doc.poses : DEFAULT_POSES,
         scene: doc.settings?.scene ?? DEFAULT_SCENE,
         layout: parseLayout(doc.settings?.layout),
+        vision: parseVision(doc.settings?.vision),
       });
       toast.success(`Imported ${file.name}`);
     } catch (e) {
@@ -638,7 +647,7 @@ function BlocksIDE() {
           label: 'Python',
           filename: `${slug}.py`,
           description: 'Standalone program: IK, serial controller, MQTT and OpenCV vision. Try --dry-run first.',
-          content: compiled.ok ? generatePython(compiled, poses, programName) : '',
+          content: compiled.ok ? generatePython(compiled, poses, programName, vision) : '',
         },
         {
           id: 'firmware',
@@ -921,6 +930,7 @@ function BlocksIDE() {
                         ['properties', 'Properties'],
                         ['cell', 'Cell & I/O'],
                         ['environment', 'Environment'],
+                        ['sensors', 'Sensors'],
                         ['poses', 'Poses'],
                       ] as const
                     ).map(([id, label]) => (
@@ -975,6 +985,17 @@ function BlocksIDE() {
                         onApply={applyEnvironment}
                         onResetPose={resetStationPose}
                         onImportModel={importModel}
+                      />
+                    )}
+                    {sideTab === 'sensors' && (
+                      <SensorsPanel
+                        world={world}
+                        vision={vision}
+                        running={running}
+                        onVisionChange={(v) => {
+                          setVision(v);
+                          world.vision = v;
+                        }}
                       />
                     )}
                     {sideTab === 'poses' && <PosesPanel world={world} poses={poses} disabled={running} onChange={setPoses} />}
