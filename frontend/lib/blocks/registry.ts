@@ -369,11 +369,20 @@ export const BLOCKS: BlockDef[] = [
     label: 'Vision inspect',
     category: 'sensing',
     description:
-      'Takes a camera image of the part at a conveyor pick point, or of the part in the gripper when no part is waiting. Sets `part_color` ("red", "green", "blue", "yellow" or "none"), `part_defect` (true/false) and `part_ok`.',
-    fields: [],
+      'Takes an image with a camera and runs colour detection on it (tune it in the Sensors tab). Sets `part_color` (a colour class name or "none"), `part_defect`, `part_ok`, `part_area` (% of the view) and `part_cx` / `part_cy` (where the part is in the view, -1…1).',
+    fields: [
+      {
+        key: 'camera',
+        label: 'Camera',
+        kind: 'text',
+        default: 'auto',
+        placeholder: 'auto, wrist or a conveyor name',
+        help: '"auto" uses the camera of the conveyor where a part waits, or the wrist camera while holding a part. Or name a camera: "wrist", or a conveyor such as "Infeed conveyor".',
+      },
+    ],
     outputs: [{ id: 'next' }],
     hasInput: true,
-    summary: () => '→ part_color, part_defect, part_ok',
+    summary: (d) => `${s(d.camera) || 'auto'} → part_color, part_defect`,
   },
   {
     type: 'read_input',
@@ -509,6 +518,9 @@ export const BUILTIN_VARIABLES: { name: string; help: string }[] = [
   { name: 'part_color', help: 'Last vision result' },
   { name: 'part_defect', help: 'Last vision result' },
   { name: 'part_ok', help: 'Last vision result' },
+  { name: 'part_area', help: 'Last vision result: % of the view the part covers' },
+  { name: 'part_cx', help: 'Last vision result: part position across the view, -1 (left) … 1 (right)' },
+  { name: 'part_cy', help: 'Last vision result: part position down the view, -1 (top) … 1 (bottom)' },
   { name: 'pallet_dx', help: 'Last Pallet slot result' },
   { name: 'pallet_dy', help: 'Last Pallet slot result' },
   { name: 'pallet_dz', help: 'Last Pallet slot result' },
