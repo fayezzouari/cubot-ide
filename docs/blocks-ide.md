@@ -108,10 +108,23 @@ the 3D view to **Top** for the easiest placement.
 * **Remove:** Del in the 3D view or the trash button (with Undo).
 * **Poses follow stations.** Moving, rotating or resizing a station carries its pose along, including any offset you re-taught. *Reset pose to station* puts it back at the reference point.
 * **Layout checks** flag stations the robot cannot reach (or approach from above), stations overlapping each other or the robot base, and stations off the floor. The green ring shows the robot's reach.
-* **Collisions:** the tool, or a part it holds, faults the program if it goes into a conveyor, pallet, machine, tray, table, fence or the floor. Joint moves swing in an arc, so raise the approach height when a table sits between two stations.
+* **Collisions:** the gripper, a part it holds, or any arm link faults the program if it goes into a station (including bin walls), another part, or the floor. Joint moves swing in an arc, so raise the approach height when a table sits between two stations.
 * **Environments:** *Load an environment…* offers presets (full production cell, two-lane sorting, palletizing station, classroom table, empty floor) and your saved ones. *Save* stores the current cell in this browser; *Export* / *Import* move it between computers. The environment is also saved with the program and its project file.
 
 The Vision inspect block reads the part at a conveyor pick point, or the part in the gripper when no part is waiting (wrist camera), so tray cells can sort by colour too.
+
+## Physics model
+
+The simulator aims for believable behaviour at interactive speed, not a full rigid-body engine:
+
+* **Gravity:** a released part falls freely (g = 9.81 m/s²) to whatever is below it; a 300 mm drop takes 0.25 s.
+* **Stability:** a part stays where it lands only if its centre of mass is over its support — one part, several parts bridged at the same height, or a station surface. Otherwise it tips off that edge. Parts left unsupported (the part below was picked) fall too.
+* **Bins:** bin poses release just above the rim. Dropped parts settle into the lowest free spot, so bins fill layer by layer instead of as a tower.
+* **Gripping:** a part is gripped only if it sits between the fingers (centred within 18 mm, fingertips at its middle). It turns with the tool (J1 and J6).
+* **Conveyor:** an accumulating belt; parts queue touching each other, and a part being lifted out of the lane blocks the queue until it clears.
+* **Timing:** when a move or wait finishes, the clock stops at that instant before the next block starts, so cycle times are the same at any simulation speed or frame rate.
+
+Not modelled: part rotation while tumbling, friction-driven sliding, and pushing parts with the arm.
 
 ## Use cases — industry
 
@@ -200,7 +213,7 @@ classroom prompt.
 ## Known limits
 
 * The IK assumes the tool points straight down, which covers pick, place and drawing. Tilted tool orientations are not supported.
-* Collision checking covers the tool tip and the held part against station boxes and the floor, not the arm links.
+* Collision checking uses simplified shapes: station boxes, cube parts, and spheres along the arm links.
 * The robot base is fixed at the origin; there is one CNC machine and one stack light per cell, and all conveyors share DO0 / DI0.
 * In hardware mode, inputs (DI0–DI3) still come from the simulation. The exported Python reads them from the controller.
 * The simulation keeps running in background tabs, but at reduced speed.

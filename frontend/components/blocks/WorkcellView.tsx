@@ -189,7 +189,7 @@ function PartMesh({ world, part }: { world: World; part: Part }) {
   useFrame(() => {
     if (!ref.current) return;
     ref.current.position.set(part.pos.x, part.pos.y, part.pos.z);
-    if (world.held === part) ref.current.rotation.y = rad(world.joints[0]);
+    ref.current.rotation.y = rad(part.yaw);
     if (mat.current) {
       mat.current.color.set(part.machined ? '#b8bcc2' : PART_COLORS[part.color]);
       mat.current.metalness = part.machined ? 0.9 : 0;

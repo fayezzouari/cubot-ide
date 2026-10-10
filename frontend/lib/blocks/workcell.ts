@@ -14,16 +14,20 @@
 // time, so the interpreter reads like a robot program.
 
 import {
+  armSamples,
   checkLimits,
   forwardKinematics,
   HOME_JOINTS,
   inverseKinematics,
   JOINT_LIMITS,
+  toolYaw,
   UnreachableError,
 } from './kinematics';
 import {
+  BIN_WALL_THICKNESS,
   cloneLayout,
   CONVEYOR_TOP,
+  CONVEYOR_WIDTH,
   conveyorEnds,
   DEFAULT_LAYOUT,
   footprint,
@@ -70,7 +74,31 @@ export interface Part {
   machined: boolean;
   pos: Vec3; // centre
   belt: string | null; // id of the conveyor carrying the part
+  yaw: number; // degrees about +Y
+  fall: Fall | null; // set while the part drops after release
 }
+
+// A falling part follows a ballistic drop to its resting place. The landing
+// spot is solved when the fall starts, so the part can slide a little sideways
+// on the way down (tipping off an edge, settling into a pile).
+interface Fall {
+  from: Vec3;
+  to: Vec3;
+  t: number;
+  duration: number;
+  belt: string | null;
+}
+
+// Where a part would come to rest, and whether it would stay there.
+interface Rest {
+  y: number; // centre height
+  belt: string | null;
+  stable: boolean;
+  push: { x: number; z: number } | null; // shift that would resolve an unstable rest
+}
+
+const GRAVITY = 9810; // mm/s²
+const QUEUE_GAP = 1; // accumulating conveyor: parts touch
 
 export class AbortError extends Error {
   constructor() {
@@ -131,6 +159,11 @@ export class World {
   layout: CellLayout = cloneLayout(DEFAULT_LAYOUT);
   // Solid the tool was already inside on the previous step (no repeat faults).
   private insideSolid: string | null = null;
+  // Set when support under resting parts may have changed (a pick, a landing).
+  private supportsDirty = false;
+  // Simulated time left over from a tick that stopped early (see tick).
+  private debt = 0;
+  private yieldNow = false;
 
   conveyorRunning = false;
   conveyorSpeed = 150;
@@ -269,6 +302,9 @@ export class World {
     this.lastVision = null;
     this.stats = { picks: 0, places: 0, cycleStart: 0 };
     this.insideSolid = null;
+    this.supportsDirty = false;
+    this.debt = 0;
+    this.yieldNow = false;
     this.loadTrays();
     this.emit();
   }
@@ -286,6 +322,8 @@ export class World {
           machined: false,
           pos,
           belt: null,
+          yaw: s.rot,
+          fall: null,
         });
       }
     }
@@ -315,11 +353,20 @@ export class World {
     if (this.paused) return;
     // Fixed small sub-steps keep fast-forwarded runs identical to real time.
     // Up to 1 s of catch-up covers background-tab timer throttling.
-    let remaining = Math.min(realDt, 1) * this.speed;
+    let remaining = Math.min(realDt, 1) * this.speed + this.debt;
+    this.debt = 0;
     while (remaining > 1e-6) {
       const dt = Math.min(0.02, remaining);
       remaining -= dt;
       this.step(dt);
+      // A command finished: stop the clock here so the program's next command
+      // starts at this exact moment, not at the end of the tick. Without this,
+      // cycle times would depend on the frame rate and simulation speed.
+      if (this.yieldNow) {
+        this.yieldNow = false;
+        this.debt = Math.min(remaining, 5 * this.speed);
+        break;
+      }
     }
     this.emit();
   }
@@ -340,6 +387,7 @@ export class World {
       if (this.motion === m && s >= 1) {
         this.motion = null;
         m.resolve();
+        this.yieldNow = true;
       }
     }
 
@@ -348,7 +396,10 @@ export class World {
     this.gripperWidth += Math.sign(targetWidth - this.gripperWidth) * Math.min(Math.abs(targetWidth - this.gripperWidth), dt * 4);
 
     const tcp = this.tcp;
-    if (this.held) this.held.pos = { x: tcp.x, y: tcp.y, z: tcp.z };
+    if (this.held) {
+      this.held.pos = { x: tcp.x, y: tcp.y, z: tcp.z };
+      this.held.yaw = toolYaw(this.joints);
+    }
     if (this.trailEnabled) {
       const last = this.trail[this.trail.length - 1];
       if (!last || Math.hypot(last.x - tcp.x, last.y - tcp.y, last.z - tcp.z) > 4) {
@@ -360,6 +411,12 @@ export class World {
     // Conveyors: parts move towards the end stop and queue behind each other.
     if (this.conveyorRunning) {
       for (const c of this.conveyors) this.stepConveyor(c, dt);
+    }
+
+    this.stepFalling(dt);
+    if (this.supportsDirty) {
+      this.supportsDirty = false;
+      this.settleUnsupported();
     }
 
     // Machine
@@ -380,7 +437,10 @@ export class World {
     if (this.waiters.length) {
       const pending: Waiter[] = [];
       for (const w of this.waiters) {
-        if (w.until()) w.resolve();
+        if (w.until()) {
+          w.resolve();
+          this.yieldNow = true;
+        }
         else if (this.time >= w.deadline) w.reject(new FaultError(w.timeoutMessage));
         else pending.push(w);
       }
@@ -391,16 +451,25 @@ export class World {
   private stepConveyor(c: Station, dt: number) {
     const ends = conveyorEnds(c);
     const belt = this.parts
-      .filter((p) => p.belt === c.id && p !== this.held)
+      .filter((p) => p.belt === c.id && p !== this.held && !p.fall)
       .map((p) => ({ p, l: toLocal(c, p.pos.x, p.pos.z) }))
       .sort((a, b) => b.l.x - a.l.x);
     let limit = ends.stop;
+    // A part being lifted out of the lane still blocks the queue until its
+    // bottom clears the parts behind it.
+    const held = this.held;
+    let heldX = Infinity;
+    if (held && held.pos.y - half < CONVEYOR_TOP + PART_SIZE - 1) {
+      const hl = toLocal(c, held.pos.x, held.pos.z);
+      if (Math.abs(hl.z) < CONVEYOR_WIDTH / 2 + half && hl.x > ends.start && hl.x < ends.end) heldX = hl.x;
+    }
     for (const { p, l } of belt) {
+      if (l.x < heldX) limit = Math.min(limit, heldX - PART_SIZE - QUEUE_GAP);
       const x = Math.min(limit, l.x + this.conveyorSpeed * dt);
       const w = toWorld(c, Math.max(x, l.x), l.z);
       p.pos.x = w.x;
       p.pos.z = w.z;
-      limit = Math.max(x, l.x) - PART_SIZE - 6;
+      limit = Math.max(x, l.x) - PART_SIZE - QUEUE_GAP;
     }
     const lastX = belt.length ? Math.min(...belt.map((b) => b.l.x)) : Infinity;
     const canSpawn = this.scene.maxParts === 0 || this.spawned < this.scene.maxParts;
@@ -417,32 +486,226 @@ export class World {
       machined: false,
       pos: { x: at.x, y: CONVEYOR_TOP + half, z: at.z },
       belt: c.id,
+      yaw: c.rot,
+      fall: null,
     });
     this.spawned++;
   }
 
-  // Faults when the tool (or the bottom of a held part) enters a solid station.
+  // Faults when the tool, a held part or an arm link enters a solid station or
+  // another part. Only entering counts, so the arm can always move back out.
   private checkCollisions(tcp: Vec3) {
-    const bottom = this.held ? tcp.y - half : tcp.y;
-    let hit: Station | null = null;
-    if (bottom < -2) hit = { id: 'floor', kind: 'table', name: 'the floor', x: 0, z: 0, rot: 0 };
-    for (const s of this.layout.stations) {
-      if (hit) break;
-      const l = toLocal(s, tcp.x, tcp.z);
-      for (const b of stationBoxes(s)) {
-        if (inBox(b, l.x, l.z) && bottom < b.top - 3) {
-          hit = s;
-          break;
+    const hit = this.findCollision(tcp);
+    const key = hit?.key ?? null;
+    if (hit && key !== this.insideSolid) {
+      this.insideSolid = key;
+      this.fault(`Collision: ${hit.what} hit ${hit.name}.`);
+      return;
+    }
+    this.insideSolid = key;
+  }
+
+  private findCollision(tcp: Vec3): { key: string; what: string; name: string } | null {
+    const held = this.held;
+    const bottom = held ? tcp.y - half : tcp.y;
+    const what = held ? 'the held part' : 'the gripper';
+    if (bottom < -2) return { key: 'floor', what, name: 'the floor' };
+    const pointHits = (p: Vec3, r: number, floorY: number) => {
+      for (const s of this.layout.stations) {
+        const l = toLocal(s, p.x, p.z);
+        for (const b of stationBoxes(s)) {
+          if (inBox(b, l.x, l.z, r) && floorY < b.top - 3) return s;
+        }
+      }
+      return null;
+    };
+    // Tool tip, or the held part's footprint.
+    const s = pointHits(tcp, held ? half - 4 : 0, bottom);
+    if (s) return { key: s.id, what, name: s.name };
+    // Held part against parts resting in the cell.
+    if (held) {
+      for (const o of this.parts) {
+        if (o === held || o.fall) continue;
+        if (Math.abs(o.pos.x - tcp.x) < PART_SIZE - 4 && Math.abs(o.pos.z - tcp.z) < PART_SIZE - 4 && Math.abs(o.pos.y - tcp.y) < PART_SIZE - 4) {
+          return { key: `part-${o.id}`, what, name: 'another part' };
         }
       }
     }
-    const id = hit?.id ?? null;
-    if (hit && id !== this.insideSolid) {
-      this.insideSolid = id;
-      this.fault(`Collision: the ${this.held ? 'held part' : 'tool'} hit ${hit.name}.`);
+    // Arm links.
+    for (const { p, r } of armSamples(this.joints)) {
+      if (p.y - r < 0) return { key: 'floor', what: 'the arm', name: 'the floor' };
+      for (const st of this.layout.stations) {
+        const l = toLocal(st, p.x, p.z);
+        for (const b of stationBoxes(st)) {
+          if (inBox(b, l.x, l.z, r) && p.y - r < b.top) return { key: `arm-${st.id}`, what: 'the arm', name: st.name };
+        }
+      }
+    }
+    return null;
+  }
+
+  // ── Part physics ─────────────────────────────────────────────────────────
+
+  private startFall(p: Part) {
+    const rest = this.findRest(p, p.pos.x, p.pos.z);
+    const drop = p.pos.y - rest.y;
+    if (drop <= 0.5 && Math.hypot(rest.x - p.pos.x, rest.z - p.pos.z) < 0.5) {
+      p.pos.y = rest.y;
+      p.belt = rest.belt;
       return;
     }
-    this.insideSolid = id;
+    // Free fall from rest; a small floor on the time keeps sideways slides visible.
+    const duration = Math.max(0.08, Math.sqrt((2 * Math.max(drop, 0)) / GRAVITY));
+    p.fall = { from: { ...p.pos }, to: { x: rest.x, y: rest.y, z: rest.z }, t: 0, duration, belt: rest.belt };
+    p.belt = null;
+  }
+
+  private stepFalling(dt: number) {
+    for (const p of this.parts) {
+      const f = p.fall;
+      if (!f) continue;
+      f.t += dt;
+      const s = Math.min(1, f.t / f.duration);
+      const drop = f.from.y - f.to.y;
+      p.pos.x = f.from.x + (f.to.x - f.from.x) * s;
+      p.pos.z = f.from.z + (f.to.z - f.from.z) * s;
+      p.pos.y = drop > 0 ? Math.max(f.to.y, f.from.y - 0.5 * GRAVITY * f.t * f.t) : f.from.y + (f.to.y - f.from.y) * s;
+      if (s >= 1) {
+        p.pos = { ...f.to };
+        p.belt = f.belt;
+        p.fall = null;
+        this.supportsDirty = true;
+      }
+    }
+  }
+
+  // Parts whose support went away (picked from under them, a part landed
+  // badly) drop to their new resting place, lowest first.
+  private settleUnsupported() {
+    const resting = this.parts.filter((p) => p !== this.held && !p.fall && !p.belt).sort((a, b) => a.pos.y - b.pos.y);
+    for (const p of resting) {
+      const r = this.restAt(p, p.pos.x, p.pos.z);
+      if (!r.stable || r.y < p.pos.y - 0.5) this.startFall(p);
+    }
+  }
+
+  // How a part with its centre at (x, z) would rest, given the stations and
+  // the other parts. A part is stable when its centre of mass is over what
+  // supports it; otherwise `push` says which way it tips or slides.
+  private restAt(p: Part, x: number, z: number): Rest {
+    let top = 0;
+    let belt: string | null = null;
+    for (const s of this.layout.stations) {
+      const l = toLocal(s, x, z);
+      for (const b of stationBoxes(s)) {
+        if (inBox(b, l.x, l.z) && b.top > top && b.top <= p.pos.y - half + 1) {
+          top = b.top;
+          belt = s.kind === 'conveyor' ? s.id : null;
+        }
+      }
+    }
+    // A taller station box overlapping the footprint blocks this spot: push
+    // the part out along the shallower side.
+    for (const s of this.layout.stations) {
+      const l = toLocal(s, x, z);
+      for (const b of stationBoxes(s)) {
+        if (b.top <= top + 1 || !inBox(b, l.x, l.z, half)) continue;
+        const px = b.w / 2 + half - Math.abs(l.x - b.cx);
+        const pz = b.d / 2 + half - Math.abs(l.z - b.cz);
+        const local = px < pz ? { x: Math.sign(l.x - b.cx || 1) * (px + 1), z: 0 } : { x: 0, z: Math.sign(l.z - b.cz || 1) * (pz + 1) };
+        const w0 = toWorld(s, 0, 0);
+        const w1 = toWorld(s, local.x, local.z);
+        return { y: top + half, belt, stable: false, push: { x: w1.x - w0.x, z: w1.z - w0.z } };
+      }
+    }
+    // Other parts under the footprint. The part rests on the highest of them;
+    // it is stable when its centre of mass lies over the area those parts
+    // support (one part, or several bridged at the same height).
+    let partTop = top;
+    let level: Part[] = [];
+    for (const o of this.parts) {
+      if (o === p || o === this.held || o.fall) continue;
+      if (Math.abs(o.pos.x - x) >= PART_SIZE - 0.5 || Math.abs(o.pos.z - z) >= PART_SIZE - 0.5) continue;
+      if (o.pos.y > p.pos.y + 1) continue;
+      const t = o.pos.y + half;
+      if (t > partTop + 0.5) {
+        partTop = t;
+        level = [o];
+      } else if (Math.abs(t - partTop) <= 0.5 && partTop > top) {
+        level.push(o);
+      }
+    }
+    if (!level.length) return { y: top + half, belt, stable: true, push: null };
+    // Support area: the parts' tops, clipped to this part's footprint.
+    const minX = Math.max(x - half, Math.min(...level.map((o) => o.pos.x - half)));
+    const maxX = Math.min(x + half, Math.max(...level.map((o) => o.pos.x + half)));
+    const minZ = Math.max(z - half, Math.min(...level.map((o) => o.pos.z - half)));
+    const maxZ = Math.min(z + half, Math.max(...level.map((o) => o.pos.z + half)));
+    const margin = 2;
+    if (x > minX + margin && x < maxX - margin && z > minZ + margin && z < maxZ - margin) {
+      return { y: partTop + half, belt: null, stable: true, push: null };
+    }
+    // Centre of mass past the edge: it tips off on that side of the nearest part.
+    const near = level.reduce((a, b) => (Math.hypot(b.pos.x - x, b.pos.z - z) < Math.hypot(a.pos.x - x, a.pos.z - z) ? b : a));
+    const dx = x - near.pos.x;
+    const dz = z - near.pos.z;
+    const push =
+      Math.abs(dx) >= Math.abs(dz)
+        ? { x: near.pos.x + Math.sign(dx || 1) * (PART_SIZE + 1) - x, z: 0 }
+        : { x: 0, z: near.pos.z + Math.sign(dz || 1) * (PART_SIZE + 1) - z };
+    return { y: partTop + half, belt: null, stable: false, push };
+  }
+
+  // Resting place for a part released at (x0, z0).
+  private findRest(p: Part, x0: number, z0: number): Vec3 & { belt: string | null } {
+    const bin = this.layout.stations.find((s) => {
+      if (s.kind !== 'bin') return false;
+      const l = toLocal(s, x0, z0);
+      const inner = param(s, 'size') / 2 - BIN_WALL_THICKNESS;
+      return Math.abs(l.x) < inner && Math.abs(l.z) < inner && p.pos.y - half > 0;
+    });
+    if (bin) {
+      // Dropped into a bin: the part tumbles to the lowest stable spot nearby,
+      // so bins fill as a pile instead of a tower.
+      const inner = param(bin, 'size') / 2 - BIN_WALL_THICKNESS - half - 1;
+      let best: (Vec3 & { belt: string | null }) | null = null;
+      let bestScore = Infinity;
+      const l0 = toLocal(bin, x0, z0);
+      const consider = (lx: number, lz: number) => {
+        lx = Math.max(-inner, Math.min(inner, lx));
+        lz = Math.max(-inner, Math.min(inner, lz));
+        const w = toWorld(bin, lx, lz);
+        const rest = this.restAt(p, w.x, w.z);
+        if (!rest.stable) return;
+        // Lower wins (the part falls into gaps); among equals, nearest wins.
+        const score = rest.y * 3 + Math.hypot(lx - l0.x, lz - l0.z) * 0.5;
+        if (score < bestScore) {
+          bestScore = score;
+          best = { x: w.x, y: rest.y, z: w.z, belt: rest.belt };
+        }
+      };
+      consider(l0.x, l0.z);
+      for (let lx = -inner; lx <= inner + 0.01; lx += 10) {
+        for (let lz = -inner; lz <= inner + 0.01; lz += 10) consider(lx, lz);
+      }
+      for (const c of [-inner, inner]) {
+        consider(c, -inner);
+        consider(c, inner);
+      }
+      if (best) return best;
+    }
+    // Elsewhere the part stays where it was released unless it would tip off
+    // something or overlap a station; then it slides off that side.
+    let x = x0;
+    let z = z0;
+    for (let i = 0; i < 6; i++) {
+      const rest = this.restAt(p, x, z);
+      if (rest.stable || !rest.push) return { x, y: rest.y, z, belt: rest.belt };
+      x += rest.push.x;
+      z += rest.push.z;
+    }
+    const rest = this.restAt(p, x, z);
+    return { x, y: rest.y, z, belt: rest.belt };
   }
 
   // ── Commands ─────────────────────────────────────────────────────────────
@@ -517,9 +780,11 @@ export class World {
     this.gripperClosed = close;
     if (close) {
       const tcp = this.tcp;
+      // The part must sit between the fingers: centred under the tool and
+      // within the finger length vertically.
       const part = this.parts
-        .filter((p) => p !== this.held)
-        .find((p) => Math.hypot(p.pos.x - tcp.x, p.pos.y - tcp.y, p.pos.z - tcp.z) < 30);
+        .filter((p) => p !== this.held && !p.fall)
+        .find((p) => Math.hypot(p.pos.x - tcp.x, p.pos.z - tcp.z) < 18 && Math.abs(p.pos.y - tcp.y) < 22);
       if (part && !this.held) {
         const fromFixture = part === this.partOnFixture();
         if (fromFixture && this.machineRunning) {
@@ -529,39 +794,18 @@ export class World {
         part.belt = null;
         if (fromFixture) this.machineDone = false;
         this.stats.picks++;
+        // Whatever was resting on the part loses its support.
+        this.supportsDirty = true;
       }
     } else if (this.held) {
       const p = this.held;
       this.held = null;
-      p.pos.y = this.supportHeight(p) + half;
-      if (p.pos.y > 0) this.stats.places++;
+      this.insideSolid = null;
+      this.startFall(p);
+      this.stats.places++;
     }
     await Promise.all([this.sleep(0.35), this.link?.send(`G ${close ? 1 : 0}`)]);
     return !!this.held;
-  }
-
-  // Height of whatever is under a released part.
-  private supportHeight(p: Part): number {
-    let top = 0;
-    for (const s of this.layout.stations) {
-      const l = toLocal(s, p.pos.x, p.pos.z);
-      for (const b of stationBoxes(s)) {
-        if (inBox(b, l.x, l.z) && b.top <= p.pos.y + 1 && b.top > top) {
-          top = b.top;
-          p.belt = s.kind === 'conveyor' ? s.id : null;
-        }
-      }
-    }
-    for (const o of this.parts) {
-      if (o === p) continue;
-      if (Math.abs(o.pos.x - p.pos.x) < PART_SIZE * 0.8 && Math.abs(o.pos.z - p.pos.z) < PART_SIZE * 0.8 && o.pos.y < p.pos.y) {
-        if (o.pos.y + half > top) {
-          top = o.pos.y + half;
-          p.belt = null;
-        }
-      }
-    }
-    return top;
   }
 
   setConveyor(run: boolean, speed?: number) {

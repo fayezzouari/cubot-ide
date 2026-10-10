@@ -45,6 +45,8 @@ export const CONVEYOR_WIDTH = 140;
 export const CONVEYOR_TOP = 80;
 export const CONVEYOR_STOP_INSET = 60; // pick point distance from the discharge end
 export const BIN_WALL = 90;
+export const BIN_FLOOR = 6;
+export const BIN_WALL_THICKNESS = 8;
 export const PALLET_TOP = 30;
 export const FIXTURE_TOP = 120;
 export const TRAY_TOP = 20;
@@ -173,8 +175,18 @@ export function stationBoxes(s: Station): Box[] {
       return [{ cx: 0, cz: 0, w: param(s, 'length'), d: FENCE_THICKNESS, top: param(s, 'h') }];
     case 'beacon':
       return [{ cx: 0, cz: 0, w: 40, d: 40, top: 480 }];
-    case 'bin':
-      return [];
+    case 'bin': {
+      // Floor plus four thin walls; the inside is open.
+      const size = param(s, 'size');
+      const t = BIN_WALL_THICKNESS;
+      return [
+        { cx: 0, cz: 0, w: size, d: size, top: BIN_FLOOR },
+        { cx: 0, cz: size / 2 - t / 2, w: size, d: t, top: BIN_WALL },
+        { cx: 0, cz: -size / 2 + t / 2, w: size, d: t, top: BIN_WALL },
+        { cx: size / 2 - t / 2, cz: 0, w: t, d: size, top: BIN_WALL },
+        { cx: -size / 2 + t / 2, cz: 0, w: t, d: size, top: BIN_WALL },
+      ];
+    }
   }
 }
 
@@ -225,7 +237,8 @@ export function anchorLocal(s: Station): Vec3 | null {
     case 'conveyor':
       return { x: conveyorEnds(s).stop, y: CONVEYOR_TOP + half, z: 0 };
     case 'bin':
-      return { x: 0, y: 60, z: 0 };
+      // Release just above the rim; the part drops in and settles.
+      return { x: 0, y: BIN_WALL + half + 30, z: 0 };
     case 'pallet':
       return { x: -70, y: PALLET_TOP + half, z: -70 };
     case 'machine':
@@ -432,7 +445,7 @@ export const DEFAULT_LAYOUT: CellLayout = {
     st('bin', 'Reject', 330, -480, { pose: 'BIN_REJECT', color: '#71717a' }),
     st('pallet', 'Pallet', 480, 150, { pose: 'PALLET' }),
     st('machine', 'CNC machine', -480, -220, { pose: 'MACHINE' }),
-    st('beacon', 'Stack light', -220, 250),
+    st('beacon', 'Stack light', -640, 330),
   ],
 };
 
@@ -465,7 +478,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
           const color = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#a855f7', '#71717a'][i];
           return st('bin', name, x, z, { pose: `BIN_${name.toUpperCase()}`, color });
         }),
-        st('beacon', 'Stack light', 0, 650),
+        st('beacon', 'Stack light', 0, 960),
       ],
     },
   },
@@ -479,7 +492,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
         st('pallet', 'Pallet A', 480, 150, { pose: 'PALLET' }),
         st('pallet', 'Pallet B', 300, -460, { pose: 'PALLET_B' }),
         st('fence', 'Guard', -700, -200, { rot: 90, length: 900 }),
-        st('beacon', 'Stack light', -220, 250),
+        st('beacon', 'Stack light', -640, 330),
       ],
     },
   },

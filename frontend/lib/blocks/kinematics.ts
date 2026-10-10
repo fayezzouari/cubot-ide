@@ -52,6 +52,38 @@ export function forwardKinematics(j: number[]): Vec3 {
   return { x: h * Math.sin(yaw), y, z: h * Math.cos(yaw) };
 }
 
+// Points along the arm's links (shoulder → elbow → wrist → tool flange), used
+// for collision checks against the cell. Each has the link's half-thickness.
+export function armSamples(j: number[]): { p: Vec3; r: number }[] {
+  const a2 = rad(j[1]);
+  const a3 = a2 + rad(j[2]);
+  const a5 = a3 + rad(j[4]);
+  const yaw = rad(j[0]);
+  const at = (h: number, y: number): Vec3 => ({ x: h * Math.sin(yaw), y, z: h * Math.cos(yaw) });
+  const shoulder = { h: 0, y: ARM.shoulderHeight };
+  const elbow = { h: ARM.upperArm * Math.sin(a2), y: shoulder.y + ARM.upperArm * Math.cos(a2) };
+  const wrist = { h: elbow.h + ARM.forearm * Math.sin(a3), y: elbow.y + ARM.forearm * Math.cos(a3) };
+  // Stop short of the TCP: the fingers are checked separately.
+  const flange = { h: wrist.h + 90 * Math.sin(a5), y: wrist.y + 90 * Math.cos(a5) };
+  const out: { p: Vec3; r: number }[] = [];
+  const link = (a: { h: number; y: number }, b: { h: number; y: number }, r: number, n: number) => {
+    for (let i = 1; i <= n; i++) {
+      const s = i / n;
+      out.push({ p: at(a.h + (b.h - a.h) * s, a.y + (b.y - a.y) * s), r });
+    }
+  };
+  link(shoulder, elbow, 48, 6);
+  link(elbow, wrist, 38, 6);
+  link(wrist, flange, 32, 2);
+  return out;
+}
+
+// Tool yaw about +Y for a downward-pointing tool (degrees). J6 turns the tool
+// about its own axis, which points down, so it subtracts from the base yaw.
+export function toolYaw(j: number[]): number {
+  return j[0] - j[5];
+}
+
 export class UnreachableError extends Error {
   constructor(target: Vec3, reason: string) {
     super(
