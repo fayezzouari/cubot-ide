@@ -14,6 +14,7 @@ browser. This version is built around a single, well-defined program model.
 | Area | What it does |
 | --- | --- |
 | **Block language** | 27 blocks in 7 categories: flow control, motion, gripper & pick, I/O & conveyor, sensing & vision, data & logic, connectivity. |
+| **Canvas** | Blocks show an icon, their key settings (editable right on the block), live run state and problems. Branch outputs are labelled. **Tidy** arranges the program: sequences top to bottom, branches side by side, loop bodies indented. |
 | **Expressions** | Number and condition fields accept expressions (`count * 70`, `part_color == "red" and not part_defect`, `sin(360 / sides * i)`). The parser is sandboxed — there is no `eval`. |
 | **Compiler & Problems panel** | The graph is checked before it runs: missing Start, unconnected blocks, cycles that are not explicit loops, unknown variables, poses that were never taught, expression syntax errors. Clicking a problem jumps to the block. |
 | **Simulator** | Workcell physics in simulated time with 0.5×–10× speed, pause, step-by-step execution (F10), emergency stop, joint-limit and reachability checks, and a safety interlock on the machine zone. |

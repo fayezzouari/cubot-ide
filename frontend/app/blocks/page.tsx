@@ -14,8 +14,11 @@ import dynamic from 'next/dynamic';
 import {
   addEdge,
   Background,
+  BackgroundVariant,
   Controls,
+  MarkerType,
   MiniMap,
+  Panel,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
@@ -41,17 +44,19 @@ import {
   SkipForward,
   Square,
   Usb,
+  Wand2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { useProject } from '@/contexts/project-context';
 import { blocksApi } from '@/lib/api/blocks';
+import { tidyNodes } from '@/lib/blocks/autolayout';
 import { compile } from '@/lib/blocks/compiler';
 import { generateFirmware, generatePython } from '@/lib/blocks/codegen';
 import type { Value } from '@/lib/blocks/expression';
 import { Interpreter, type LogEntry, type TelemetryEntry } from '@/lib/blocks/interpreter';
-import { BLOCK_BY_TYPE, CATEGORY_BY_ID, defaultData, migrateLegacyNode } from '@/lib/blocks/registry';
+import { BLOCK_BY_TYPE, CATEGORY_BY_ID, defaultData, migrateLegacyNode, nodeHeight } from '@/lib/blocks/registry';
 import { SerialLink } from '@/lib/blocks/serial';
 import { buildTemplateGraph, type Template } from '@/lib/blocks/templates';
 import type { Pose, ProgramDocument, SceneConfig } from '@/lib/blocks/types';
@@ -318,7 +323,8 @@ function BlocksIDE() {
     (type: string, at?: { x: number; y: number }) => {
       const anchor = nodes.find((n) => n.id === selectedId) ?? [...nodes].sort((a, b) => b.position.y - a.position.y)[0];
       const id = newId();
-      const position = at ?? (anchor ? { x: anchor.position.x, y: anchor.position.y + 96 } : { x: 0, y: 0 });
+      const below = anchor ? nodeHeight(anchor.type ?? '', (anchor.data ?? {}) as Record<string, unknown>) + 40 : 0;
+      const position = at ?? (anchor ? { x: anchor.position.x, y: anchor.position.y + below } : { x: 0, y: 0 });
       setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), { id, type, position, data: defaultData(type), selected: true }]);
       if (!at && anchor) {
         const port = BLOCK_BY_TYPE[anchor.type ?? '']?.outputs.find((o) => o.id === 'next');
@@ -359,7 +365,9 @@ function BlocksIDE() {
         return {
           ...e,
           type: 'smoothstep',
+          pathOptions: { borderRadius: 16 },
           animated: live,
+          markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
           style: { stroke: color, strokeWidth: live ? 2.5 : 1.75 },
         };
       }),
@@ -639,8 +647,8 @@ function BlocksIDE() {
 
   const selectedNode = nodes.find((n) => n.id === selectedId) ?? null;
   const canvasState = useMemo(
-    () => ({ activeNodeId, problemsByNode, onDelete: deleteNode, running }),
-    [activeNodeId, problemsByNode, deleteNode, running],
+    () => ({ activeNodeId, problemsByNode, onDelete: deleteNode, onFieldChange: updateField, poses, running }),
+    [activeNodeId, problemsByNode, deleteNode, updateField, poses, running],
   );
 
   const saveLabel = { saved: 'Saved', dirty: 'Unsaved', saving: 'Saving…', offline: 'Not saved (no project)' }[saveState];
@@ -809,11 +817,26 @@ function BlocksIDE() {
                       fitViewOptions={{ padding: 0.2 }}
                       snapToGrid
                       snapGrid={[10, 10]}
+                      // Double-clicking text in an on-node field must not zoom the canvas.
+                      zoomOnDoubleClick={false}
                       minZoom={0.2}
                       proOptions={{ hideAttribution: true }}
                       colorMode="dark"
                     >
-                      <Background gap={20} size={1.2} color="#ffffff" style={{ opacity: 0.08 }} />
+                      <Background variant={BackgroundVariant.Dots} gap={18} size={1.3} color="#ffffff" style={{ opacity: 0.1 }} />
+                      <Panel position="top-left">
+                        <button
+                          onClick={() => {
+                            setNodes((ns) => tidyNodes(ns, edges));
+                            setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 30);
+                          }}
+                          disabled={running}
+                          className="flex items-center gap-1.5 rounded-md border border-white/10 bg-[#0d0d10]/90 px-2.5 py-1 text-[11px] text-white/65 shadow hover:border-white/25 hover:text-white disabled:opacity-40"
+                          title="Arrange the blocks: sequences top to bottom, branches side by side, loop bodies indented"
+                        >
+                          <Wand2 size={12} /> Tidy
+                        </button>
+                      </Panel>
                       <Controls className="!border-white/10 !bg-[#0a0a0a]" />
                       <MiniMap
                         pannable

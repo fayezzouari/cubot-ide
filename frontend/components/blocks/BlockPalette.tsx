@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BLOCKS, CATEGORIES } from '@/lib/blocks/registry';
+import { blockIcon } from './blockIcons';
 
 export function BlockPalette({ onAdd }: { onAdd: (type: string) => void }) {
   const [query, setQuery] = useState('');
@@ -24,7 +25,7 @@ export function BlockPalette({ onAdd }: { onAdd: (type: string) => void }) {
           />
         </div>
       </div>
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block">
         <div className="py-1">
           {CATEGORIES.map((cat) => {
             const blocks = BLOCKS.filter(
@@ -48,23 +49,34 @@ export function BlockPalette({ onAdd }: { onAdd: (type: string) => void }) {
                   {cat.name}
                 </button>
                 {open && (
-                  <div className="space-y-1 px-2 pb-2">
-                    {blocks.map((b) => (
-                      <div
-                        key={b.type}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('application/reactflow/type', b.type);
-                          e.dataTransfer.effectAllowed = 'move';
-                        }}
-                        onDoubleClick={() => onAdd(b.type)}
-                        title={`${b.description}\n\nDrag onto the canvas or double-click to add.`}
-                        className="cursor-grab rounded border border-white/[0.07] bg-white/[0.025] px-2.5 py-1.5 text-xs text-white/75 transition-colors hover:border-white/20 hover:bg-white/[0.05] active:cursor-grabbing"
-                        style={{ borderLeft: `3px solid ${cat.accent}` }}
-                      >
-                        {b.label}
-                      </div>
-                    ))}
+                  <div className="space-y-0.5 px-1.5 pb-2">
+                    {blocks.map((b) => {
+                      const Icon = blockIcon(b.type);
+                      return (
+                        <div
+                          key={b.type}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('application/reactflow/type', b.type);
+                            e.dataTransfer.effectAllowed = 'move';
+                          }}
+                          onDoubleClick={() => onAdd(b.type)}
+                          title={`${b.description}\n\nDrag onto the canvas or double-click to add.`}
+                          className="group flex cursor-grab items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 transition-colors hover:border-white/[0.08] hover:bg-white/[0.04] active:cursor-grabbing"
+                        >
+                          <span
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-transform group-hover:scale-105"
+                            style={{ background: `${cat.accent}1f`, color: cat.accent }}
+                          >
+                            <Icon size={14} strokeWidth={2.1} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-xs font-medium text-white/80">{b.label}</span>
+                            <span className="block truncate text-[10px] text-white/35">{b.description}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
