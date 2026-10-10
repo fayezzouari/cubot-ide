@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { Pose, ProgramSettings } from '@/lib/blocks/types';
 
 export interface BlockNode {
   id: string;
@@ -22,18 +23,13 @@ export interface BlockProgram {
   name: string;
   nodes: BlockNode[];
   edges: BlockEdge[];
+  poses?: Pose[] | null;
+  settings?: ProgramSettings | null;
   created_at?: string;
   updated_at?: string;
 }
 
-export interface ArmState {
-  position: { x: number; y: number; z: number };
-  joints: number[];
-  is_moving: boolean;
-}
-
 export const blocksApi = {
-  // Block Programs
   createProgram: (program: Omit<BlockProgram, 'id' | 'created_at' | 'updated_at'>) =>
     apiClient.post<BlockProgram>('/blocks/programs', program),
 
@@ -48,17 +44,4 @@ export const blocksApi = {
 
   deleteProgram: (programId: string) =>
     apiClient.delete(`/blocks/programs/${programId}`),
-
-  // Arm Control
-  getArmState: () =>
-    apiClient.get<ArmState>('/blocks/arm/state'),
-
-  moveArmPosition: (x: number, y: number, z: number) =>
-    apiClient.post(`/blocks/arm/move-position?x=${x}&y=${y}&z=${z}`),
-
-  moveArmJoint: (joint: number, angle: number) =>
-    apiClient.post(`/blocks/arm/move-joint?joint=${joint}&angle=${angle}`),
-
-  resetArm: () =>
-    apiClient.post('/blocks/arm/reset'),
 };

@@ -71,6 +71,8 @@ def block_program_helper(program) -> dict:
         "name": program["name"],
         "nodes": program["nodes"],
         "edges": program["edges"],
+        "poses": program.get("poses"),
+        "settings": program.get("settings"),
         "created_at": program["created_at"].isoformat(),
         "updated_at": program["updated_at"].isoformat(),
     }
