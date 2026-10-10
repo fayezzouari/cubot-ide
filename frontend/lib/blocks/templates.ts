@@ -122,6 +122,84 @@ export const TEMPLATES: Template[] = [
     ],
   },
   {
+    id: 'camera-sort',
+    title: 'Camera-verified sorting',
+    audience: 'industry',
+    sector: 'Quality inspection · Machine vision',
+    summary:
+      'Every decision comes from the cameras. The conveyor camera classifies each part; the wrist camera checks the part actually in the gripper before it is sorted. Hidden, unknown or defective parts go to reject with the reason logged.',
+    highlights: [
+      'Sorting on camera output: part_color, part_ok, part_area',
+      'Second check with the wrist camera after the pick',
+      'Rejects explained in the log; counts sent over MQTT',
+    ],
+    context:
+      'Matches a vision-checked sorting cell: a fixed camera grades parts, and a gripper camera confirms the pick before the part leaves the line. Open the Sensors tab while it runs to watch both feeds and tune the colour classes.',
+    scene: { ...DEFAULT_SCENE, colors: ['red', 'green', 'blue'], defectRate: 0.2, maxParts: 0 },
+    steps: [
+      b('home'),
+      b('conveyor', { action: 'start', speed: 200 }),
+      b('set_var', { var: 'sorted', value: '0' }),
+      b('set_var', { var: 'rejected', value: '0' }),
+      {
+        repeat: 12,
+        var: 'n',
+        body: [
+          b('wait_input', { channel: '0', value: 'on', timeout: 20 }),
+          // 1. Conveyor camera: what is waiting at the pick point?
+          b('inspect', { camera: 'auto' }),
+          {
+            // Trust only a good part that the camera sees clearly.
+            if: 'part_ok and part_area > 40',
+            then: [
+              b('set_var', { var: 'seen', value: 'part_color' }),
+              b('pick', { pose: 'PICK', speed: 80 }),
+              // 2. Wrist camera: is the part in the gripper the one we saw?
+              b('inspect', { camera: 'wrist' }),
+              {
+                if: 'part_color == seen',
+                then: [
+                  {
+                    if: 'seen == "red"',
+                    then: [b('place', { pose: 'BIN_RED', speed: 80 })],
+                    else: [
+                      {
+                        if: 'seen == "green"',
+                        then: [b('place', { pose: 'BIN_GREEN', speed: 80 })],
+                        else: [b('place', { pose: 'BIN_BLUE', speed: 80 })],
+                      },
+                    ],
+                  },
+                  b('change_var', { var: 'sorted', by: 1 }),
+                  b('log', { message: 'Sorted {seen} part ({part_area}% of the wrist view)' }),
+                ],
+                else: [
+                  b('place', { pose: 'BIN_REJECT', speed: 80 }),
+                  b('change_var', { var: 'rejected', by: 1 }),
+                  b('log', { message: 'Rejected: conveyor camera saw {seen}, wrist camera sees {part_color}' }),
+                ],
+              },
+            ],
+            else: [
+              b('pick', { pose: 'PICK', speed: 80 }),
+              b('place', { pose: 'BIN_REJECT', speed: 80 }),
+              b('change_var', { var: 'rejected', by: 1 }),
+              b('log', { message: 'Rejected: colour {part_color}, defect {part_defect}, {part_area}% visible' }),
+            ],
+          },
+          b('mqtt_publish', {
+            topic: 'factory/cell1/vision',
+            payload: '{"part": {n}, "sorted": {sorted}, "rejected": {rejected}, "last": "{part_color}"}',
+          }),
+        ],
+      },
+      b('conveyor', { action: 'stop' }),
+      b('log', { message: 'Batch done: {sorted} sorted, {rejected} rejected' }),
+      b('home'),
+      b('end'),
+    ],
+  },
+  {
     id: 'palletizing',
     title: 'Palletizing 3 × 3 × 2',
     audience: 'industry',

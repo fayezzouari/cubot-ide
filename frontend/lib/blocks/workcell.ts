@@ -1014,7 +1014,7 @@ export class World {
         source: 'ground truth',
         color: part ? part.color : 'none',
         defect: part ? part.defect : false,
-        area: part ? 30 : 0,
+        area: part ? 65 : 0, // about what the camera measures for a part at the pick point
         cx: 0,
         cy: 0,
         frame: null,

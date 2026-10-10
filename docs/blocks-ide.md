@@ -25,7 +25,7 @@ browser. This version is built around a single, well-defined program model.
 | **Console** | Run log, problems, live variables, and MQTT telemetry. |
 | **Export** | Standalone Python (IK, serial controller, MQTT via paho, OpenCV colour vision), Arduino controller firmware, and a JSON project file. |
 | **Hardware mode** | *Connect arm* uses Web Serial to send every motion, gripper and output command to a real controller, and waits for the controller to acknowledge each one. |
-| **Templates** | 10 runnable use cases: 5 industrial, 5 educational (below). |
+| **Templates** | 11 runnable use cases: 6 industrial, 5 educational (below). |
 
 ## Architecture
 
@@ -188,6 +188,11 @@ MQTT after every part.
 food processing.
 *Shows:* vision results as variables, nested decisions (exported as
 `if/elif/else`), telemetry.
+
+### 2b. Camera-verified sorting — machine vision
+Every decision comes from the cameras. The conveyor camera classifies the waiting part; only a good part that is clearly visible (`part_ok and part_area > 40`) is picked. The wrist camera then checks the part actually in the gripper: if its colour differs from what the conveyor camera saw, the part goes to reject. Hidden, unknown or defective parts are rejected too, and the log says why (colour, defect, how much of it was visible). Counts go to `factory/cell1/vision` over MQTT.
+*Real-world mapping:* vision-checked sorting and pick verification (a fixed grading camera plus a gripper camera).
+*Shows:* branching on camera output (`part_color`, `part_ok`, `part_area`), keeping a camera result in a variable, a second sensor confirming the first. Watch both feeds in the Sensors tab while it runs.
 
 ### 3. Palletizing 3 × 3 × 2 — logistics, warehousing
 One taught corner pose plus a **Pallet slot** block computes all 18 place
