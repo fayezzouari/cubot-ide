@@ -18,17 +18,29 @@ class EdgeSchema(BaseModel):
     style: Optional[Dict[str, Any]] = None
 
 
+class PoseSchema(BaseModel):
+    name: str
+    x: float
+    y: float
+    z: float
+    rz: Optional[float] = None  # tool angle in degrees; None keeps the current angle
+
+
 class BlockProgramCreate(BaseModel):
     project_id: str
     name: str
     nodes: List[NodeSchema]
     edges: List[EdgeSchema]
+    poses: Optional[List[PoseSchema]] = None
+    settings: Optional[Dict[str, Any]] = None
 
 
 class BlockProgramUpdate(BaseModel):
     name: Optional[str] = None
     nodes: Optional[List[NodeSchema]] = None
     edges: Optional[List[EdgeSchema]] = None
+    poses: Optional[List[PoseSchema]] = None
+    settings: Optional[Dict[str, Any]] = None
 
 
 class BlockProgramResponse(BaseModel):
@@ -37,6 +49,8 @@ class BlockProgramResponse(BaseModel):
     name: str
     nodes: List[NodeSchema]
     edges: List[EdgeSchema]
+    poses: Optional[List[PoseSchema]] = None
+    settings: Optional[Dict[str, Any]] = None
     created_at: str
     updated_at: str
 
