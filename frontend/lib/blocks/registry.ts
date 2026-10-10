@@ -470,6 +470,28 @@ export function defaultData(type: string): Record<string, unknown> {
   return Object.fromEntries(def.fields.map((f) => [f.key, f.default]));
 }
 
+// Fields shown (and editable) directly on a canvas node: the first two, plus
+// any other field the user changed from its default. Capped so nodes stay small.
+export const MAX_INLINE_FIELDS = 4;
+export function inlineFields(def: BlockDef, data: Record<string, unknown>): { shown: FieldDef[]; hidden: number } {
+  const shown = def.fields
+    .filter((f, i) => i < 2 || String(data[f.key] ?? f.default) !== String(f.default))
+    .slice(0, MAX_INLINE_FIELDS);
+  return { shown, hidden: def.fields.length - shown.length };
+}
+
+// Rendered node height in px; FlowNode uses the same metrics, and auto-layout
+// uses this to space nodes.
+export const NODE_METRICS = { width: 248, header: 40, row: 26, more: 18, outputs: 20, pad: 8, pill: 40 };
+export function nodeHeight(type: string, data: Record<string, unknown>): number {
+  const def = BLOCK_BY_TYPE[type];
+  if (!def) return NODE_METRICS.header;
+  if (def.fields.length === 0 && def.outputs.length <= 1) return NODE_METRICS.pill;
+  const { shown, hidden } = inlineFields(def, data);
+  const m = NODE_METRICS;
+  return m.header + shown.length * m.row + (hidden ? m.more : 0) + (def.outputs.length > 1 ? m.outputs : 0) + m.pad;
+}
+
 // Variables that always exist while a program runs. Shown in the Watch panel
 // and accepted by the compiler without a prior assignment.
 export const BUILTIN_VARIABLES: { name: string; help: string }[] = [

@@ -4,6 +4,7 @@
 // into a flow graph, so they stay readable here and tidy on the canvas.
 
 import type { Edge, Node } from '@xyflow/react';
+import { tidyNodes } from './autolayout';
 import { defaultData } from './registry';
 import { ENVIRONMENT_PRESETS, type CellLayout } from './layout';
 import type { SceneConfig } from './types';
@@ -446,5 +447,6 @@ export function buildTemplateGraph(steps: Step[]): { nodes: Node[]; edges: Edge[
 
   const start = add('start', 0, 0);
   layout(steps, 0, 1, [{ id: start, handle: 'next' }]);
-  return { nodes, edges };
+  // Final positions account for each node's rendered height.
+  return { nodes: tidyNodes(nodes, edges), edges };
 }
