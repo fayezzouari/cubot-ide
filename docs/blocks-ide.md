@@ -94,7 +94,7 @@ the 3D view to **Top** for the easiest placement.
 
 | Station | What it does | Pose it owns |
 | --- | --- | --- |
-| Conveyor | Feeds parts to an end stop with a photo-eye and camera. DO0 runs every conveyor; DI0 is on when any pick point holds a part. Length is adjustable. | `PICK` (end stop) |
+| Conveyor | Feeds parts to an end stop with a photo-eye and a vision camera on a pole (its cone shows the field of view; the pole and head are solid). DO0 runs every conveyor; DI0 is on when any pick point holds a part. Length and camera side are adjustable; keep the camera on the side away from the robot. | `PICK` (end stop) |
 | Bin | Open container; parts inside are counted in the Cell panel. Size and colour adjustable. | `BIN_<NAME>` |
 | Pallet | Flat place surface; its pose is the first corner slot for the Pallet slot block. | `PALLET` |
 | CNC machine (one per cell) | DO1 starts a cycle, DI1 reports done, DI2 is off while the tool is in front of the fixture. Cycle time adjustable. | `MACHINE` (fixture) |
