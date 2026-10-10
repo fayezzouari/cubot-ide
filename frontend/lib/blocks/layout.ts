@@ -14,7 +14,23 @@ import type { Pose, Vec3 } from './types';
 export const PART_SIZE = 50;
 const half = PART_SIZE / 2;
 
-export type StationKind = 'conveyor' | 'bin' | 'pallet' | 'machine' | 'tray' | 'table' | 'fence' | 'beacon';
+export type StationKind = 'conveyor' | 'bin' | 'pallet' | 'machine' | 'tray' | 'table' | 'fence' | 'beacon' | 'model';
+
+// A user-supplied 3D model (see ModelLoader). The file is embedded as a data
+// URL so the environment stays a single, portable JSON document.
+export type ModelFormat = 'glb' | 'gltf' | 'stl' | 'obj';
+export type ModelUnit = 'mm' | 'cm' | 'm' | 'in';
+export const UNIT_MM: Record<ModelUnit, number> = { mm: 1, cm: 10, m: 1000, in: 25.4 };
+export const MAX_MODEL_BYTES = 5 * 1024 * 1024;
+export interface ModelSource {
+  file: string;
+  format: ModelFormat;
+  data: string; // data URL
+  bytes: number;
+  size: [number, number, number]; // bounding box in file units, as authored (x, y, z)
+  unit: ModelUnit;
+  zUp: boolean; // CAD exports (STL/OBJ) are usually Z-up; glTF is Y-up
+}
 
 export interface Station {
   id: string;
@@ -34,6 +50,9 @@ export interface Station {
   d?: number; // table
   h?: number; // table, fence
   cycle?: number; // machine, seconds
+  model?: ModelSource; // model
+  scale?: number; // model
+  solid?: boolean; // model: blocks the tool and holds parts on top
 }
 
 export interface CellLayout {
@@ -116,7 +135,22 @@ export const STATION_KINDS: Record<StationKind, KindInfo> = {
     unique: true,
     defaults: {},
   },
+  model: {
+    label: 'Custom model',
+    description: 'Your own equipment from a 3D file (GLB, glTF, STL or OBJ). Its bounding box is the collision shape; parts can be placed on top.',
+    posePrefix: 'MODEL',
+    defaults: { scale: 1, solid: true, color: '#a1a1aa' },
+  },
 };
+
+// Size of a model station in mm (x = width, z = depth, h = height).
+export function modelDims(s: Station): { w: number; d: number; h: number } {
+  const m = s.model;
+  if (!m) return { w: 100, d: 100, h: 100 };
+  const k = UNIT_MM[m.unit] * (s.scale ?? 1);
+  const [x, y, z] = m.size;
+  return { w: x * k, d: (m.zUp ? y : z) * k, h: (m.zUp ? z : y) * k };
+}
 
 export const BIN_COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#a855f7', '#f97316', '#71717a'];
 
@@ -175,6 +209,11 @@ export function stationBoxes(s: Station): Box[] {
       return [{ cx: 0, cz: 0, w: param(s, 'length'), d: FENCE_THICKNESS, top: param(s, 'h') }];
     case 'beacon':
       return [{ cx: 0, cz: 0, w: 40, d: 40, top: 480 }];
+    case 'model': {
+      if (s.solid === false) return [];
+      const { w, d, h } = modelDims(s);
+      return [{ cx: 0, cz: 0, w, d, top: h }];
+    }
     case 'bin': {
       // Floor plus four thin walls; the inside is open.
       const size = param(s, 'size');
@@ -197,6 +236,10 @@ export function footprint(s: Station): Box {
       return { cx: 0, cz: 0, w: param(s, 'size'), d: param(s, 'size'), top: BIN_WALL };
     case 'machine':
       return { cx: -142, cz: 0, w: 395, d: 420, top: 600 };
+    case 'model': {
+      const { w, d, h } = modelDims(s);
+      return { cx: 0, cz: 0, w, d, top: h };
+    }
     default:
       return stationBoxes(s)[0];
   }
@@ -250,6 +293,8 @@ export function anchorLocal(s: Station): Vec3 | null {
     }
     case 'table':
       return { x: 0, y: param(s, 'h') + half, z: 0 };
+    case 'model':
+      return { x: 0, y: modelDims(s).h + half, z: 0 };
     default:
       return null;
   }
@@ -334,9 +379,10 @@ export function createStation(kind: StationKind, layout: CellLayout, poses: Pose
 }
 
 // Suggests a free floor spot inside the robot's reach for a new station.
-export function freeSpot(layout: CellLayout, kind: StationKind): { x: number; z: number } {
-  const probe = { ...createStation(kind, { stations: [] }, []), x: 0, z: 0 };
-  for (const r of [450, 550, 650, 350, 750, 900]) {
+export function freeSpot(layout: CellLayout, kind: StationKind, like?: Station): { x: number; z: number } {
+  // Probe with the real station when given, so big imported models fit too.
+  const probe = { ...(like ?? createStation(kind, { stations: [] }, [])), x: 0, z: 0 };
+  for (const r of [450, 550, 650, 350, 750, 900, 1050]) {
     for (let a = 0; a < 360; a += 30) {
       const x = Math.round((r * Math.sin((a * Math.PI) / 180)) / 10) * 10;
       const z = Math.round((r * Math.cos((a * Math.PI) / 180)) / 10) * 10;

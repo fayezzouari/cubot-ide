@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Archive,
   ArrowRightLeft,
+  Box,
   Boxes,
   Copy,
   Crosshair,
@@ -32,16 +33,21 @@ import {
   cloneLayout,
   ENVIRONMENT_PRESETS,
   faceRobotRotation,
+  modelDims,
   param,
   parseLayout,
   STATION_KINDS,
+  UNIT_MM,
   type CellLayout,
+  type ModelSource,
+  type ModelUnit,
   type LayoutIssue,
   type Station,
   type StationKind,
 } from '@/lib/blocks/layout';
 import type { Pose } from '@/lib/blocks/types';
 import { downloadText } from './CodeDialog';
+import { MODEL_ACCEPT, readModelFile } from './ModelLoader';
 
 const KIND_ICONS: Record<StationKind, typeof Factory> = {
   conveyor: ArrowRightLeft,
@@ -52,6 +58,7 @@ const KIND_ICONS: Record<StationKind, typeof Factory> = {
   table: Table,
   fence: Fence,
   beacon: Siren,
+  model: Box,
 };
 
 const LIBRARY_KEY = 'cubot-blocks-environments';
@@ -79,6 +86,11 @@ function writeLibrary(items: SavedEnvironment[]): boolean {
   } catch {
     return false;
   }
+}
+
+function modelSizeLabel(s: Station) {
+  const { w, d, h } = modelDims(s);
+  return `${Math.round(w)} × ${Math.round(d)} × ${Math.round(h)} mm`;
 }
 
 function Section({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
@@ -165,6 +177,7 @@ export function EnvironmentPanel({
   onDuplicate,
   onApply,
   onResetPose,
+  onImportModel,
 }: {
   layout: CellLayout;
   poses: Pose[];
@@ -178,10 +191,24 @@ export function EnvironmentPanel({
   onDuplicate: (id: string) => void;
   onApply: (layout: CellLayout, title: string) => void;
   onResetPose: (id: string) => void;
+  onImportModel: (model: ModelSource) => void;
 }) {
   const [library, setLibrary] = useState<SavedEnvironment[]>([]);
   const [saveName, setSaveName] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  const modelInput = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
+  const importModel = async (file: File) => {
+    setImporting(true);
+    try {
+      onImportModel(await readModelFile(file));
+    } catch (e) {
+      toast.error(`Could not import ${file.name}: ${(e as Error).message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
   useEffect(() => setLibrary(readLibrary()), []);
 
   const selected = layout.stations.find((s) => s.id === selectedId) ?? null;
@@ -339,7 +366,7 @@ export function EnvironmentPanel({
 
       <Section title="Add station">
         <div className="grid grid-cols-4 gap-1.5">
-          {(Object.keys(STATION_KINDS) as StationKind[]).map((kind) => {
+          {(Object.keys(STATION_KINDS) as StationKind[]).filter((k) => k !== 'model').map((kind) => {
             const info = STATION_KINDS[kind];
             const Icon = KIND_ICONS[kind];
             const taken = info.unique && layout.stations.some((s) => s.kind === kind);
@@ -357,6 +384,25 @@ export function EnvironmentPanel({
             );
           })}
         </div>
+        <button
+          onClick={() => modelInput.current?.click()}
+          disabled={disabled || importing}
+          className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded border border-dashed border-white/15 py-2 text-[11px] text-white/65 hover:border-violet-400/50 hover:text-white disabled:opacity-40"
+          title="Add your own equipment from a .glb, .gltf, .stl or .obj file (max 5 MB)"
+        >
+          <Upload size={12} /> {importing ? 'Reading model…' : 'Import 3D model (.glb .gltf .stl .obj)'}
+        </button>
+        <input
+          ref={modelInput}
+          type="file"
+          accept={MODEL_ACCEPT}
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void importModel(f);
+            e.target.value = '';
+          }}
+        />
       </Section>
 
       <Section title={`Stations (${layout.stations.length})`}>
@@ -502,6 +548,70 @@ export function EnvironmentPanel({
               <>
                 <NumField label="Length" unit="mm" value={param(selected, 'length')} step={50} min={100} max={2500} disabled={disabled} onCommit={(length) => onChange(selected.id, { length })} />
                 <NumField label="Height" unit="mm" value={param(selected, 'h')} step={50} min={100} max={1500} disabled={disabled} onCommit={(h) => onChange(selected.id, { h })} />
+              </>
+            )}
+
+            {selected.kind === 'model' && selected.model && (
+              <>
+                <div className="rounded border border-white/[0.06] bg-white/[0.02] px-2 py-1.5 font-mono text-[10px] text-white/50">
+                  {selected.model.file} · {selected.model.format.toUpperCase()} · {(selected.model.bytes / 1024).toFixed(0)} KB
+                </div>
+                <label className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-[11px] text-white/50">File units</span>
+                  <select
+                    value={selected.model.unit}
+                    disabled={disabled}
+                    onChange={(e) => onChange(selected.id, { model: { ...selected.model!, unit: e.target.value as ModelUnit } })}
+                    className="rounded border border-white/[0.08] bg-[#111] px-1.5 py-0.5 text-[11px] text-white/80"
+                  >
+                    {(Object.keys(UNIT_MM) as ModelUnit[]).map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-white/30">glTF is metres; CAD is usually mm</span>
+                </label>
+                <NumField label="Scale" unit="×" value={selected.scale ?? 1} step={0.1} min={0.01} max={100} disabled={disabled} onCommit={(scale) => onChange(selected.id, { scale })} />
+                <label className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-[11px] text-white/50">Z-up file</span>
+                  <input
+                    type="checkbox"
+                    checked={selected.model.zUp}
+                    disabled={disabled}
+                    onChange={(e) => onChange(selected.id, { model: { ...selected.model!, zUp: e.target.checked } })}
+                    className="accent-violet-400"
+                  />
+                  <span className="text-[10px] text-white/30">tick if the model lies on its side</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-[11px] text-white/50">Solid</span>
+                  <input
+                    type="checkbox"
+                    checked={selected.solid !== false}
+                    disabled={disabled}
+                    onChange={(e) => onChange(selected.id, { solid: e.target.checked })}
+                    className="accent-violet-400"
+                  />
+                  <span className="text-[10px] text-white/30">collides and holds parts on top</span>
+                </label>
+                {(selected.model.format === 'stl' || selected.model.format === 'obj') && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[11px] text-white/50">Colour</span>
+                    {['#a1a1aa', '#e5e7eb', '#334155', '#f97316', '#2563eb', '#16a34a', '#eab308'].map((c) => (
+                      <button
+                        key={c}
+                        disabled={disabled}
+                        onClick={() => onChange(selected.id, { color: c })}
+                        className={`h-4 w-4 rounded border ${param(selected, 'color') === c ? 'border-white' : 'border-transparent'}`}
+                        style={{ background: c }}
+                      />
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-white/35">
+                  Size {modelSizeLabel(selected)}. The bounding box is used for collisions and as the surface parts rest on.
+                </p>
               </>
             )}
 

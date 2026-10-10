@@ -68,12 +68,15 @@ import {
   createStation,
   DEFAULT_LAYOUT,
   freeSpot,
+  modelDims,
   parseLayout,
   posesForLayout,
   STATION_KINDS,
   syncPoses,
+  uniquePoseName,
   validateLayout,
   type CellLayout,
+  type ModelSource,
   type Station,
   type StationKind,
 } from '@/lib/blocks/layout';
@@ -533,6 +536,22 @@ function BlocksIDE() {
     toast.success(`Added ${STATION_KINDS[kind].label.toLowerCase()}${pose ? ` with pose ${pose.name}` : ''}`);
   };
 
+  const importModel = (model: ModelSource) => {
+    if (running) return;
+    const name = model.file.replace(/\.[^.]+$/, '');
+    const fresh = createStation('model', layout, poses);
+    const draft: Station = { ...fresh, name, pose: uniquePoseName(name, new Set(poses.map((p) => p.name))), model };
+    const s: Station = { ...draft, ...freeSpot(layout, 'model', draft) };
+    const pose = anchorPose(s);
+    if (pose) setPoses((ps) => [...ps, pose]);
+    commitLayout({ stations: [...layout.stations, s] });
+    setStationId(s.id);
+    const { w, d, h } = modelDims(s);
+    toast.success(`Imported ${model.file}`, {
+      description: `${Math.round(w)} × ${Math.round(d)} × ${Math.round(h)} mm${pose ? ` · pose ${pose.name} on top` : ''}. Check the units if the size looks wrong.`,
+    });
+  };
+
   const removeStation = (id: string) => {
     if (running) return;
     const s = layout.stations.find((t) => t.id === id);
@@ -954,6 +973,7 @@ function BlocksIDE() {
                         }}
                         onApply={applyEnvironment}
                         onResetPose={resetStationPose}
+                        onImportModel={importModel}
                       />
                     )}
                     {sideTab === 'poses' && <PosesPanel world={world} poses={poses} disabled={running} onChange={setPoses} />}

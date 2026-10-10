@@ -19,7 +19,7 @@ browser. This version is built around a single, well-defined program model.
 | **Compiler & Problems panel** | The graph is checked before it runs: missing Start, unconnected blocks, cycles that are not explicit loops, unknown variables, poses that were never taught, expression syntax errors. Clicking a problem jumps to the block. |
 | **Simulator** | Workcell physics in simulated time with 0.5×–10× speed, pause, step-by-step execution (F10), emergency stop, joint-limit and reachability checks, and a safety interlock on the machine zone. |
 | **Teach pendant** | Jog the tool in mm, teach named poses, and move to them. Blocks refer to poses by name, so re-teaching one pose updates every block that uses it. |
-| **Environment editor** | Build your own cell: add conveyors, bins, pallets, a CNC machine, parts trays, tables, fences and a stack light; drag them in the 3D view or type their position, rotation and size. Presets, a personal library, and JSON import/export. |
+| **Environment editor** | Build your own cell: add conveyors, bins, pallets, a CNC machine, parts trays, tables, fences, a stack light and your own 3D models (GLB, glTF, STL, OBJ); drag them in the 3D view or type their position, rotation and size. Presets, a personal library, and JSON import/export. |
 | **Cell & I/O panel** | Production KPIs (picks, placed, parts/min, bin and pallet counts), live digital I/O, joint readouts with limit warnings, and scene setup (part colours, defect rate, feed limit, tool trail). |
 | **Console** | Run log, problems, live variables, and MQTT telemetry. |
 | **Export** | Standalone Python (IK, serial controller, MQTT via paho, OpenCV colour vision), Arduino controller firmware, and a JSON project file. |
@@ -112,6 +112,23 @@ the 3D view to **Top** for the easiest placement.
 * **Environments:** *Load an environment…* offers presets (full production cell, two-lane sorting, palletizing station, classroom table, empty floor) and your saved ones. *Save* stores the current cell in this browser; *Export* / *Import* move it between computers. The environment is also saved with the program and its project file.
 
 The Vision inspect block reads the part at a conveyor pick point, or the part in the gripper when no part is waiting (wrist camera), so tray cells can sort by colour too.
+
+## Adding your own equipment (3D models)
+
+**Environment → Import 3D model** adds a custom station from a 3D file. It behaves like a table: its bounding box is the collision shape (switch **Solid** off for decoration), parts can be placed on top, and it gets a pose on its top surface named after the file. Move, rotate and save it like any other station; the file is embedded in the environment, so programs and exported environments carry it with them.
+
+| Format | Use it for | Notes |
+| --- | --- | --- |
+| **.glb** (recommended) | Models from Blender, Onshape, SolidWorks (via exporters), Sketchfab, vendor sites | One file with geometry, colours and textures. glTF is metres, Y-up by spec. |
+| **.gltf** | Same as .glb | Only if self-contained (buffers and textures embedded). If it comes with separate `.bin` or image files, export a `.glb` instead. |
+| **.stl** | CAD parts and fixtures (FreeCAD, Fusion 360, SolidWorks, Inventor) | Geometry only; pick a colour in the panel. Usually millimetres and Z-up. |
+| **.obj** | Older tools and scans | Geometry only (`.mtl` materials are ignored). |
+
+* **Size limit:** 5 MB per model. Keep models under ~100 k triangles; decimate scans and dense CAD meshes first (Blender: Decimate modifier; most CAD tools have a coarse STL export).
+* **Units and orientation:** the panel guesses (glTF = m, Y-up; STL/OBJ = mm, Z-up). If a model is the wrong size, change **File units**; if it lies on its side, toggle **Z-up file**; use **Scale** for anything else. The measured size is shown in the panel.
+* **STEP / IGES / native CAD files** are not read in the browser. Export STL (for a single part) or glTF/GLB (for assemblies with colours) from your CAD tool, or convert with FreeCAD or Blender.
+* **Try it:** `docs/samples/workbench_mm_zup.stl` (800 × 500 × 740 mm workbench, mm, Z-up) and `docs/samples/crate_mm.obj` (300 mm crate).
+* **Robot vendor models:** cell components from vendor libraries (grippers, conveyors, fences) usually come as STEP — convert as above.
 
 ## Physics model
 

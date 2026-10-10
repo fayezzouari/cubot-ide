@@ -26,16 +26,19 @@ import {
   FIXTURE_TOP,
   FLOOR,
   footprint,
+  modelDims,
   PALLET_TOP,
   param,
   TRAY_PITCH,
   TRAY_TOP,
   traySize,
+  UNIT_MM,
   type CellLayout,
   type Station,
 } from '@/lib/blocks/layout';
 import { fingerOffset, PART_SIZE, type Part, type World } from '@/lib/blocks/workcell';
 import { useWorldVersion } from '@/lib/blocks/useWorld';
+import { loadModel } from './ModelLoader';
 import {
   beltTexture,
   brushedRoughness,
@@ -596,6 +599,60 @@ function BeaconModel({ world }: { world: World }) {
   );
 }
 
+// A user-imported model, scaled to millimetres, turned upright, centred on the
+// station and standing on the floor. A wire box shows its size while loading.
+function CustomModel({ s }: { s: Station }) {
+  const [source, setSource] = useState<THREE.Object3D | null>(null);
+  const [failed, setFailed] = useState(false);
+  const m = s.model;
+  useEffect(() => {
+    if (!m) return;
+    let live = true;
+    setSource(null);
+    setFailed(false);
+    loadModel(m)
+      .then((o) => live && setSource(o))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [m]);
+
+  const color = param(s, 'color');
+  const k = m ? UNIT_MM[m.unit] * (s.scale ?? 1) : 1;
+  const placed = useMemo(() => {
+    if (!source || !m) return null;
+    const inner = source.clone(true);
+    if (m.zUp) inner.rotation.x = -Math.PI / 2;
+    inner.scale.setScalar(k);
+    const recolor = m.format === 'stl' || m.format === 'obj';
+    inner.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      // Mesh files often have inconsistent face winding: draw both sides.
+      if (recolor) mesh.material = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.25, side: THREE.DoubleSide });
+    });
+    const root = new THREE.Group();
+    root.add(inner);
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(inner);
+    const c = box.getCenter(new THREE.Vector3());
+    inner.position.set(-c.x, -box.min.y, -c.z);
+    return root;
+  }, [source, m, k, color]);
+
+  if (placed) return <primitive object={placed} />;
+  const { w, d, h } = modelDims(s);
+  return (
+    <mesh position={[0, h / 2, 0]}>
+      <boxGeometry args={[w, h, d]} />
+      <meshBasicMaterial color={failed ? '#ef4444' : '#a1a1aa'} wireframe />
+    </mesh>
+  );
+}
+
 function labelHeight(s: Station): number {
   switch (s.kind) {
     case 'machine':
@@ -605,6 +662,8 @@ function labelHeight(s: Station): number {
     case 'fence':
     case 'table':
       return param(s, 'h') + 50;
+    case 'model':
+      return modelDims(s).h + 50;
     case 'conveyor':
       return 180;
     default:
@@ -630,6 +689,8 @@ function StationModel({ world, s }: { world: World; s: Station }) {
       return <FenceModel s={s} />;
     case 'beacon':
       return <BeaconModel world={world} />;
+    case 'model':
+      return <CustomModel s={s} />;
   }
 }
 
