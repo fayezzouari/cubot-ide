@@ -18,6 +18,7 @@ import type { CompiledProgram, Stmt } from './compiler';
 import { toSource, type Ast } from './expression';
 import { ARM, HOME_JOINTS, JOINT_LIMITS } from './kinematics';
 import type { Pose } from './types';
+import { DEFAULT_VISION, type VisionConfig } from './vision';
 
 const PY_KEYWORDS = new Set(
   'False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield print time math random robot'.split(' '),
@@ -52,7 +53,7 @@ const pyTemplate = (t: string) => {
   return `f"${body}"`;
 };
 
-export function generatePython(program: CompiledProgram, poses: Pose[], name: string): string {
+export function generatePython(program: CompiledProgram, poses: Pose[], name: string, vision: VisionConfig = DEFAULT_VISION): string {
   const lines: string[] = [];
   const emit = (depth: number, s: string) => lines.push('    '.repeat(depth) + s);
 
@@ -147,7 +148,7 @@ export function generatePython(program: CompiledProgram, poses: Pose[], name: st
         emit(d, `robot.wait_until(lambda: robot.di(${Number(f.channel)}) == ${f.value === 'off' ? 'False' : 'True'}, timeout=${py(f.timeout)})`);
         break;
       case 'inspect':
-        emit(d, 'part_color, part_defect = inspect_part()');
+        emit(d, `part_color, part_defect, part_area, part_cx, part_cy = inspect_part(${JSON.stringify(String(f.camera ?? 'auto') || 'auto')})`);
         emit(d, 'part_ok = part_color != "none" and not part_defect');
         break;
       case 'read_input':
@@ -179,6 +180,7 @@ export function generatePython(program: CompiledProgram, poses: Pose[], name: st
   const vars = program.variables.filter((v) => !(v in PY_BUILTINS));
   const init = [
     'part_color, part_defect, part_ok = "none", False, False',
+    'part_area = part_cx = part_cy = 0.0',
     'pallet_dx = pallet_dy = pallet_dz = 0',
     ...vars.filter((v) => !v.startsWith('part_') && !v.startsWith('pallet_')).map((v) => `${pyName(v)} = 0`),
   ];
@@ -187,10 +189,30 @@ export function generatePython(program: CompiledProgram, poses: Pose[], name: st
     (p) => `    ${JSON.stringify(p.name)}: (${p.x}, ${p.y}, ${p.z}, ${typeof p.rz === 'number' ? p.rz : 'None'}),`,
   );
 
+  // Colour detection settings from the Sensors tab (OpenCV units: H 0-180).
+  const visionLines = [
+    'VISION = {',
+    `    "roi": ${vision.roi},  # centre crop, fraction of the frame`,
+    `    "min_area": ${vision.minArea},  # % of the ROI a colour must cover`,
+    `    "defect_v": ${vision.defectV},  # darker pixels inside the part are marks`,
+    `    "defect_area": ${vision.defectArea},  # % of the part that must be marks`,
+    '    "classes": [',
+    ...vision.classes.map(
+      (c) => `        {"name": ${JSON.stringify(c.name)}, "h_low": ${c.hLow}, "h_high": ${c.hHigh}, "s_min": ${c.sMin}, "v_min": ${c.vMin}},`,
+    ),
+    '    ],',
+    '}',
+    '',
+    '# OpenCV camera index per camera name used by Vision inspect blocks.',
+    'CAMERAS = {"auto": 0, "wrist": 1}',
+  ];
+
   return `${PY_HEADER(name)}
 POSES = {
 ${poseLines.join('\n')}
 }
+
+${visionLines.join('\n')}
 
 
 def program(robot, mqtt):
@@ -406,32 +428,64 @@ class Robot:
             time.sleep(0.05)
 
 
-_camera = None
+_cameras = {}
 
 
-def inspect_part():
-    """Classify the part under the camera by hue. Returns (color, defect).
+def inspect_part(camera="auto"):
+    """Classify the part in front of a camera with the same colour detection as
+    the simulator. Returns (color, defect, area_pct, cx, cy).
 
-    Replace the defect check with your own model (e.g. a trained classifier).
+    Camera "auto"/"wrist"/conveyor name -> CAMERAS index; tune VISION in the
+    Sensors tab and re-export, or edit it here.
     """
-    global _camera
     try:
         import cv2
+        import numpy as np
     except ImportError:
-        return "none", False
-    if _camera is None:
-        _camera = cv2.VideoCapture(0)
-    ok, frame = _camera.read()
+        return "none", False, 0.0, 0.0, 0.0
+    index = CAMERAS.get(camera.lower(), CAMERAS.get("auto", 0))
+    if index not in _cameras:
+        _cameras[index] = cv2.VideoCapture(index)
+    ok, frame = _cameras[index].read()
     if not ok:
-        return "none", False
+        return "none", False, 0.0, 0.0, 0.0
     h, w = frame.shape[:2]
-    roi = cv2.cvtColor(frame[h // 3: 2 * h // 3, w // 3: 2 * w // 3], cv2.COLOR_BGR2HSV)
-    hue, sat, val = [float(c) for c in cv2.mean(roi)[:3]]
-    if sat < 60 or val < 40:
-        return "none", False
-    color = "red" if hue < 10 or hue > 160 else "yellow" if hue < 35 else "green" if hue < 85 else "blue"
-    defect = False  # TODO: plug in surface inspection
-    return color, defect
+    rw, rh = max(1, round(w * VISION["roi"])), max(1, round(h * VISION["roi"]))
+    x0, y0 = (w - rw) // 2, (h - rh) // 2
+    hsv = cv2.cvtColor(frame[y0:y0 + rh, x0:x0 + rw], cv2.COLOR_BGR2HSV)
+    best, best_mask, best_area = "none", None, 0
+    for c in VISION["classes"]:
+        def band(h_lo, h_hi):
+            return cv2.inRange(hsv, (h_lo, c["s_min"], c["v_min"]), (h_hi, 255, 255))
+        if c["h_low"] <= c["h_high"]:
+            mask = band(c["h_low"], c["h_high"])
+        else:  # red wraps around H = 0
+            mask = cv2.bitwise_or(band(c["h_low"], 180), band(0, c["h_high"]))
+        area = cv2.countNonZero(mask)
+        if 100.0 * area / (rw * rh) >= VISION["min_area"] and area > best_area:
+            best, best_mask, best_area = c["name"], mask, area
+    if best_mask is None:
+        return "none", False, 0.0, 0.0, 0.0
+    m = cv2.moments(best_mask, binaryImage=True)
+    cx = (m["m10"] / m["m00"]) / rw * 2 - 1
+    cy = (m["m01"] / m["m00"]) / rh * 2 - 1
+    # Defect marks: dark pixels enclosed by the part on their row and column.
+    part = best_mask > 0
+    rows, cols = np.nonzero(part)
+    dark = hsv[:, :, 2] < VISION["defect_v"]
+    holes = 0
+    for y in range(rows.min(), rows.max() + 1):
+        xs = np.nonzero(part[y])[0]
+        if xs.size < 2:
+            continue
+        for x in range(xs[0] + 1, xs[-1]):
+            if part[y, x] or not dark[y, x]:
+                continue
+            ys = np.nonzero(part[:, x])[0]
+            if ys.size >= 2 and ys[0] < y < ys[-1]:
+                holes += 1
+    defect = 100.0 * holes / best_area >= VISION["defect_area"]
+    return best, bool(defect), 100.0 * best_area / (rw * rh), float(cx), float(cy)
 
 
 class Mqtt:
