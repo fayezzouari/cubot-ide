@@ -99,13 +99,14 @@ export default function DashboardPage() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const getWorkspaceIcon = (projectId: string) => {
+  // Icon, label and accent colour for the workspace a project was last opened in.
+  const getWorkspace = (projectId: string) => {
     const ws = typeof window !== 'undefined'
       ? localStorage.getItem(`cubot-ide-project-workspace-${projectId}`) || 'ide'
       : 'ide';
-    if (ws === 'blocks') return Blocks;
-    if (ws === 'cad') return Box;
-    return Code2;
+    if (ws === 'blocks') return { Icon: Blocks, label: 'Blocks', accent: '#a78bfa' };
+    if (ws === 'cad') return { Icon: Box, label: 'CAD', accent: '#fbbf24' };
+    return { Icon: Code2, label: 'IDE', accent: '#60a5fa' };
   };
 
   return (
@@ -175,7 +176,7 @@ export default function DashboardPage() {
         {isLoading && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-40 rounded-xl border border-white/[0.06] bg-white/[0.02] animate-pulse" />
+              <div key={i} className="h-44 rounded-2xl border border-white/10 bg-[#0b0b0f]/80 animate-pulse" />
             ))}
           </div>
         )}
@@ -202,24 +203,46 @@ export default function DashboardPage() {
         {!isLoading && !error && sortedProjects.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {sortedProjects.map((project) => {
-              const WorkspaceIcon = getWorkspaceIcon(project.id);
+              const { Icon: WorkspaceIcon, label: workspaceLabel, accent } = getWorkspace(project.id);
               return (
                 <div
                   key={project.id}
-                  className="group relative rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12] transition-all"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleOpenProject(project)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleOpenProject(project);
+                    }
+                  }}
+                  style={{ ['--accent' as string]: accent }}
+                  className="group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0f]/90 shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] hover:shadow-[0_12px_40px_color-mix(in_srgb,var(--accent)_18%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 >
-                  <div className="p-5">
+                  {/* Accent line and corner glow */}
+                  <div
+                    className="absolute inset-x-0 top-0 h-px opacity-70 transition-opacity group-hover:opacity-100"
+                    style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
+                  />
+                  <div
+                    className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-[0.12] blur-2xl transition-opacity group-hover:opacity-25"
+                    style={{ background: accent }}
+                  />
+                  <div className="relative p-5">
                     {/* Icon + name */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.04] flex items-center justify-center flex-shrink-0">
-                          <WorkspaceIcon size={14} className="text-white/50" />
+                    <div className="flex items-start justify-between mb-5">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border"
+                          style={{ background: `${accent}1a`, borderColor: `${accent}40`, color: accent }}
+                        >
+                          <WorkspaceIcon size={18} />
                         </div>
                         <div className="min-w-0">
-                          <h3 className="text-sm font-medium text-white truncate leading-tight">
+                          <h3 className="text-base font-semibold text-white truncate leading-tight">
                             {project.name}
                           </h3>
-                          <p className="text-xs text-white/30 mt-0.5 truncate">
+                          <p className="text-xs text-white/50 mt-1 line-clamp-2 leading-relaxed">
                             {project.description || 'No description'}
                           </p>
                         </div>
@@ -229,13 +252,22 @@ export default function DashboardPage() {
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <button
-                            className="opacity-0 group-hover:opacity-100 p-1 text-white/20 hover:text-red-400 transition-all cursor-pointer flex-shrink-0 ml-2"
-                            onClick={() => setProjectToDelete(project)}
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer flex-shrink-0 ml-2"
+                            title="Delete project"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setProjectToDelete(project);
+                            }}
+                            onKeyDown={(e) => e.stopPropagation()}
                           >
                             <Trash2 size={13} />
                           </button>
                         </AlertDialogTrigger>
-                        <AlertDialogContent className="bg-[#0a0a0a] border border-white/[0.08] rounded-xl shadow-2xl">
+                        <AlertDialogContent
+                          className="bg-[#0a0a0a] border border-white/[0.08] rounded-xl shadow-2xl"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
                           <AlertDialogHeader>
                             <AlertDialogTitle className="text-sm text-white">Delete project</AlertDialogTitle>
                             <AlertDialogDescription className="text-xs text-white/40">
@@ -261,24 +293,30 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Footer */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[10px] font-mono text-white/25 px-1.5 py-0.5 rounded-md border border-white/[0.06] bg-white/[0.03]">
+                    <div className="flex items-center justify-between gap-2 pt-4 border-t border-white/[0.07]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className="text-[10px] font-medium px-2 py-0.5 rounded-md border"
+                          style={{ color: accent, background: `${accent}14`, borderColor: `${accent}33` }}
+                        >
+                          {workspaceLabel}
+                        </span>
+                        <span className="text-[10px] font-mono text-white/60 px-2 py-0.5 rounded-md border border-white/10 bg-white/[0.04]">
                           {project.target_compiler?.toUpperCase() || 'UNKNOWN'}
                         </span>
-                        <span className="flex items-center gap-1 text-[10px] text-white/25">
-                          <Clock size={9} />
+                        <span className="text-[10px] text-white/45 px-1">
+                          {project.file_count ?? 0} file{project.file_count === 1 ? '' : 's'}
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] text-white/45">
+                          <Clock size={10} />
                           {formatDate(project.updated_at)}
                         </span>
                       </div>
 
-                      <button
-                        onClick={() => handleOpenProject(project)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-white/40 hover:text-white border border-white/[0.06] hover:border-white/20 hover:bg-white/[0.06] rounded-lg transition-all cursor-pointer group/btn"
-                      >
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-white/50 group-hover:text-white transition-colors flex-shrink-0">
                         Open
-                        <ArrowRight size={10} className="group-hover/btn:translate-x-0.5 transition-transform" />
-                      </button>
+                        <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+                      </span>
                     </div>
                   </div>
                 </div>
