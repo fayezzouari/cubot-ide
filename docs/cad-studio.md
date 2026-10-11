@@ -70,15 +70,25 @@ request ─▶ architect ─▶ part agents (swarm, in parallel) ─▶ placemen
 3. **Placement.** Using each part's real bounding box after rotation, the backend puts it
    against the chosen face of its target: touching it, outside it, centred plus the offset.
    Then the assembly is lowered so its lowest point rests on z = 0.
-4. **Review (reflection).** `CAD_REVIEW_ROUNDS` passes. The reviewer gets:
+4. **Review (reflection loop).** The review repeats until the reviewer is satisfied. Each round
+   the reviewer gets:
    - the request and the plan
    - the measured world boxes
    - automatic checks (overlaps, parts touching nothing, uneven footing)
    - a four-view render of the whole assembly
+   - what earlier rounds found, applied and rejected, so it doesn't undo its own fixes or retry
+     one that failed
 
    It answers with re-attachments and part edits. Edits go back to the part's agent with its
-   original brief. A re-attachment is kept only if the measured checks don't get worse, since
-   one early run showed a review moving the wheels into the plate.
+   original brief. A re-attachment is kept only if the measured checks don't get worse.
+   The loop ends when:
+   - the reviewer says the assembly meets the request
+   - it has problems it can't fix
+   - two rounds in a row change nothing
+   - or after `CAD_REVIEW_MAX_ROUNDS` rounds
+
+   The conversation then gets one summary: what was fixed and anything still open. A snapshot is
+   taken before the first fix.
 
 Models are poor at coordinate arithmetic, so asking them for positions gave floating or
 overlapping parts. Attachments are something they get right, and the arithmetic is exact.
@@ -187,7 +197,7 @@ All routes are under `/api/cad` and require the project owner's token.
 | `CAD_FAST_MODEL_ID` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | First choice for quick one-off calls |
 | `CAD_PARALLEL_PARTS` | 3 | Part agents working at once |
 | `CAD_AGENT_STEPS` | 8 | Model turns per part agent |
-| `CAD_REVIEW_ROUNDS` | 1 | Review passes after generation (0 turns it off) |
+| `CAD_REVIEW_MAX_ROUNDS` | 5 | Cap on review rounds; the review stops earlier once it's satisfied (0 turns it off) |
 | `CAD_WORKERS` | 2 (1 in compose) | Runners per worker service; each uses about 300 MB |
 | `CAD_JOB_TIMEOUT` | 60 s | Per job |
 | `CAD_MAX_UPLOAD_MB` | 50 | Import size limit; nginx allows 50 MB |

@@ -141,7 +141,8 @@ If it is good enough, answer {"ok": true, "issues": [], "attachments": [], "edit
 Don't invent problems; don't restyle parts that are fine."""
 
 
-def review_user(request: str, parts: list[dict], facts: str, problems: list[str], has_image: bool) -> str:
+def review_user(request: str, parts: list[dict], facts: str, problems: list[str], has_image: bool,
+                history: Optional[list[dict]] = None) -> str:
     listing = "\n".join(
         f"- {p['id']}: {p['name']} (size {p['size']} mm). {p['description']}\n"
         f"  parameters: {json.dumps(p['params'])}\n"
@@ -150,10 +151,21 @@ def review_user(request: str, parts: list[dict], facts: str, problems: list[str]
     )
     found = "\n".join(f"- {p}" for p in problems) or "- none"
     image = "The render is attached.\n" if has_image else "No render is available.\n"
+    earlier = ""
+    if history:
+        rounds = []
+        for h in history:
+            lines = [f"Round {h['round']}: found {h['issues'] or ['(nothing listed)']}"]
+            lines += [f"  applied: {a}" for a in h["applied"]] + [f"  {r}" for r in h["rejected"]]
+            rounds.append("\n".join(lines))
+        earlier = (
+            "Earlier review rounds (the render and measurements above already include the applied fixes; "
+            "don't undo them, and don't repeat a rejected fix):\n" + "\n".join(rounds) + "\n\n"
+        )
     return (
         f"Request: {request}\n\nParts:\n{listing}\n\n"
-        f"World bounding boxes:\n{facts}\n\nAutomatic checks:\n{found}\n\n{image}"
-        "Review the assembly and answer with the JSON."
+        f"World bounding boxes:\n{facts}\n\nAutomatic checks:\n{found}\n\n{earlier}{image}"
+        "Review the assembly. If it now meets the request, answer ok: true with no fixes."
     )
 
 

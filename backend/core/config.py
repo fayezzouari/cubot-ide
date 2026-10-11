@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     CAD_PARALLEL_PARTS: int = 3  # part agents working at once per request
     CAD_AGENT_STEPS: int = 8  # model turns per part agent
     CAD_MAX_FIX_ATTEMPTS: int = 3
-    CAD_REVIEW_ROUNDS: int = 1  # reflection passes after generation (0 disables)
+    # Review rounds after generation: they continue until the reviewer is satisfied, at most this many (0 disables).
+    CAD_REVIEW_MAX_ROUNDS: int = 5
     CAD_MAX_UPLOAD_MB: int = 50
 
     # Exa Web Search

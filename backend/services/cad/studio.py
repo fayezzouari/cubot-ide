@@ -437,11 +437,20 @@ async def _sync_positions(project_id: str, built: dict[str, dict]) -> None:
 
 
 async def review(project_id: str, owner: Optional[str], request: str, built: dict[str, dict],
-                 emit: Emit, rounds: int, ground: bool, plan_parts: list[dict]) -> None:
-    """Reflection: look at the finished assembly (a render plus measured
-    geometry) against the request, then apply the fixes the reviewer asks
-    for: re-attaching copies and editing part designs."""
-    for round_no in range(1, rounds + 1):
+                 emit: Emit, max_rounds: int, ground: bool, plan_parts: list[dict]) -> None:
+    """Reflection loop: render the assembly, measure it, let the reviewer
+    judge it against the request and apply its fixes (re-attachments and part
+    redesigns by the part agents), then review again, until the reviewer is
+    satisfied. Stops early when two rounds in a row change nothing, and after
+    `max_rounds` at most."""
+    history: list[dict] = []  # what earlier rounds found and did, so fixes aren't undone
+    fixed_total: list[str] = []
+    idle_rounds = 0
+    snapshotted = False
+    outcome, remaining = "limit", []
+    missing = [p["name"] for p in plan_parts if p["id"] not in built]
+
+    for round_no in range(1, max_rounds + 1):
         await emit({"type": "reviewing", "round": round_no})
         try:
             image = await render_assembly(project_id)
@@ -460,32 +469,43 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
             })
         try:
             verdict = llm.extract_json(await llm.complete(
-                prompts.REVIEW_SYSTEM, prompts.review_user(request, parts, facts, problems, image is not None),
+                prompts.REVIEW_SYSTEM,
+                prompts.review_user(request, parts, facts, problems, image is not None, history),
                 max_tokens=3000, temperature=0.1, images=[image] if image else None))
         except Exception as e:
             logger.warning("[cad] review failed: %s", e)
             await emit({"type": "review", "round": round_no, "ok": True, "issues": [], "fixed": 0,
                         "note": "Review skipped"})
-            return
+            outcome = "error"
+            break
         issues = [str(i)[:300] for i in (verdict.get("issues") or [])][:10]
         edits = [e for e in (verdict.get("edits") or []) if isinstance(e, dict) and e.get("part") in built][:4]
         moves = [m for m in (verdict.get("attachments") or []) if isinstance(m, dict) and m.get("part") in built]
-        missing = [p["name"] for p in plan_parts if p["id"] not in built]
-        if missing:
-            issues.append(f"Not built: {', '.join(missing)}")
-        if not edits and not moves:
-            if issues:
-                await _say(emit, project_id, "assistant", "Review found:\n" + "\n".join(f"• {i}" for i in issues),
-                           {"kind": "review"})
-            await emit({"type": "review", "round": round_no, "ok": not missing and bool(verdict.get("ok", True)),
-                        "issues": issues, "fixed": 0})
-            return
+        satisfied = bool(verdict.get("ok")) and not edits and not moves
 
-        await repo.create_snapshot(project_id, "Before review fixes", auto=True)
-        # Re-attach copies, but keep a move only if the measured checks don't get worse.
+        if satisfied:
+            await emit({"type": "review", "round": round_no, "ok": True, "issues": [], "fixed": 0,
+                        "note": f"Review: satisfied (round {round_no})"})
+            outcome = "satisfied"
+            break
+        if not edits and not moves:
+            # Problems it can't fix with re-attachments or edits: nothing more to do.
+            await emit({"type": "review", "round": round_no, "ok": False, "issues": issues, "fixed": 0,
+                        "note": "Review: no further fixes"})
+            outcome, remaining = "stuck", issues
+            break
+
+        if not snapshotted:
+            await repo.create_snapshot(project_id, "Before review fixes", auto=True)
+            snapshotted = True
+        applied: list[str] = []
+        rejected: list[str] = []
+
+        # Re-attach copies, but keep the moves only if the measured checks don't get worse.
         _, before = _geometry_facts(built)
         saved = {pid: ([dict(p) for p in b["spec"]["placements"]], [list(i["rotation"]) for i in b["instances"]],
                        [list(i["position"]) for i in b["instances"]]) for pid, b in built.items()}
+        described = []
         for m in moves:
             b = built[m["part"]]
             k = int(m.get("copy") or 1) - 1
@@ -494,7 +514,10 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
             fixed = _expand_plan({"parts": [{"id": m["part"], "copies": [m]}]})[0]["placements"][0]
             b["spec"]["placements"][k] = fixed
             b["instances"][k]["rotation"] = fixed["rotation"]
-        if moves:
+            att = fixed.get("attach") or {}
+            described.append(f"re-attached {m['part']}#{k + 1} to the {att.get('side')} of {att.get('to')}"
+                             f" (rotation {fixed['rotation']}, offset {att.get('offset')})")
+        if described:
             trial = _solve_placements(built)
             for b in built.values():
                 for inst in b["instances"]:
@@ -507,11 +530,13 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
                     built[pid]["spec"]["placements"] = placements
                     for inst, rot, pos in zip(built[pid]["instances"], rotations, positions):
                         inst["rotation"], inst["position"] = rot, pos
-                issues.append("Suggested re-placement was rejected: it made parts overlap or float")
-                moves = []
+                rejected += [f"{d}: rejected, it made the measured checks worse ({'; '.join(after[:3])})"
+                             for d in described]
+            else:
+                applied += described
 
-        # Redesign parts, in parallel.
-        async def redesign(e: dict) -> bool:
+        # Redesign parts, in parallel, with their agents.
+        async def redesign(e: dict) -> Optional[str]:
             b = built[e["part"]]
             await emit({"type": "part_started", "plan_id": e["part"]})
 
@@ -529,24 +554,51 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
                     retry, notify, b["spec"].get("envelope"))
             except Exception as err:
                 await emit({"type": "part_failed", "plan_id": e["part"], "error": str(err)[:500]})
-                return False
-            b["version"] = await repo.add_version(b["part"], code, {}, {}, f"Review: {e.get('instruction')}",
-                                                  key, meta)
+                rejected.append(f"edit {e['part']} ({instruction[:120]}): failed to build")
+                return None
+            b["version"] = await repo.add_version(b["part"], code, {}, {}, f"Review: {instruction}", key, meta)
             b["meta"] = meta
             await emit({"type": "part_done", "plan_id": e["part"], "part": part_view(b["part"], b["version"])})
-            return True
+            return f"edited {e['part']}: {instruction[:200]}"
 
-        results = await asyncio.gather(*(redesign(e) for e in edits))
+        applied += [r for r in await asyncio.gather(*(redesign(e) for e in edits)) if r]
         await _place(project_id, owner, built)
         if ground:
             await _rest_on_ground(project_id, owner)
         await _sync_positions(project_id, built)
         await emit({"type": "state", "state": await state(project_id)})
-        fixed = sum(results) + len(moves)
-        await _say(emit, project_id, "assistant",
-                   f"Review fixed {fixed} issue{'s' if fixed != 1 else ''}:\n" + "\n".join(f"• {i}" for i in issues),
-                   {"kind": "review"})
-        await emit({"type": "review", "round": round_no, "ok": False, "issues": issues, "fixed": fixed})
+
+        history.append({"round": round_no, "issues": issues, "applied": applied, "rejected": rejected})
+        fixed_total += issues if applied else []
+        await emit({"type": "review", "round": round_no, "ok": False, "issues": issues, "fixed": len(applied)})
+        idle_rounds = 0 if applied else idle_rounds + 1
+        if idle_rounds >= 2:
+            outcome, remaining = "stalled", issues
+            break
+        remaining = issues
+
+    rounds_done = len(history) + (1 if outcome in ("satisfied", "stuck") else 0)
+
+    def bullets(items: list[str]) -> str:
+        return "\n".join(f"• {i}" for i in items)
+
+    if outcome == "satisfied":
+        text = f"Review satisfied after {rounds_done} round{'s' if rounds_done != 1 else ''}."
+        if fixed_total:
+            text += f" Fixed along the way:\n{bullets(fixed_total)}"
+    elif outcome == "error":
+        text = "The review couldn't run; the assembly is as generated."
+    else:
+        why = {"stuck": "it found no further fixes", "stalled": "two rounds in a row changed nothing",
+               "limit": f"it reached the limit of {max_rounds} rounds"}[outcome]
+        text = f"Review stopped after {rounds_done} round{'s' if rounds_done != 1 else ''}: {why}."
+        if fixed_total:
+            text += f"\nFixed:\n{bullets(fixed_total)}"
+        if remaining:
+            text += f"\nStill open:\n{bullets(remaining)}"
+    if missing:
+        text += f"\nNot built: {', '.join(missing)}"
+    await _say(emit, project_id, "assistant", text, {"kind": "review", "outcome": outcome, "rounds": rounds_done})
 
 
 async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncGenerator[dict, None]:
@@ -636,11 +688,6 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                 await _place(project_id, owner, built)
             if not existing:
                 await _rest_on_ground(project_id, owner)
-            if built and settings.CAD_REVIEW_ROUNDS > 0:
-                await _sync_positions(project_id, built)
-                await emit({"type": "state", "state": await state(project_id)})
-                await review(project_id, owner, prompt, built, emit, settings.CAD_REVIEW_ROUNDS,
-                             ground=not existing, plan_parts=parts)
             names = [b["spec"]["name"] for b in built.values()]
             failed = [p["name"] for p in parts if p["id"] not in built]
             summary = (f"Added {len(names)} part{'s' if len(names) != 1 else ''} to {overall}: {', '.join(names)}."
@@ -649,6 +696,11 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                 summary += f" Couldn't build: {', '.join(failed)}."
             await _say(emit, project_id, "assistant", summary,
                        {"kind": "generate", "parts": [b["part"]["_id"] for b in built.values()]})
+            if built and settings.CAD_REVIEW_MAX_ROUNDS > 0:
+                await _sync_positions(project_id, built)
+                await emit({"type": "state", "state": await state(project_id)})
+                await review(project_id, owner, prompt, built, emit, settings.CAD_REVIEW_MAX_ROUNDS,
+                             ground=not existing, plan_parts=parts)
             await emit({"type": "complete", "state": await state(project_id)})
         except asyncio.CancelledError:
             await repo.add_message(project_id, "assistant", "Stopped.")
