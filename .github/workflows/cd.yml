@@ -106,6 +106,15 @@ jobs:
         run: |
           ECR_PASSWORD=$(aws ecr get-login-password --region "$AWS_REGION")
 
+          # Values derived from secrets stay empty when a secret is missing,
+          # so the env merge below keeps what the server already has.
+          MONGODB_URI=""
+          if [ -n "$MONGO_USER" ] && [ -n "$MONGO_PASSWORD" ]; then
+            MONGODB_URI="mongodb://$MONGO_USER:$MONGO_PASSWORD@mongodb:27017/cubot_ide?authSource=admin"
+          fi
+          SITE_URL=""
+          if [ -n "$DOMAIN" ]; then SITE_URL="https://$DOMAIN"; fi
+
           # Build the deploy script on the runner.
           # All variables below are runner env vars, expanded by the unquoted heredoc.
           cat > /tmp/deploy.sh << RUNNER_EOF
@@ -120,8 +129,33 @@ jobs:
           # Run as ubuntu so git uses its SSH key (SSM executes as root by default)
           sudo -u ubuntu -H git fetch origin main && sudo -u ubuntu -H git reset --hard origin/main
 
-          # ── Write root .env ───────────────────────────────────
-          cat > .env << 'EC2_EOF'
+          # ── Update env files ──────────────────────────────────
+          # Only the keys listed below are written; every other line (e.g. a
+          # MONGODB_URI added by hand on the server) is kept. A key whose value
+          # is empty here (secret not set in GitHub) keeps its current value.
+          merge_env() {
+            local target=\$1 updates=\$2
+            mkdir -p "\$(dirname "\$target")"
+            touch "\$target"
+            cp -p "\$target" "\$target.bak"
+            awk '
+              NR == FNR {
+                i = index(\$0, "=")
+                if (i > 1 && i < length(\$0)) { k = substr(\$0, 1, i - 1); val[k] = substr(\$0, i + 1); order[++n] = k }
+                next
+              }
+              {
+                i = index(\$0, "=")
+                k = i > 1 ? substr(\$0, 1, i - 1) : ""
+                if (k in val) { if (!(k in done)) print k "=" val[k]; done[k] = 1 } else print
+              }
+              END { for (j = 1; j <= n; j++) if (!(order[j] in done)) print order[j] "=" val[order[j]] }
+            ' "\$updates" "\$target" > "\$target.tmp"
+            cat "\$target.tmp" > "\$target"
+            rm -f "\$target.tmp" "\$updates"
+          }
+
+          cat > /tmp/root.env << 'EC2_EOF'
           DOMAIN=$DOMAIN
           MONGO_USER=$MONGO_USER
           MONGO_PASSWORD=$MONGO_PASSWORD
@@ -134,12 +168,11 @@ jobs:
           DD_ENV=production
           DD_VERSION=$IMAGE_TAG
           EC2_EOF
-          echo "DOCKER_GID=\$(getent group docker | cut -d: -f3)" >> .env
+          echo "DOCKER_GID=\$(getent group docker | cut -d: -f3)" >> /tmp/root.env
+          merge_env .env /tmp/root.env
 
-          # ── Write backend/.env ────────────────────────────────
-          mkdir -p backend
-          cat > backend/.env << 'EC2_EOF'
-          MONGODB_URI=mongodb://$MONGO_USER:$MONGO_PASSWORD@mongodb:27017/cubot_ide?authSource=admin
+          cat > /tmp/backend.env << 'EC2_EOF'
+          MONGODB_URI=$MONGODB_URI
           MONGODB_DB_NAME=cubot_ide
           AWS_REGION=$AWS_REGION
           AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
@@ -148,7 +181,7 @@ jobs:
           BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID
           SECRET_KEY=$SECRET_KEY
           NEXTAUTH_SECRET=$NEXTAUTH_SECRET
-          ALLOWED_ORIGINS=https://$DOMAIN
+          ALLOWED_ORIGINS=$SITE_URL
           COMPILE_WORKDIR=/compile_tmp
           COMPILE_WORKDIR_HOST=$COMPILE_HOST_DIR
           DD_AGENT_HOST=datadog
@@ -158,12 +191,11 @@ jobs:
           DD_TRACE_ANALYTICS_ENABLED=true
           DD_LOGS_INJECTION=true
           EC2_EOF
+          merge_env backend/.env /tmp/backend.env
 
-          # ── Write frontend/.env.local ─────────────────────────
-          mkdir -p frontend
-          cat > frontend/.env.local << 'EC2_EOF'
+          cat > /tmp/frontend.env << 'EC2_EOF'
           NEXT_PUBLIC_API_URL=/api
-          NEXTAUTH_URL=https://$DOMAIN
+          NEXTAUTH_URL=$SITE_URL
           NEXTAUTH_SECRET=$NEXTAUTH_SECRET
           GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
           GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
@@ -172,6 +204,7 @@ jobs:
           DD_ENV=production
           DD_VERSION=$IMAGE_TAG
           EC2_EOF
+          merge_env frontend/.env.local /tmp/frontend.env
 
           # ── k3s cluster for ROS sandbox pods (idempotent; installs on first run) ──
           bash scripts/setup-k3s.sh
