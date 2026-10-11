@@ -198,9 +198,10 @@ export function conveyorCamera(s: Station) {
   const side = s.camSide === -1 ? -1 : 1;
   const stop = conveyorEnds(s).stop;
   const pole = { x: stop - 120, z: 120 * side };
-  const head = { x: stop - 55, y: 590, z: 62 * side };
+  // High enough that the arm can lift a part straight up beneath it.
+  const head = { x: stop - 55, y: 760, z: 62 * side };
   const target = { x: stop, y: CONVEYOR_TOP + 25, z: 0 };
-  return { side, pole, poleTop: 610, head, target };
+  return { side, pole, poleTop: 780, head, target };
 }
 
 export function stationBoxes(s: Station): Box[] {

@@ -71,6 +71,9 @@ export class Interpreter {
     this.vars.set('part_color', 'none');
     this.vars.set('part_defect', false);
     this.vars.set('part_ok', false);
+    this.vars.set('part_area', 0);
+    this.vars.set('part_cx', 0);
+    this.vars.set('part_cy', 0);
     this.vars.set('pallet_dx', 0);
     this.vars.set('pallet_dy', 0);
     this.vars.set('pallet_dz', 0);
@@ -278,11 +281,15 @@ export class Interpreter {
 
       case 'inspect': {
         await w.sleep(0.3); // exposure + processing
-        const r = w.inspect();
+        const r = w.inspect(text('camera') || 'auto');
         this.vars.set('part_color', r.color);
         this.vars.set('part_defect', r.defect);
         this.vars.set('part_ok', r.color !== 'none' && !r.defect);
-        this.log('info', r.color === 'none' ? 'Vision: no part' : `Vision: ${r.color}${r.defect ? ', DEFECT' : ', ok'}`);
+        this.vars.set('part_area', Math.round(r.area * 10) / 10);
+        this.vars.set('part_cx', Math.round(r.cx * 100) / 100);
+        this.vars.set('part_cy', Math.round(r.cy * 100) / 100);
+        const where = r.source === 'camera' ? r.cameraName : `${r.cameraName}, ground truth (no 3D view)`;
+        this.log('info', r.color === 'none' ? `Vision (${where}): no part` : `Vision (${where}): ${r.color}${r.defect ? ', DEFECT' : ', ok'} · ${r.area.toFixed(0)}% of view`);
         return;
       }
       case 'read_input':

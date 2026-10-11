@@ -6,6 +6,7 @@
 // semantics.
 
 import type { CellLayout } from './layout';
+import type { VisionConfig } from './vision';
 
 export type FieldKind =
   | 'number' // numeric literal or expression, e.g. `120` or `pallet_x + 10`
@@ -100,6 +101,8 @@ export interface ProgramSettings {
   // Stations around the robot (layout.ts). Older programs have none and use
   // the default cell.
   layout?: CellLayout;
+  // Camera colour detection settings (vision.ts); defaults when omitted.
+  vision?: VisionConfig;
 }
 
 export interface ProgramDocument {

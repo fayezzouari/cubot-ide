@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header';
+import CRTWarp from '@/components/ui/CRTWarp';
 import WorkspaceModal from '@/components/workspace-modal';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
-import { Plus, ArrowRight, Trash2, Clock, Code2, Cpu, Blocks, Box, X } from 'lucide-react';
+import { Plus, ArrowRight, Trash2, Code2, Cpu, Blocks, Box, X } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import {
   AlertDialog,
@@ -98,28 +99,46 @@ export default function DashboardPage() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const getWorkspaceIcon = (projectId: string) => {
+  // Icon and label for the workspace a project was last opened in.
+  const getWorkspace = (projectId: string) => {
     const ws = typeof window !== 'undefined'
       ? localStorage.getItem(`cubot-ide-project-workspace-${projectId}`) || 'ide'
       : 'ide';
-    if (ws === 'blocks') return Blocks;
-    if (ws === 'cad') return Box;
-    return Code2;
+    if (ws === 'blocks') return { Icon: Blocks, label: 'Blocks' };
+    if (ws === 'cad') return { Icon: Box, label: 'CAD' };
+    return { Icon: Code2, label: 'IDE' };
   };
 
   return (
     <main className="min-h-screen bg-black text-foreground font-sans">
       <Header />
-            {/* Subtle dot grid background */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.04) 3px, transparent 0)',
-          backgroundSize: '32px 32px',
-        }}
-      />
+      {/* Animated CRT background, kept faint so it stays behind the content */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-45">
+        <CRTWarp
+          color="#b9aec2"
+          backgroundColor="#000000"
+          speed={0.25}
+          curvature={0.25}
+          scanlineStrength={0.2}
+          scanlineFrequency={200}
+          waveAmplitude={0.3}
+          waveFrequency={2.5}
+          bloom={0.6}
+          bloomRadius={1}
+          noise={0.04}
+          vignette={0.6}
+          brightness={0.5}
+          pixelation={1}
+          rgbShift={0.006}
+          mouseReact
+          mouseStrength={0.25}
+          dpr={1}
+          fps={30}
+          paused={false}
+        />
+      </div>
 
-      <div className="max-w-5xl mx-auto px-6 pt-28 pb-16">
+      <div className="relative z-10 max-w-5xl mx-auto px-6 pt-28 pb-16">
 
         {/* Page header */}
         <div className="mb-8">
@@ -155,9 +174,9 @@ export default function DashboardPage() {
 
         {/* Skeleton */}
         {isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px rounded-xl overflow-hidden border border-white/[0.08] bg-white/[0.08]">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-40 rounded-xl border border-white/[0.06] bg-white/[0.02] animate-pulse" />
+              <div key={i} className="h-44 bg-black animate-pulse" />
             ))}
           </div>
         )}
@@ -182,42 +201,63 @@ export default function DashboardPage() {
 
         {/* Project grid */}
         {!isLoading && !error && sortedProjects.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sortedProjects.map((project) => {
-              const WorkspaceIcon = getWorkspaceIcon(project.id);
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px rounded-xl overflow-hidden border border-white/[0.08] bg-white/[0.08]">
+            {sortedProjects.map((project, index) => {
+              const { Icon: WorkspaceIcon, label: workspaceLabel } = getWorkspace(project.id);
               return (
                 <div
                   key={project.id}
-                  className="group relative rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.12] transition-all"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleOpenProject(project)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleOpenProject(project);
+                    }
+                  }}
+                  className="group relative cursor-pointer bg-black p-6 transition-colors hover:bg-[#0b0b0b] focus-visible:outline-none focus-visible:bg-[#0b0b0b]"
                 >
-                  <div className="p-5">
+                  {/* Index, like the landing page feature grid */}
+                  <span className="absolute top-5 right-6 text-[10px] font-mono text-white/15 select-none group-hover:opacity-0 transition-opacity">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+
+                  <div className="relative">
                     {/* Icon + name */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.04] flex items-center justify-center flex-shrink-0">
-                          <WorkspaceIcon size={14} className="text-white/50" />
+                    <div className="flex items-start justify-between mb-6">
+                      <div className="min-w-0">
+                        <div className="w-9 h-9 rounded-lg border border-white/[0.12] flex items-center justify-center text-white/60 mb-4 group-hover:border-white/30 group-hover:text-white transition-colors">
+                          <WorkspaceIcon size={15} />
                         </div>
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-medium text-white truncate leading-tight">
-                            {project.name}
-                          </h3>
-                          <p className="text-xs text-white/30 mt-0.5 truncate">
-                            {project.description || 'No description'}
-                          </p>
-                        </div>
+                        <h3 className="text-sm font-semibold text-white truncate">
+                          {project.name}
+                        </h3>
+                        <p className="text-xs text-white/45 mt-1.5 line-clamp-2 leading-relaxed">
+                          {project.description || 'No description'}
+                        </p>
                       </div>
 
                       {/* Delete */}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <button
-                            className="opacity-0 group-hover:opacity-100 p-1 text-white/20 hover:text-red-400 transition-all cursor-pointer flex-shrink-0 ml-2"
-                            onClick={() => setProjectToDelete(project)}
+                            className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                            title="Delete project"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setProjectToDelete(project);
+                            }}
+                            onKeyDown={(e) => e.stopPropagation()}
                           >
                             <Trash2 size={13} />
                           </button>
                         </AlertDialogTrigger>
-                        <AlertDialogContent className="bg-[#0a0a0a] border border-white/[0.08] rounded-xl shadow-2xl">
+                        <AlertDialogContent
+                          className="bg-[#0a0a0a] border border-white/[0.08] rounded-xl shadow-2xl"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
                           <AlertDialogHeader>
                             <AlertDialogTitle className="text-sm text-white">Delete project</AlertDialogTitle>
                             <AlertDialogDescription className="text-xs text-white/40">
@@ -243,24 +283,23 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Footer */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[10px] font-mono text-white/25 px-1.5 py-0.5 rounded-md border border-white/[0.06] bg-white/[0.03]">
-                          {project.target_compiler?.toUpperCase() || 'UNKNOWN'}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap font-mono text-[10px] uppercase tracking-wider">
+                        <span className="text-white/70 px-2 py-0.5 rounded-md border border-white/[0.14]">
+                          {workspaceLabel}
                         </span>
-                        <span className="flex items-center gap-1 text-[10px] text-white/25">
-                          <Clock size={9} />
-                          {formatDate(project.updated_at)}
+                        <span className="text-white/45 px-2 py-0.5 rounded-md border border-white/[0.08]">
+                          {project.target_compiler || 'unknown'}
+                        </span>
+                        <span className="text-white/30 normal-case tracking-normal pl-1">
+                          {project.file_count ?? 0} file{project.file_count === 1 ? '' : 's'} · {formatDate(project.updated_at)}
                         </span>
                       </div>
 
-                      <button
-                        onClick={() => handleOpenProject(project)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-white/40 hover:text-white border border-white/[0.06] hover:border-white/20 hover:bg-white/[0.06] rounded-lg transition-all cursor-pointer group/btn"
-                      >
+                      <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-white/35 group-hover:text-white transition-colors flex-shrink-0">
                         Open
-                        <ArrowRight size={10} className="group-hover/btn:translate-x-0.5 transition-transform" />
-                      </button>
+                        <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -270,12 +309,12 @@ export default function DashboardPage() {
             {/* New project card */}
             <button
               onClick={handleNewProject}
-              className="rounded-xl border border-dashed border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.02] transition-all p-5 flex flex-col items-center justify-center gap-2 min-h-[10rem] cursor-pointer group"
+              className="bg-black hover:bg-[#0b0b0b] transition-colors p-6 flex flex-col items-center justify-center gap-3 min-h-[10rem] cursor-pointer group focus-visible:outline-none focus-visible:bg-[#0b0b0b]"
             >
-              <div className="w-8 h-8 rounded-lg border border-dashed border-white/[0.1] group-hover:border-white/20 flex items-center justify-center transition-colors">
-                <Plus size={14} className="text-white/25 group-hover:text-white/50 transition-colors" />
+              <div className="w-9 h-9 rounded-lg border border-dashed border-white/[0.18] group-hover:border-white/40 flex items-center justify-center transition-colors">
+                <Plus size={15} className="text-white/40 group-hover:text-white transition-colors" />
               </div>
-              <span className="text-xs text-white/25 group-hover:text-white/50 transition-colors">New Project</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-white/40 group-hover:text-white transition-colors">New Project</span>
             </button>
           </div>
         )}

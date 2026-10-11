@@ -31,6 +31,7 @@ import {
   cloneLayout,
   CONVEYOR_TOP,
   CONVEYOR_WIDTH,
+  conveyorCamera,
   conveyorEnds,
   DEFAULT_LAYOUT,
   footprint,
@@ -49,6 +50,7 @@ import {
   type Station,
 } from './layout';
 import type { PartColor, Pose, SceneConfig, Vec3 } from './types';
+import { analyze, DEFAULT_VISION, type Frame, type VisionConfig, type VisionResult } from './vision';
 
 export { PART_SIZE };
 export const HOME = HOME_JOINTS;
@@ -103,6 +105,36 @@ interface Rest {
 
 // A move target: a TCP position plus an optional tool angle (see Pose.rz).
 export type Target = Vec3 & { rz?: number | null };
+
+// A camera the 3D view can render from (mm, world frame).
+export interface CameraSpec {
+  id: string; // conveyor station id, or "wrist"
+  name: string;
+  position: Vec3;
+  target: Vec3;
+  up: Vec3;
+  fov: number; // vertical, degrees
+  width: number;
+  height: number;
+}
+
+export const CAMERA_RESOLUTION = { width: 160, height: 120 };
+// Wrist camera: beside the gripper, looking down between the fingers.
+export const WRIST_CAMERA = { above: 100, side: 45, fov: 55 };
+
+export interface Inspection {
+  time: number;
+  camera: string; // camera id
+  cameraName: string;
+  source: 'camera' | 'ground truth';
+  color: string;
+  defect: boolean;
+  area: number;
+  cx: number;
+  cy: number;
+  frame: Frame | null;
+  analysis: VisionResult | null;
+}
 
 const GRAVITY = 9810; // mm/s²
 // Gripper opening, 0 = closed on nothing, 1 = fully open.
@@ -183,7 +215,11 @@ export class World {
   machineBusyUntil = -1;
   machineDone = false;
 
-  lastVision: { color: string; defect: boolean } | null = null;
+  lastVision: Inspection | null = null;
+  vision: VisionConfig = structuredClone(DEFAULT_VISION);
+  // Set by the 3D view: renders what a camera sees. Null without a view
+  // (tests, background runs); inspection then falls back to ground truth.
+  captureCamera: ((spec: CameraSpec) => Frame | null) | null = null;
   visionFlash = 0;
 
   stats = { picks: 0, places: 0, cycleStart: 0 };
@@ -900,12 +936,94 @@ export class World {
     await this.link?.send(`O ${channel} ${on ? 1 : 0}`);
   }
 
-  inspect(): { color: string; defect: boolean } {
-    // Conveyor camera first; otherwise the wrist camera sees the held part.
-    const part = this.partAtPickPoint() ?? this.held ?? undefined;
+  // Every camera in the cell: one per conveyor, plus the wrist camera.
+  cameraSpecs(): CameraSpec[] {
+    const specs: CameraSpec[] = this.conveyors.map((c) => {
+      const cam = conveyorCamera(c);
+      // The image is taken at the lens, a little in front of the head centre.
+      const dx = cam.target.x - cam.head.x;
+      const dy = cam.target.y - cam.head.y;
+      const dz = cam.target.z - cam.head.z;
+      const n = Math.hypot(dx, dy, dz);
+      const lens = toWorld(c, cam.head.x + (dx / n) * 50, cam.head.z + (dz / n) * 50);
+      const target = toWorld(c, cam.target.x, cam.target.z);
+      return {
+        id: c.id,
+        name: `${c.name} camera`,
+        position: { x: lens.x, y: cam.head.y + (dy / n) * 50, z: lens.z },
+        target: { x: target.x, y: cam.target.y, z: target.z },
+        up: { x: 0, y: 1, z: 0 },
+        fov: 15,
+        ...CAMERA_RESOLUTION,
+      };
+    });
+    const tcp = this.tcp;
+    const yaw = (toolYaw(this.joints) * Math.PI) / 180;
+    // Finger axis is (cos, -sin); the camera sits off the gripper's side.
+    const side = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+    specs.push({
+      id: 'wrist',
+      name: 'Wrist camera',
+      position: {
+        x: tcp.x + side.x * WRIST_CAMERA.side,
+        y: tcp.y + WRIST_CAMERA.above,
+        z: tcp.z + side.z * WRIST_CAMERA.side,
+      },
+      target: { x: tcp.x, y: tcp.y - 15, z: tcp.z },
+      up: { x: Math.cos(yaw), y: 0, z: -Math.sin(yaw) },
+      fov: WRIST_CAMERA.fov,
+      ...CAMERA_RESOLUTION,
+    });
+    return specs;
+  }
+
+  // Picks the camera for an inspection. "auto": the conveyor camera of the
+  // waiting part nearest the tool, else the wrist camera when holding a part,
+  // else the first conveyor camera. Otherwise a camera id or name.
+  private pickCamera(choice: string): CameraSpec | undefined {
+    const specs = this.cameraSpecs();
+    const want = choice.trim().toLowerCase();
+    if (want && want !== 'auto') {
+      return specs.find(
+        (c) => c.id.toLowerCase() === want || c.name.toLowerCase() === want || c.name.toLowerCase() === `${want} camera`,
+      );
+    }
+    const waiting = this.partAtPickPoint();
+    if (waiting?.belt) return specs.find((c) => c.id === waiting.belt);
+    if (this.held) return specs.find((c) => c.id === 'wrist');
+    return specs[0];
+  }
+
+  // Takes an image with a camera and analyses it (see vision.ts). Without a
+  // renderer the answer comes from the simulation state instead.
+  inspect(choice = 'auto'): Inspection {
     this.visionFlash = 1;
-    this.lastVision = part ? { color: part.color, defect: part.defect } : { color: 'none', defect: false };
-    return this.lastVision;
+    const spec = this.pickCamera(choice);
+    if (!spec) throw new FaultError(`No camera called "${choice}"`);
+    const frame = this.captureCamera?.(spec) ?? null;
+    let result: Inspection;
+    if (frame) {
+      const a = analyze(frame, this.vision);
+      result = { time: this.time, camera: spec.id, cameraName: spec.name, source: 'camera', color: a.color, defect: a.defect, area: a.area, cx: a.cx, cy: a.cy, frame, analysis: a };
+    } else {
+      const part = spec.id === 'wrist' ? this.held : this.partsAtPickPoints().find((p) => p.belt === spec.id);
+      result = {
+        time: this.time,
+        camera: spec.id,
+        cameraName: spec.name,
+        source: 'ground truth',
+        color: part ? part.color : 'none',
+        defect: part ? part.defect : false,
+        area: part ? 65 : 0, // about what the camera measures for a part at the pick point
+        cx: 0,
+        cy: 0,
+        frame: null,
+        analysis: null,
+      };
+    }
+    this.lastVision = result;
+    this.emit();
+    return result;
   }
 
   sleep(seconds: number): Promise<void> {

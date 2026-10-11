@@ -11,8 +11,8 @@
 // Stations are drawn from the cell layout. In edit mode they can be selected,
 // dragged on the floor, rotated (R) and nudged (arrow keys).
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Canvas, extend, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { Canvas, extend, flushSync, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { ContactShadows, Environment, Html, Lightformer, OrbitControls, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -37,7 +37,15 @@ import {
   type CellLayout,
   type Station,
 } from '@/lib/blocks/layout';
-import { fingerOffset, PART_SIZE, type Part, type World } from '@/lib/blocks/workcell';
+import {
+  CAMERA_RESOLUTION,
+  fingerOffset,
+  PART_SIZE,
+  WRIST_CAMERA,
+  type CameraSpec,
+  type Part,
+  type World,
+} from '@/lib/blocks/workcell';
 import { useWorldVersion } from '@/lib/blocks/useWorld';
 import { loadModel } from './ModelLoader';
 import {
@@ -63,6 +71,92 @@ const PART_COLORS: Record<string, string> = {
   yellow: '#facc15',
 };
 
+// ── Sensor cameras ──────────────────────────────────────────────────────────
+
+// Objects a real camera would not see (labels, edit overlays, the view cone,
+// the infrared photo-eye beam, the tool trail) live on this layer. The main
+// view and pointer picking include it; sensor cameras render layer 0 only.
+const HIDDEN_LAYER = 1;
+
+function SensorHidden({ children }: { children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  useLayoutEffect(() => {
+    ref.current?.traverse((o) => o.layers.set(HIDDEN_LAYER));
+  });
+  return <group ref={ref}>{children}</group>;
+}
+
+// Per-frame updates that copy simulation state onto meshes (arm joints,
+// parts). Captures run them first, so a camera always sees the current state,
+// even while the render loop is paused (hidden tab) or between frames.
+const syncs = new WeakMap<World, Set<() => void>>();
+
+function useSync(world: World, fn: () => void, captureOnly = false) {
+  const latest = useRef(fn);
+  latest.current = fn;
+  // Layout effect: registered as soon as the mesh mounts, even when it was
+  // mounted synchronously for a capture.
+  useLayoutEffect(() => {
+    const run = () => latest.current();
+    let set = syncs.get(world);
+    if (!set) syncs.set(world, (set = new Set()));
+    set.add(run);
+    return () => {
+      set.delete(run);
+    };
+  }, [world]);
+  useFrame(() => {
+    if (!captureOnly) latest.current();
+  });
+}
+
+// Lets the simulation take pictures: renders the scene from a camera pose into
+// a small offscreen image and returns its pixels (RGBA, top row first).
+function SensorCapture({ world }: { world: World }) {
+  const gl = useThree((st) => st.gl);
+  const scene = useThree((st) => st.scene);
+  const view = useThree((st) => st.camera);
+  const raycaster = useThree((st) => st.raycaster);
+  useEffect(() => {
+    view.layers.enable(HIDDEN_LAYER);
+    raycaster.layers.enable(HIDDEN_LAYER);
+    const target = new THREE.WebGLRenderTarget(CAMERA_RESOLUTION.width, CAMERA_RESOLUTION.height);
+    target.texture.colorSpace = THREE.SRGBColorSpace;
+    const cam = new THREE.PerspectiveCamera(20, 4 / 3, 0.02, 6);
+    cam.layers.set(0);
+    let pixels = new Uint8Array(0);
+    const capture = (spec: CameraSpec) => {
+      const { width: w, height: h } = spec;
+      if (target.width !== w || target.height !== h) target.setSize(w, h);
+      if (pixels.length !== w * h * 4) pixels = new Uint8Array(w * h * 4);
+      cam.fov = spec.fov;
+      cam.aspect = w / h;
+      cam.position.set(spec.position.x / 1000, spec.position.y / 1000, spec.position.z / 1000);
+      cam.up.set(spec.up.x, spec.up.y, spec.up.z);
+      cam.lookAt(spec.target.x / 1000, spec.target.y / 1000, spec.target.z / 1000);
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+      syncs.get(world)?.forEach((sync) => sync());
+      scene.updateMatrixWorld();
+      const previous = gl.getRenderTarget();
+      gl.setRenderTarget(target);
+      gl.render(scene, cam);
+      gl.readRenderTargetPixels(target, 0, 0, w, h, pixels);
+      gl.setRenderTarget(previous);
+      // WebGL reads bottom-up; images are top-down.
+      const data = new Uint8ClampedArray(w * h * 4);
+      for (let y = 0; y < h; y++) data.set(pixels.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+      return { width: w, height: h, data };
+    };
+    world.captureCamera = capture;
+    return () => {
+      if (world.captureCamera === capture) world.captureCamera = null;
+      target.dispose();
+    };
+  }, [gl, scene, view, raycaster, world]);
+  return null;
+}
+
 // ── Materials ───────────────────────────────────────────────────────────────
 
 function Painted({ color, rough = 0.4 }: { color: string; rough?: number }) {
@@ -85,7 +179,7 @@ function Arm({ world }: { world: World }) {
   const fingerL = useRef<THREE.Mesh>(null);
   const fingerR = useRef<THREE.Mesh>(null);
 
-  useFrame(() => {
+  useSync(world, () => {
     const q = world.joints;
     if (j[0].current) j[0].current.rotation.y = rad(q[0]);
     if (j[1].current) j[1].current.rotation.x = rad(q[1]);
@@ -169,6 +263,16 @@ function Arm({ world }: { world: World }) {
                   <RoundedBox args={[2 * FINGER.open + 24, 26, 46]} radius={5} smoothness={3} position={[0, 90, 0]} castShadow>
                     <Painted color="#33363b" rough={0.45} />
                   </RoundedBox>
+                  {/* wrist camera beside the gripper, looking down between the fingers */}
+                  <group position={[0, ARM.tool - WRIST_CAMERA.above, WRIST_CAMERA.side]}>
+                    <RoundedBox args={[30, 30, 30]} radius={5} smoothness={2} castShadow>
+                      <Painted color="#1c1d21" rough={0.45} />
+                    </RoundedBox>
+                    <mesh position={[0, 17, -4]}>
+                      <cylinderGeometry args={[8, 8, 6, 20]} />
+                      <meshPhysicalMaterial color="#1e3a8a" roughness={0.05} metalness={0.3} clearcoat={1} />
+                    </mesh>
+                  </group>
                   <mesh ref={fingerL} position={[-FINGER.open, 125, 0]} castShadow>
                     <boxGeometry args={[FINGER.thickness, FINGER.length, FINGER.depth]} />
                     <Brushed />
@@ -190,8 +294,10 @@ function Arm({ world }: { world: World }) {
 function PartMesh({ world, part }: { world: World; part: Part }) {
   const ref = useRef<THREE.Mesh>(null);
   const mat = useRef<THREE.MeshPhysicalMaterial>(null);
-  useFrame(() => {
+  useSync(world, () => {
     if (!ref.current) return;
+    // Removed parts can outlive their part until the next React render.
+    ref.current.visible = world.parts.includes(part);
     ref.current.position.set(part.pos.x, part.pos.y, part.pos.z);
     ref.current.rotation.y = rad(part.yaw);
     if (mat.current) {
@@ -202,7 +308,14 @@ function PartMesh({ world, part }: { world: World; part: Part }) {
     }
   });
   return (
-    <mesh ref={ref} geometry={roundedPartGeometry()} castShadow receiveShadow>
+    <mesh
+      ref={ref}
+      geometry={roundedPartGeometry()}
+      position={[part.pos.x, part.pos.y, part.pos.z]}
+      rotation={[0, rad(part.yaw), 0]}
+      castShadow
+      receiveShadow
+    >
       <meshPhysicalMaterial ref={mat} color={PART_COLORS[part.color]} roughness={0.42} clearcoat={0.5} clearcoatRoughness={0.3} />
       {part.defect && (
         <mesh position={[0, PART_SIZE / 2 + 0.5, 0]} rotation={[-Math.PI / 2, 0, 0.6]}>
@@ -216,6 +329,19 @@ function PartMesh({ world, part }: { world: World; part: Part }) {
 
 function Parts({ world }: { world: World }) {
   useWorldVersion(world, 4);
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  // Before a capture, mount meshes for parts added since the last render (the
+  // list normally refreshes a few times a second, slower in a hidden tab).
+  const shown = useRef<Part[]>([]);
+  shown.current = world.parts.slice();
+  useSync(
+    world,
+    () => {
+      const now = world.parts;
+      if (now.length !== shown.current.length || now.some((p, i) => p !== shown.current[i])) flushSync(rerender);
+    },
+    true,
+  );
   return (
     <>
       {world.parts.map((p) => (
@@ -317,10 +443,12 @@ function ConveyorModel({ world, s }: { world: World; s: Station }) {
         <boxGeometry args={[18, 30, 4]} />
         <meshStandardMaterial color="#fbbf24" roughness={0.2} metalness={0.3} />
       </mesh>
-      <mesh position={[stop, T + 25, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[1.5, 1.5, W + 20, 6]} />
-        <meshBasicMaterial ref={beam} color="#ef4444" transparent opacity={0.7} />
-      </mesh>
+      <SensorHidden>
+        <mesh position={[stop, T + 25, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[1.5, 1.5, W + 20, 6]} />
+          <meshBasicMaterial ref={beam} color="#ef4444" transparent opacity={0.7} />
+        </mesh>
+      </SensorHidden>
       <VisionCamera world={world} s={s} />
       <pointLight ref={flash} position={[stop, 300, 0]} color="#bfdbfe" intensity={0} distance={800} />
     </group>
@@ -384,10 +512,12 @@ function VisionCamera({ world, s }: { world: World; s: Station }) {
           <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={1.5} />
         </mesh>
         {/* field of view */}
-        <mesh position={[0, 0, 48 + (look.dist - 48) / 2]} rotation={[-Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[fov, look.dist - 48, 32, 1, true]} />
-          <meshBasicMaterial ref={cone} color="#93c5fd" transparent opacity={0.05} depthWrite={false} side={THREE.DoubleSide} />
-        </mesh>
+        <SensorHidden>
+          <mesh position={[0, 0, 48 + (look.dist - 48) / 2]} rotation={[-Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[fov, look.dist - 48, 32, 1, true]} />
+            <meshBasicMaterial ref={cone} color="#93c5fd" transparent opacity={0.05} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+        </SensorHidden>
       </group>
     </group>
   );
@@ -791,15 +921,17 @@ function StationNode({
     >
       <StationModel world={world} s={s} />
       {edit.editing && (
-        <mesh position={[fp.cx, 1.5, fp.cz]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[fp.w + 30, fp.d + 30]} />
-          <meshBasicMaterial
-            color={selected ? '#8b5cf6' : issue === 'error' ? '#ef4444' : '#a1a1aa'}
-            transparent
-            opacity={selected ? 0.35 : 0.1}
-            depthWrite={false}
-          />
-        </mesh>
+        <SensorHidden>
+          <mesh position={[fp.cx, 1.5, fp.cz]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[fp.w + 30, fp.d + 30]} />
+            <meshBasicMaterial
+              color={selected ? '#8b5cf6' : issue === 'error' ? '#ef4444' : '#a1a1aa'}
+              transparent
+              opacity={selected ? 0.35 : 0.1}
+              depthWrite={false}
+            />
+          </mesh>
+        </SensorHidden>
       )}
       <Label y={labelHeight(s)} tone={selected ? 'selected' : edit.editing ? issue : undefined}>
         {s.name}
@@ -869,7 +1001,11 @@ function Stations({ world, layout, edit }: { world: World; layout: CellLayout; e
       {layout.stations.map((s) => (
         <StationNode key={s.id} world={world} s={s} edit={edit} onGrab={grab} />
       ))}
-      {edit.editing && <ReachRing />}
+      {edit.editing && (
+        <SensorHidden>
+          <ReachRing />
+        </SensorHidden>
+      )}
       {/* Catches pointer moves while dragging, and clicks on empty floor. */}
       {edit.editing && (
         <mesh
@@ -1094,10 +1230,13 @@ export default function WorkcellView({
           <Arm world={world} />
           <Stations world={world} layout={layout} edit={edit} />
           <Parts world={world} />
-          <Trail world={world} />
+          <SensorHidden>
+            <Trail world={world} />
+          </SensorHidden>
         </group>
         <OrbitControls makeDefault target={[0, 0.2, 0]} minDistance={0.6} maxDistance={6} maxPolarAngle={Math.PI / 2.05} />
         <CameraRig view={view} />
+        <SensorCapture world={world} />
       </Canvas>
       <div className="absolute right-2 top-2 flex overflow-hidden rounded border border-white/10 bg-black/50 text-[10px]">
         {(
