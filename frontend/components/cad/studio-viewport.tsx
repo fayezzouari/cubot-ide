@@ -4,7 +4,7 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState 
 import * as THREE from 'three';
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Edges, GizmoHelper, GizmoViewport, Grid, OrbitControls, TransformControls } from '@react-three/drei';
-import { cadApi, type CadInstance, type CadPart, type FaceInfo, type PartMesh, type Vec3 } from '@/lib/api/cad';
+import { cadApi, type CadInstance, type CadPart, type CaptureView, type FaceInfo, type PartMesh, type Vec3 } from '@/lib/api/cad';
 
 const DEG = Math.PI / 180;
 // The scene uses CAD axes directly: millimetres, Z up (the camera's up is +Z).
@@ -15,6 +15,9 @@ export interface ViewportHandle {
   fit: () => void;
   /** JPEG data URL of the viewport as the user sees it (max 1280 px wide), for the AI. */
   capture: () => string | null;
+  /** Screenshots of the whole assembly from the given directions, for the review. The user's
+   *  camera is restored afterwards. Empty if the viewer isn't ready. */
+  captureViews: (views: CaptureView[]) => Promise<{ view: string; data: string }[]>;
   /** Height (mm) to add to the instance's z so its lowest point rests on the ground. */
   dropToGround: (instanceId: string) => number | null;
 }
@@ -174,6 +177,8 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
   };
   const partById = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
   const fitted = useRef(false);
+  const instancesRef = useRef(instances);
+  instancesRef.current = instances;
 
   const register = useCallback(
     (id: string, object: THREE.Object3D | null) => {
@@ -241,6 +246,62 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
           return null;
         }
       },
+      captureViews: async (views) => {
+        // Wait (up to 6 s) until every visible copy's mesh is in the scene.
+        const expected = instancesRef.current.filter((i) => i.visible).length;
+        for (let t = 0; t < 60; t++) {
+          let loaded = 0;
+          objects.current.forEach((o) => {
+            if (o.children.length) loaded++;
+          });
+          if (loaded >= expected) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        const src = gl.domElement;
+        if (src.width < 200 || !objects.current.size) return [];
+        const box = new THREE.Box3();
+        objects.current.forEach((o) => box.expandByObject(o));
+        if (box.isEmpty()) return [];
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        const saved = {
+          position: camera.position.clone(),
+          up: camera.up.clone(),
+          near: camera.near,
+          far: camera.far,
+          target: controls?.target.clone() as THREE.Vector3 | undefined,
+        };
+        const distance = (Math.max(sphere.radius, 5) / Math.sin((camera.fov * DEG) / 2)) * 1.08;
+        const shots: { view: string; data: string }[] = [];
+        const out = document.createElement('canvas');
+        const scale = Math.min(1, 1024 / src.width);
+        out.width = Math.round(src.width * scale);
+        out.height = Math.round(src.height * scale);
+        try {
+          for (const v of views) {
+            const dir = new THREE.Vector3(...v.dir).normalize();
+            if (Math.abs(dir.z) > 0.95) camera.up.set(0, 1, 0);
+            else camera.up.set(0, 0, 1);
+            camera.position.copy(sphere.center).addScaledVector(dir, distance);
+            camera.near = Math.max(distance / 1000, 0.1);
+            camera.far = distance * 100;
+            camera.lookAt(sphere.center);
+            camera.updateProjectionMatrix();
+            gl.render(scene, camera);
+            out.getContext('2d')?.drawImage(src, 0, 0, out.width, out.height);
+            shots.push({ view: v.name, data: out.toDataURL('image/jpeg', 0.85) });
+          }
+        } finally {
+          camera.position.copy(saved.position);
+          camera.up.copy(saved.up);
+          camera.near = saved.near;
+          camera.far = saved.far;
+          if (saved.target) camera.lookAt(saved.target);
+          camera.updateProjectionMatrix();
+          controls?.update();
+          gl.render(scene, camera);
+        }
+        return shots;
+      },
       dropToGround: (id) => {
         const object = objects.current.get(id);
         if (!object || !object.children.length) return null;
@@ -248,7 +309,7 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
         return -new THREE.Box3().setFromObject(object).min.z;
       },
     }),
-    [fit, gl, scene, camera],
+    [fit, gl, scene, camera, controls],
   );
 
   const pick = useCallback(
@@ -286,6 +347,8 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
       <hemisphereLight args={['#dfe7f0', '#20201c', 0.9]} position={[0, 0, 1]} />
       <directionalLight position={[300, -400, 600]} intensity={1.6} />
       <directionalLight position={[-400, 300, 200]} intensity={0.5} />
+      {/* Soft fill from below, so the underside (motors, casters, nuts) stays readable. */}
+      <directionalLight position={[200, -300, -500]} intensity={0.55} />
 
       <Grid
         args={[2000, 2000]}

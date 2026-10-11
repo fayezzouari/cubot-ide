@@ -490,11 +490,7 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
 
     for round_no in range(1, max_rounds + 1):
         await emit({"type": "reviewing", "round": round_no})
-        try:
-            image = await render_assembly(project_id)
-        except GeometryJobError as e:
-            logger.warning("[cad] review render failed: %s", e)
-            image = None
+        images = await review_images(project_id, emit, round_no)
         try:
             facts, problems = await _check(built, mate_problems)
         except GeometryJobError as e:
@@ -513,8 +509,8 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
         try:
             verdict = llm.extract_json(await llm.complete(
                 prompts.REVIEW_SYSTEM,
-                prompts.review_user(request, parts, facts, problems, image is not None, history),
-                max_tokens=4000, temperature=0.1, images=[image] if image else None))
+                prompts.review_user(request, parts, facts, problems, bool(images), history),
+                max_tokens=4000, temperature=0.1, images=images or None))
         except Exception as e:
             logger.warning("[cad] review failed: %s", e)
             await emit({"type": "review", "round": round_no, "ok": True, "issues": [], "fixed": 0,
@@ -891,6 +887,63 @@ async def _current(project_id: str, part_id: str) -> tuple[dict, dict]:
     if not version:
         raise StudioError("Part has no version")
     return part, version
+
+
+# ── Preview captures (screenshots of the user's own viewer, for the review) ──
+
+# The browser renders these with the same materials and lighting the user sees.
+REVIEW_VIEWS = [
+    {"name": "iso_front_right", "dir": [1, -1, 0.8], "caption": "Isometric from the front-right, above"},
+    {"name": "iso_back_left", "dir": [-1, 1, 0.8], "caption": "Isometric from the back-left, above"},
+    {"name": "front", "dir": [0, -1, 0.05], "caption": "Front (camera on -Y looking along +Y)"},
+    {"name": "right", "dir": [1, 0, 0.05], "caption": "Right side (camera on +X looking along -X)"},
+    {"name": "top", "dir": [0, 0, 1], "caption": "Top (looking down, +Y up in the image)"},
+    {"name": "under", "dir": [1, -1, -0.9], "caption": "From below, front-right (shows parts under plates)"},
+]
+CAPTURE_TIMEOUT = 25.0  # s to wait for the browser before falling back to the server render
+_captures: dict[str, tuple[str, asyncio.Future]] = {}  # request id → (project id, future)
+
+
+def deliver_capture(project_id: str, request_id: str, images: list[dict]) -> bool:
+    """Called by the route when the browser posts the screenshots it took."""
+    entry = _captures.get(request_id)
+    if not entry or entry[0] != project_id or entry[1].done():
+        return False
+    entry[1].set_result(images)
+    return True
+
+
+async def review_images(project_id: str, emit: Emit, round_no: int) -> list[tuple[bytes, str]]:
+    """Screenshots of the assembly from many angles, taken by the user's open
+    viewer; if no browser answers in time, the geometry worker's render."""
+    request_id = repo.new_id()
+    future: asyncio.Future = asyncio.get_running_loop().create_future()
+    _captures[request_id] = (project_id, future)
+    try:
+        await emit({"type": "capture", "request_id": request_id, "round": round_no,
+                    "views": [{"name": v["name"], "dir": v["dir"]} for v in REVIEW_VIEWS]})
+        try:
+            shots = await asyncio.wait_for(future, CAPTURE_TIMEOUT)
+        except asyncio.TimeoutError:
+            shots = []
+    finally:
+        _captures.pop(request_id, None)
+    captions = {v["name"]: v["caption"] for v in REVIEW_VIEWS}
+    images = []
+    for shot in shots:
+        img = llm.decode_view_image(shot.get("data"))
+        if img and shot.get("view") in captions:
+            images.append((img, f"Preview, {captions[shot['view']]}:"))
+    logger.info("[cad] review round %d: %d preview screenshots from the browser", round_no, len(images))
+    if images:
+        return images
+    try:
+        rendered = await render_assembly(project_id)
+    except GeometryJobError as e:
+        logger.warning("[cad] review render failed: %s", e)
+        return []
+    return [(rendered, "Render: top-left isometric (front-right, above), top-right front (looking along +Y), "
+                       "bottom-left right side (looking along -X), bottom-right top view (+Y up):")] if rendered else []
 
 
 VIEW_CAPTION = ("What the user sees in the 3D viewport as they ask for this change (CAD axes: Z up; the "

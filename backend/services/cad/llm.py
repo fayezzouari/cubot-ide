@@ -102,7 +102,13 @@ async def _invoke(model: str, system: str, user: str, max_tokens: int, temperatu
                   images: Optional[list[bytes]] = None) -> str:
     content: object = user
     if images:
-        content = [*(png_block(img) for img in images), {"type": "text", "text": user}]
+        content = []
+        for item in images:  # bytes, or (bytes, caption)
+            if isinstance(item, tuple):
+                content += [{"type": "text", "text": item[1]}, png_block(item[0])]
+            else:
+                content.append(png_block(item))
+        content.append({"type": "text", "text": user})
     body: dict = {
         "messages": [{"role": "user", "content": content}],
         "system": system,

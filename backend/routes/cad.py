@@ -11,6 +11,7 @@ from core.config import settings
 from core.database import get_collection
 from models.cad import (
     AssemblyUpdate,
+    CaptureUpload,
     CodeRequest,
     EditRequest,
     ExportRequest,
@@ -239,3 +240,12 @@ async def list_messages(project_id: str, user: CurrentUser):
 async def clear_messages(project_id: str, user: CurrentUser):
     await _project(project_id, user)
     await repo.clear_messages(project_id)
+
+
+@router.post("/{project_id}/captures/{request_id}")
+async def post_capture(project_id: str, request_id: str, body: CaptureUpload, user: CurrentUser):
+    """Screenshots the open viewer took for a review round (see the `capture` event)."""
+    await _project(project_id, user)
+    if not studio.deliver_capture(project_id, request_id, [i.model_dump() for i in body.images]):
+        raise HTTPException(status_code=404, detail="No review is waiting for these screenshots")
+    return {"ok": True}

@@ -76,7 +76,11 @@ request ─▶ architect ─▶ part agents (swarm, in parallel) ─▶ placemen
    - the request and the plan
    - the measured world boxes
    - automatic checks (overlaps, parts touching nothing, uneven footing)
-   - a four-view render of the whole assembly
+   - screenshots of the whole assembly from six angles, taken by your open viewer with its real
+     materials and lighting: isometric front-right and back-left from above, front, right, top,
+     and from below (where motors, nuts and casters are). The server asks the page with a
+     `capture` event and the page posts the shots back. If no page answers within 25 s (tab
+     closed, API use), the review uses the server's four-view render instead.
    - what earlier rounds found, applied and rejected, so it doesn't undo its own fixes or retry
      one that failed
 
@@ -270,6 +274,7 @@ All routes are under `/api/cad` and require the project owner's token.
 | GET / DELETE | `/{project}/messages` | The saved conversation / clear it |
 | POST | `/{project}/import` | Multipart upload → new part and instance |
 | POST | `/{project}/export` | Download the assembly in a format |
+| POST | `/{project}/captures/{request}` | The viewer's screenshots for a review round (`{images: [{view, data}]}`) |
 | GET | `/files/{key}/{name}` | A built part's `mesh.json`, `part.step` or `part.stl` |
 
 ## Configuration

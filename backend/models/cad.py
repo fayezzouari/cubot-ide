@@ -74,3 +74,12 @@ class ExportRequest(BaseModel):
 
 class SnapshotRequest(BaseModel):
     label: str = Field(default="Snapshot", max_length=120)
+
+
+class CaptureImage(BaseModel):
+    view: str = Field(max_length=40)
+    data: str = Field(max_length=VIEW_IMAGE_MAX)
+
+
+class CaptureUpload(BaseModel):
+    images: list[CaptureImage] = Field(max_length=8)

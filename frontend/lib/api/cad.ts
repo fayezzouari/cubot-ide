@@ -103,6 +103,7 @@ export type CadEvent =
   | { type: 'reviewing'; round: number }
   | { type: 'review'; round: number; ok: boolean; issues: string[]; fixed: number; note?: string }
   | { type: 'message'; message: CadMessage }
+  | { type: 'capture'; request_id: string; round: number; views: CaptureView[] }
   | { type: 'complete'; state: CadState }
   | { type: 'error'; message: string };
 
@@ -126,6 +127,12 @@ export interface CadMessage {
   text: string;
   data: Record<string, unknown>;
   created_at: string;
+}
+
+export interface CaptureView {
+  name: string;
+  /** Direction from the assembly's centre towards the camera (CAD axes, Z up). */
+  dir: Vec3;
 }
 
 export type ExportFormat = 'step' | 'stl' | '3mf' | 'glb' | 'stl-zip' | 'urdf';
@@ -244,6 +251,10 @@ export const cadApi = {
     const name = /filename="?([^";]+)"?/.exec(disposition)?.[1] || `assembly.${format}`;
     return { blob: await res.blob(), name };
   },
+
+  /** Send the screenshots a review round asked for (see the `capture` event). */
+  postCapture: (projectId: string, requestId: string, images: { view: string; data: string }[]) =>
+    apiClient.post<{ ok: boolean }>(`/cad/${projectId}/captures/${requestId}`, { images }),
 
   messages: (projectId: string) => apiClient.get<CadMessage[]>(`/cad/${projectId}/messages`),
 

@@ -280,6 +280,20 @@ export default function CadPageContent() {
           setState(e.state);
           resetUndo();
           break;
+        case 'capture': {
+          // The review wants to see the assembly: deselect (no gizmo or tint in the shots), let the
+          // scene update, photograph it from each requested angle and send the pictures back.
+          setSelectedId(null);
+          setFace(null);
+          setPlan((rows) => rows.map((r) => (r.id === `__review${e.round}` ? { ...r, detail: 'Photographing the preview' } : r)));
+          void (async () => {
+            // A timer, not requestAnimationFrame: animation frames pause while the tab is in the background.
+            await new Promise((r) => setTimeout(r, 120));
+            const shots = (await viewport.current?.captureViews(e.views)) ?? [];
+            if (shots.length) await cadApi.postCapture(projectId, e.request_id, shots).catch(() => {});
+          })();
+          break;
+        }
         case 'message':
           setLog((l) => (l.some((x) => x.id === e.message.id) ? l : [...l, toEntry(e.message)]));
           break;
@@ -304,7 +318,7 @@ export default function CadPageContent() {
           break;
       }
     },
-    [replacePart, resetUndo, selectedPart?.name],
+    [replacePart, resetUndo, selectedPart?.name, projectId],
   );
 
   const send = useCallback(async () => {

@@ -162,9 +162,9 @@ REVIEW_SYSTEM = """You are a senior mechanical designer reviewing an assembly th
 from a request. You get the request, every part (description, size, parameters, ports and how each
 copy is mated), the measured world bounding boxes, the results of EXACT geometry checks (collisions
 from real solid intersections, mates whose parts don't touch, floating parts), what earlier review
-rounds did, and usually a render with four views: top-left isometric (from front-right, above),
-top-right front (looking along +Y), bottom-left right side (looking along -X), bottom-right top view
-(+Y up). Z is up; the ground is z = 0.
+rounds did, and images of the assembly from several angles (each captioned), usually screenshots of
+the user's own 3D preview. Z is up; the ground is z = 0. Look at every image: problems under plates
+or behind parts only show from some angles.
 
 Judge it as a person would: does it do what was asked, is every part connected to what it should be
 (wheel on its shaft, screws through their holes with nuts), is anything upside down, on the wrong
@@ -202,7 +202,7 @@ def review_user(request: str, parts: list[dict], facts: str, problems: list[str]
         for p in parts
     )
     found = "\n".join(f"- {p}" for p in problems) or "- all pass"
-    image = "The render is attached.\n" if has_image else "No render is available.\n"
+    image = "The images above show the assembly from several angles.\n" if has_image else "No images are available.\n"
     earlier = ""
     if history:
         rounds = []
