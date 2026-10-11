@@ -1,282 +1,575 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { useSession } from 'next-auth/react';
-import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { Home, Download, Box, Loader2, Cpu } from 'lucide-react';
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import CadViewer from '@/components/cad/cad-viewer';
-import CadChatPanel, { type CadChatMessage } from '@/components/cad/cad-chat-panel';
-import { cadService } from '@/lib/api';
-import type { CadSSEEvent, PlanStepState } from '@/lib/api/types';
+import { useSearchParams } from 'next/navigation';
+import {
+  ChevronDown,
+  Download,
+  Home,
+  Loader2,
+  Magnet,
+  Maximize,
+  Move3d,
+  Rotate3d,
+  Upload,
+} from 'lucide-react';
+import { cadApi, type CadEvent, type CadInstance, type CadPart, type CadState, type CadVersion, type ExportFormat, type FaceInfo, type Vec3 } from '@/lib/api/cad';
+import AssistantPanel, { type LogEntry, type PlanRow } from '@/components/cad/assistant-panel';
+import PartsPanel from '@/components/cad/parts-panel';
+import InspectorPanel from '@/components/cad/inspector-panel';
+import type { TransformMode, ViewportHandle } from '@/components/cad/studio-viewport';
 
-type PlanPhase = 'planning' | 'executing' | 'assembling' | 'complete' | null;
+const StudioViewport = dynamic(() => import('@/components/cad/studio-viewport'), { ssr: false });
+
+const IMPORT_ACCEPT = '.step,.stp,.iges,.igs,.stl,.obj,.3mf,.dxf';
+
+const EXPORTS: { format: ExportFormat; label: string; hint: string }[] = [
+  { format: 'step', label: 'STEP assembly', hint: 'Fusion, SolidWorks, FreeCAD, Onshape' },
+  { format: 'stl', label: 'STL (merged)', hint: '3D printing, one mesh' },
+  { format: '3mf', label: '3MF', hint: 'Modern slicers' },
+  { format: 'stl-zip', label: 'STL per part (zip)', hint: 'Print parts separately' },
+  { format: 'glb', label: 'GLB', hint: 'Web, AR, Blender' },
+  { format: 'urdf', label: 'URDF package (zip)', hint: 'ROS 2 / simulators' },
+];
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 export default function CadPageContent() {
-  const { data: session } = useSession();
   const searchParams = useSearchParams();
-  const sessionId =
-    searchParams.get('project') ||
-    searchParams.get('session') ||
-    `cad-${Date.now()}`;
+  const projectId = searchParams.get('project') || searchParams.get('session') || '';
 
-  const [messages, setMessages] = useState<CadChatMessage[]>([]);
+  const [state, setState] = useState<CadState | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [face, setFace] = useState<FaceInfo | null>(null);
+  const [mode, setMode] = useState<TransformMode>('translate');
+  const [snap, setSnap] = useState(true);
+  const [tab, setTab] = useState<'assistant' | 'parts'>('assistant');
   const [input, setInput] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [currentStl, setCurrentStl] = useState<string | null>(null);
-  const [currentCode, setCurrentCode] = useState<string | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState<PlanRow[]>([]);
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const [versions, setVersions] = useState<CadVersion[] | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [working, setWorking] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
-  // Plan state
-  const [planSteps, setPlanSteps] = useState<PlanStepState[]>([]);
-  const [planPhase, setPlanPhase] = useState<PlanPhase>(null);
+  const viewport = useRef<ViewportHandle>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const abort = useRef<AbortController | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
-  const blobToBase64 = useCallback(async (blob: Blob): Promise<string> => {
-    const buffer = await blob.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
+  const say = useCallback((role: LogEntry['role'], text: string) => {
+    setLog((l) => [...l, { id: uid(), role, text }]);
+  }, []);
+
+  const flash = useCallback((text: string) => {
+    setToast(text);
+    setTimeout(() => setToast((t) => (t === text ? null : t)), 4000);
   }, []);
 
   useEffect(() => {
-    const loadHistory = async () => {
-      try {
-        const history = await cadService.getHistory(sessionId);
-        if (history.messages?.length) {
-          setMessages(history.messages.map((msg: any, idx: number) => ({
-            id: `history-${idx}`,
-            role: msg.role,
-            content: msg.content,
-            cadquery_code: msg.cadquery_code,
-            has_model: msg.has_model,
-          })));
-        }
-        if (history.current_code) {
-          setCurrentCode(history.current_code);
-          try {
-            const stlBlob = await cadService.exportStl(history.current_code);
-            setCurrentStl(await blobToBase64(stlBlob));
-          } catch {}
-        }
-      } catch {}
-    };
-    loadHistory();
-  }, [sessionId, blobToBase64]);
-
-  const handleSSEEvent = useCallback((event: CadSSEEvent) => {
-    switch (event.type) {
-      case 'planning':
-        setPlanPhase('planning');
-        setPlanSteps([]);
-        break;
-
-      case 'plan_ready':
-        setPlanPhase('executing');
-        setPlanSteps(
-          (event.parts ?? []).map(p => ({
-            ...p,
-            status: 'pending' as const,
-          }))
-        );
-        break;
-
-      case 'executing_part':
-        setPlanSteps(prev =>
-          prev.map(s => s.id === event.part_id ? { ...s, status: 'running' } : s)
-        );
-        break;
-
-      case 'reflecting':
-        setPlanSteps(prev =>
-          prev.map(s =>
-            s.id === event.part_id
-              ? { ...s, status: 'running', attempts: event.attempt, error: event.error }
-              : s
-          )
-        );
-        break;
-
-      case 'part_result':
-        setPlanSteps(prev =>
-          prev.map(s =>
-            s.id === event.part_id
-              ? {
-                  ...s,
-                  status: event.success ? 'success' : 'failed',
-                  attempts: event.attempts,
-                  stl_base64: event.stl_base64,
-                  error: event.success ? undefined : event.error,
-                }
-              : s
-          )
-        );
-        // Update viewer with each successful part preview
-        if (event.success && event.stl_base64) {
-          setCurrentStl(event.stl_base64);
-        }
-        break;
-
-      case 'complete':
-        setPlanPhase('complete');
-        if (event.stl_base64) setCurrentStl(event.stl_base64);
-        if (event.cadquery_code) setCurrentCode(event.cadquery_code);
-        if (event.message) {
-          setMessages(prev => [
-            ...prev,
-            {
-              id: `assistant-${Date.now()}`,
-              role: 'assistant',
-              content: event.message!,
-              cadquery_code: event.cadquery_code,
-              has_model: !!event.stl_base64,
-            },
-          ]);
-        }
-        break;
-
-      case 'error':
-        setPlanPhase(null);
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `error-${Date.now()}`,
-            role: 'assistant',
-            content: event.message ?? 'An error occurred.',
-          },
-        ]);
-        break;
+    if (!projectId) {
+      setLoadError('Open CAD Studio from a project on the dashboard.');
+      return;
     }
+    cadApi
+      .state(projectId)
+      .then(setState)
+      .catch((e) => setLoadError(e?.message || 'Could not load the project'));
+  }, [projectId]);
+
+  const parts = useMemo(() => state?.parts ?? [], [state]);
+  const instances = useMemo(() => state?.assembly.instances ?? [], [state]);
+  const selected = instances.find((i) => i.id === selectedId) ?? null;
+  const selectedPart = selected ? parts.find((p) => p.id === selected.part_id) ?? null : null;
+
+  // A picked face belongs to one version of one part.
+  useEffect(() => {
+    setVersions(null);
+    setFace(null);
+  }, [selectedPart?.id, selectedPart?.version?.id]);
+
+  // ── Persistence ─────────────────────────────────────────────────────────
+
+  const scheduleSave = useCallback(
+    (next: CadState) => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        cadApi.saveAssembly(projectId, next.assembly).catch((e) => flash(`Not saved: ${e.message}`));
+      }, 400);
+    },
+    [projectId, flash],
+  );
+
+  const updateAssembly = useCallback(
+    (fn: (instances: CadInstance[]) => CadInstance[], name?: string) => {
+      setState((s) => {
+        if (!s) return s;
+        const next = { ...s, assembly: { name: name ?? s.assembly.name, instances: fn(s.assembly.instances) } };
+        scheduleSave(next);
+        return next;
+      });
+    },
+    [scheduleSave],
+  );
+
+  const patchInstance = useCallback(
+    (id: string, patch: Partial<CadInstance>) => updateAssembly((list) => list.map((i) => (i.id === id ? { ...i, ...patch } : i))),
+    [updateAssembly],
+  );
+
+  const replacePart = useCallback((part: CadPart) => {
+    setState((s) => (s ? { ...s, parts: s.parts.some((p) => p.id === part.id) ? s.parts.map((p) => (p.id === part.id ? part : p)) : [...s.parts, part] } : s));
   }, []);
 
-  const handleSend = useCallback(async () => {
-    const trimmed = input.trim();
-    if (!trimmed || isGenerating) return;
-
-    const userMsg: CadChatMessage = { id: `user-${Date.now()}`, role: 'user', content: trimmed };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setIsGenerating(true);
-    setPlanPhase(null);
-    setPlanSteps([]);
-
-    try {
-      await cadService.generatePlanned(
-        sessionId,
-        {
-          message: trimmed,
-          current_code: currentCode || undefined,
-          conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
-        },
-        handleSSEEvent,
+  const patchPart = useCallback(
+    (part: CadPart, fields: { name?: string; color?: string }) => {
+      replacePart({ ...part, ...fields });
+      const timers = partTimers.current;
+      clearTimeout(timers.get(part.id));
+      timers.set(
+        part.id,
+        setTimeout(() => cadApi.updatePart(projectId, part.id, fields).catch((e) => flash(`Not saved: ${e.message}`)), 500),
       );
-    } catch (err: any) {
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `error-${Date.now()}`,
-          role: 'assistant',
-          content: `Failed to generate model: ${err.message || 'Unknown error'}`,
-        },
-      ]);
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [input, isGenerating, messages, currentCode, sessionId, handleSSEEvent]);
+    },
+    [projectId, replacePart, flash],
+  );
 
-  const handleExportSTL = useCallback(async () => {
-    if (!currentCode) return;
-    setIsExporting(true);
+  // ── Assistant ───────────────────────────────────────────────────────────
+
+  const onEvent = useCallback(
+    (e: CadEvent) => {
+      switch (e.type) {
+        case 'planning':
+          setPlan([{ id: '__plan', name: 'Planning parts…', status: 'running' }]);
+          break;
+        case 'plan':
+          setPlan(e.parts.map((p) => ({ ...p, status: 'pending' })));
+          break;
+        case 'part_started':
+          setPlan((rows) =>
+            rows.length
+              ? rows.map((r) => (r.id === (e.plan_id ?? e.part_id) ? { ...r, status: 'running' } : r))
+              : [{ id: e.part_id!, name: selectedPart?.name ?? 'Part', status: 'running' }],
+          );
+          break;
+        case 'part_retry':
+          setPlan((rows) => rows.map((r) => (r.id === (e.plan_id ?? e.part_id) ? { ...r, attempt: e.attempt, error: e.error } : r)));
+          break;
+        case 'part_failed':
+          setPlan((rows) => rows.map((r) => (r.id === e.plan_id ? { ...r, status: 'failed', error: e.error.split('\n')[0] } : r)));
+          break;
+        case 'part_done':
+          setPlan((rows) => rows.map((r) => (r.id === (e.plan_id ?? e.part_id) ? { ...r, status: 'done', error: undefined } : r)));
+          replacePart(e.part);
+          if (e.instances?.length) {
+            setState((s) => (s ? { ...s, assembly: { ...s.assembly, instances: [...s.assembly.instances, ...e.instances!] } } : s));
+          }
+          break;
+        case 'complete':
+          setState(e.state);
+          break;
+        case 'error':
+          say('error', e.message);
+          break;
+      }
+    },
+    [replacePart, say, selectedPart?.name],
+  );
+
+  const send = useCallback(async () => {
+    const text = input.trim();
+    if (!text || busy || !projectId) return;
+    setInput('');
+    setBusy(true);
+    setPlan([]);
+    say('user', face && selectedPart ? `${text}  ·  (${face.type.toLowerCase()} face)` : text);
+    const controller = new AbortController();
+    abort.current = controller;
+    let made = 0;
+    const handle = (e: CadEvent) => {
+      if (e.type === 'part_done') made++;
+      onEvent(e);
+    };
     try {
-      const blob = await cadService.exportStl(currentCode);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'model.stl';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      alert(`Export failed: ${err.message || 'Unknown error'}`);
+      if (selectedPart) {
+        const target = selectedPart;
+        const { start: _s, count: _c, ...faceRef } = face ?? ({} as FaceInfo);
+        await cadApi.edit(projectId, target.id, text, face ? faceRef : null, handle, controller.signal);
+        if (made) say('assistant', `Updated ${target.name}.`);
+      } else {
+        await cadApi.generate(projectId, text, handle, controller.signal);
+        say('assistant', made > 0 ? `Added ${made} part${made > 1 ? 's' : ''} to the assembly.` : 'No parts were built.');
+        setTimeout(() => viewport.current?.fit(), 300);
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') say('error', e?.message || 'Request failed');
+      else say('assistant', 'Stopped.');
     } finally {
-      setIsExporting(false);
+      setBusy(false);
+      abort.current = null;
     }
-  }, [currentCode]);
+  }, [input, busy, projectId, face, selectedPart, onEvent, say]);
+
+  // ── Part actions ────────────────────────────────────────────────────────
+
+  const withWork = useCallback(
+    async (label: string, fn: () => Promise<void>) => {
+      setWorking(label);
+      try {
+        await fn();
+      } catch (e: any) {
+        flash(e?.message || `${label} failed`);
+      } finally {
+        setWorking(null);
+      }
+    },
+    [flash],
+  );
+
+  const addInstance = (part: CadPart, at?: Vec3) => {
+    const offset = (part.version?.bbox?.size?.[0] ?? 50) + 10;
+    const count = instances.filter((i) => i.part_id === part.id).length;
+    const inst: CadInstance = {
+      id: uid() + uid(),
+      part_id: part.id,
+      name: count ? `${part.name} ${count + 1}` : part.name,
+      position: at ?? [count * offset, 0, 0],
+      rotation: [0, 0, 0],
+      color: null,
+      visible: true,
+    };
+    updateAssembly((list) => [...list, inst]);
+    setSelectedId(inst.id);
+  };
+
+  const importFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    for (const file of Array.from(files)) {
+      await withWork(`Importing ${file.name}`, async () => {
+        const { part, instance } = await cadApi.importFile(projectId, file);
+        replacePart(part);
+        setState((s) => (s ? { ...s, assembly: { ...s.assembly, instances: [...s.assembly.instances, instance] } } : s));
+        setSelectedId(instance.id);
+        setTimeout(() => viewport.current?.fit(), 300);
+      });
+    }
+    if (fileInput.current) fileInput.current.value = '';
+  };
+
+  const runExport = (format: ExportFormat) => {
+    setExportOpen(false);
+    void withWork('Exporting', async () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        if (state) await cadApi.saveAssembly(projectId, state.assembly);
+      }
+      const { blob, name } = await cadApi.export(projectId, format);
+      download(blob, name);
+    });
+  };
+
+  // ── Keyboard ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return;
+      if (e.key === 'Escape') {
+        if (face) setFace(null);
+        else setSelectedId(null);
+      } else if (e.key === 'g' || e.key === 'w') setMode('translate');
+      else if (e.key === 'r' || e.key === 'e') setMode('rotate');
+      else if (e.key === 'f') viewport.current?.fit();
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+        updateAssembly((list) => list.filter((i) => i.id !== selectedId));
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [face, selectedId, updateAssembly]);
+
+  if (loadError) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center gap-3 bg-black text-white/70 text-sm">
+        <p>{loadError}</p>
+        <Link href="/dashboard" className="text-white underline underline-offset-4">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <div className="h-screen flex flex-col bg-black text-foreground font-sans">
+    <div className="h-screen flex flex-col bg-black text-white font-sans">
+      <header className="h-11 border-b border-white/[0.06] flex items-center gap-3 px-3 shrink-0">
+        <Link href="/dashboard" className="flex items-center gap-2 group">
+          <img src="/cubot.svg" alt="CuBot" className="w-7 h-7 object-contain" />
+          <span className="text-sm font-semibold text-white/80 group-hover:text-white">CuBot</span>
+        </Link>
+        <span className="text-white/15">/</span>
+        <span className="text-[11px] font-mono text-white/35">CAD Studio</span>
+        <span className="text-white/15">/</span>
+        <input
+          value={state?.assembly.name ?? ''}
+          onChange={(e) => updateAssembly((l) => l, e.target.value)}
+          className="bg-transparent text-[12.5px] text-white/80 focus:outline-none border-b border-transparent focus:border-white/20 w-56"
+          placeholder="Assembly"
+        />
 
-      {/* Top bar */}
-      <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="flex items-center gap-2 group">
-            <img src="/cubot.svg" alt="CuBot" className="w-8 h-8 object-contain" />
-
-            <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">CuBot</span>
-          </Link>
-          <span className="text-white/[0.12]">·</span>
-          <span className="text-xs text-white/30 font-mono">CAD</span>
-        </div>
-
-        <div className="flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-1.5">
+          {working && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-white/45 mr-2">
+              <Loader2 size={11} className="animate-spin" /> {working}…
+            </span>
+          )}
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            accept={IMPORT_ACCEPT}
+            className="hidden"
+            onChange={(e) => importFiles(e.target.files)}
+          />
           <button
-            onClick={handleExportSTL}
-            disabled={!currentCode || isExporting}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 font-medium text-xs rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+            onClick={() => fileInput.current?.click()}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] text-white/70 hover:text-white hover:bg-white/[0.06]"
           >
-            {isExporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
-            Export STL
+            <Upload size={12} /> Import
           </button>
-          <span className="w-px h-4 bg-white/[0.08] mx-1" />
-         <Link
-            href="/dashboard"
-            className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
-          >
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen((v) => !v)}
+              disabled={!instances.length}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-white text-black text-[11.5px] font-medium disabled:opacity-30"
+            >
+              <Download size={12} /> Export <ChevronDown size={11} />
+            </button>
+            {exportOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setExportOpen(false)} />
+                <div className="absolute right-0 top-9 z-30 w-60 rounded-md border border-white/[0.1] bg-[#0e0e0e] shadow-xl py-1">
+                  {EXPORTS.map((x) => (
+                    <button
+                      key={x.format}
+                      onClick={() => runExport(x.format)}
+                      className="w-full text-left px-3 py-1.5 hover:bg-white/[0.06]"
+                    >
+                      <span className="block text-[12px] text-white/85">{x.label}</span>
+                      <span className="block text-[10.5px] text-white/35">{x.hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          <Link href="/dashboard" className="p-1.5 rounded-md text-white/35 hover:text-white hover:bg-white/[0.06]" title="Dashboard">
             <Home size={13} />
           </Link>
-          {session?.user?.image && (
-            <Image
-              src={session.user.image}
-              alt={session.user.name ?? 'User'}
-              width={24}
-              height={24}
-              className="rounded-full border border-white/10"
-            />
-          )}
-
         </div>
       </header>
 
-      {/* Main content */}
-      <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-        <ResizablePanel defaultSize={30} minSize={20} maxSize={50}>
-          <CadChatPanel
-            messages={messages}
-            input={input}
-            isGenerating={isGenerating}
-            onInputChange={setInput}
-            onSend={handleSend}
-            planSteps={planSteps}
-            planPhase={planPhase}
-          />
-        </ResizablePanel>
-        <ResizableHandle className="bg-white/[0.04] hover:bg-white/[0.08] transition-colors w-px" />
-        <ResizablePanel defaultSize={70}>
-          <CadViewer
-            assemblyParts={(() => {
-              const successParts = planSteps
-                .filter(s => s.status === 'success' && s.stl_base64)
-                .map(s => ({ id: s.id, name: s.name, stl_base64: s.stl_base64! }));
-              if (successParts.length > 0) return successParts;
-              if (currentStl) return [{ id: 'current', name: 'Model', stl_base64: currentStl }];
-              return [];
-            })()}
-          />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+      <div className="flex-1 min-h-0 flex">
+        <aside className="w-[300px] shrink-0 border-r border-white/[0.06] flex flex-col min-h-0 bg-[#070707]">
+          <div className="flex border-b border-white/[0.06] text-[11px]">
+            {(['assistant', 'parts'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`flex-1 py-2 capitalize ${tab === t ? 'text-white border-b border-white' : 'text-white/40 hover:text-white/70'}`}
+              >
+                {t === 'parts' ? `Parts (${parts.length})` : 'Assistant'}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 min-h-0">
+            {tab === 'assistant' ? (
+              <AssistantPanel
+                input={input}
+                busy={busy}
+                editTarget={selectedPart ? { name: selectedPart.name } : null}
+                face={face}
+                plan={plan}
+                log={log}
+                onInput={setInput}
+                onSend={send}
+                onStop={() => abort.current?.abort()}
+                onClearFace={() => setFace(null)}
+              />
+            ) : (
+              <PartsPanel
+                parts={parts}
+                instances={instances}
+                selectedId={selectedId}
+                onSelect={(id) => {
+                  setSelectedId(id);
+                  setFace(null);
+                }}
+                onAddInstance={(p) => addInstance(p)}
+                onDuplicatePart={(p) =>
+                  withWork('Duplicating', async () => {
+                    const copy = await cadApi.duplicate(projectId, p.id);
+                    replacePart(copy);
+                    addInstance(copy);
+                  })
+                }
+                onDeletePart={(p) =>
+                  withWork('Deleting', async () => {
+                    await cadApi.deletePart(projectId, p.id);
+                    setState((s) =>
+                      s
+                        ? {
+                            parts: s.parts.filter((x) => x.id !== p.id),
+                            assembly: { ...s.assembly, instances: s.assembly.instances.filter((i) => i.part_id !== p.id) },
+                          }
+                        : s,
+                    );
+                    if (selected?.part_id === p.id) setSelectedId(null);
+                  })
+                }
+                onToggleVisible={(i) => patchInstance(i.id, { visible: !i.visible })}
+                onRemoveInstance={(i) => {
+                  updateAssembly((list) => list.filter((x) => x.id !== i.id));
+                  if (selectedId === i.id) setSelectedId(null);
+                }}
+                onImport={() => fileInput.current?.click()}
+              />
+            )}
+          </div>
+        </aside>
+
+        <main className="flex-1 min-w-0 relative">
+          {state ? (
+            <StudioViewport
+              controlRef={viewport}
+              parts={parts}
+              instances={instances}
+              selectedId={selectedId}
+              face={face}
+              mode={mode}
+              snap={snap}
+              onSelect={(id) => {
+                setSelectedId(id);
+                if (!id) setFace(null);
+              }}
+              onFace={setFace}
+              onTransform={(id, position, rotation) => patchInstance(id, { position, rotation })}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-white/30">
+              <Loader2 size={18} className="animate-spin" />
+            </div>
+          )}
+
+          <div className="absolute top-3 left-3 flex gap-1 rounded-md border border-white/[0.08] bg-black/70 backdrop-blur p-1">
+            {[
+              { id: 'translate', icon: Move3d, title: 'Move (G)' },
+              { id: 'rotate', icon: Rotate3d, title: 'Rotate (R)' },
+            ].map(({ id, icon: Icon, title }) => (
+              <button
+                key={id}
+                onClick={() => setMode(id as TransformMode)}
+                title={title}
+                className={`p-1.5 rounded ${mode === id ? 'bg-white/15 text-white' : 'text-white/45 hover:text-white'}`}
+              >
+                <Icon size={14} />
+              </button>
+            ))}
+            <span className="w-px bg-white/10 mx-0.5" />
+            <button
+              onClick={() => setSnap((v) => !v)}
+              title={snap ? 'Snapping on (5 mm, 15°)' : 'Snapping off'}
+              className={`p-1.5 rounded ${snap ? 'bg-white/15 text-white' : 'text-white/45 hover:text-white'}`}
+            >
+              <Magnet size={14} />
+            </button>
+            <button onClick={() => viewport.current?.fit()} title="Frame all (F)" className="p-1.5 rounded text-white/45 hover:text-white">
+              <Maximize size={14} />
+            </button>
+          </div>
+
+          {state && instances.length === 0 && !busy && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center">
+                <p className="text-[13px] text-white/50">Empty assembly</p>
+                <p className="text-[11.5px] text-white/30 mt-1">Describe a part in the assistant, or import STEP / STL / DXF.</p>
+              </div>
+            </div>
+          )}
+
+          {toast && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-2 rounded-md border border-white/10 bg-[#111] text-[12px] text-white/80 shadow-lg">
+              {toast}
+            </div>
+          )}
+        </main>
+
+        {selected && selectedPart && (
+          <aside className="w-[290px] shrink-0 border-l border-white/[0.06] bg-[#070707] min-h-0">
+            <InspectorPanel
+              instance={selected}
+              part={selectedPart}
+              face={face}
+              busy={busy || !!working}
+              versions={versions}
+              onInstance={(patch) => patchInstance(selected.id, patch)}
+              onDropToGround={() => {
+                const dz = viewport.current?.dropToGround(selected.id);
+                if (dz != null && Math.abs(dz) > 1e-6) {
+                  const [x, y, z] = selected.position;
+                  patchInstance(selected.id, { position: [x, y, Math.round((z + dz) * 1000) / 1000] });
+                }
+              }}
+              onPart={(fields) => patchPart(selectedPart, fields)}
+              onParams={async (params) => {
+                setWorking('Rebuilding');
+                try {
+                  replacePart(await cadApi.setParams(projectId, selectedPart.id, params));
+                } finally {
+                  setWorking(null);
+                }
+              }}
+              onCode={async (code) => {
+                setWorking('Building');
+                try {
+                  replacePart(await cadApi.setCode(projectId, selectedPart.id, code));
+                } finally {
+                  setWorking(null);
+                }
+              }}
+              onLoadVersions={() => cadApi.versions(projectId, selectedPart.id).then(setVersions).catch(() => setVersions([]))}
+              onRevert={(v) =>
+                withWork('Reverting', async () => {
+                  replacePart(await cadApi.revert(projectId, selectedPart.id, v.id));
+                })
+              }
+              onDownload={(name) =>
+                selectedPart.version &&
+                withWork('Downloading', async () => {
+                  const blob = await cadApi.partFile(selectedPart.version!.key, name);
+                  download(blob, `${selectedPart.name.replace(/[^\w-]+/g, '_')}.${name.split('.')[1]}`);
+                })
+              }
+            />
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
