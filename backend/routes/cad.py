@@ -77,7 +77,7 @@ async def generate(project_id: str, body: GenerateRequest, user: CurrentUser):
     assembly. Streams progress as Server-Sent Events."""
     await _project(project_id, user)
     return _sse(studio.generate(project_id, user.get("sub"), body.prompt,
-                                view_image=llm.decode_view_image(body.view_image), owner=user.get("sub")))
+                                view_image=llm.decode_view_image(body.view_image)))
 
 
 @router.post("/{project_id}/parts/{part_id}/edit")
