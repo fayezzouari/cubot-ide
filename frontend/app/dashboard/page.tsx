@@ -7,7 +7,7 @@ import CRTWarp from '@/components/ui/CRTWarp';
 import WorkspaceModal from '@/components/workspace-modal';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
-import { Plus, ArrowRight, Trash2, Clock, Code2, Cpu, Blocks, Box, X } from 'lucide-react';
+import { Plus, ArrowRight, Trash2, Code2, Cpu, Blocks, Box, X } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import {
   AlertDialog,
@@ -99,14 +99,14 @@ export default function DashboardPage() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  // Icon, label and accent colour for the workspace a project was last opened in.
+  // Icon and label for the workspace a project was last opened in.
   const getWorkspace = (projectId: string) => {
     const ws = typeof window !== 'undefined'
       ? localStorage.getItem(`cubot-ide-project-workspace-${projectId}`) || 'ide'
       : 'ide';
-    if (ws === 'blocks') return { Icon: Blocks, label: 'Blocks', accent: '#a78bfa' };
-    if (ws === 'cad') return { Icon: Box, label: 'CAD', accent: '#fbbf24' };
-    return { Icon: Code2, label: 'IDE', accent: '#60a5fa' };
+    if (ws === 'blocks') return { Icon: Blocks, label: 'Blocks' };
+    if (ws === 'cad') return { Icon: Box, label: 'CAD' };
+    return { Icon: Code2, label: 'IDE' };
   };
 
   return (
@@ -174,9 +174,9 @@ export default function DashboardPage() {
 
         {/* Skeleton */}
         {isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px rounded-xl overflow-hidden border border-white/[0.08] bg-white/[0.08]">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-44 rounded-2xl border border-white/10 bg-[#0b0b0f]/80 animate-pulse" />
+              <div key={i} className="h-44 bg-black animate-pulse" />
             ))}
           </div>
         )}
@@ -201,9 +201,9 @@ export default function DashboardPage() {
 
         {/* Project grid */}
         {!isLoading && !error && sortedProjects.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sortedProjects.map((project) => {
-              const { Icon: WorkspaceIcon, label: workspaceLabel, accent } = getWorkspace(project.id);
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px rounded-xl overflow-hidden border border-white/[0.08] bg-white/[0.08]">
+            {sortedProjects.map((project, index) => {
+              const { Icon: WorkspaceIcon, label: workspaceLabel } = getWorkspace(project.id);
               return (
                 <div
                   key={project.id}
@@ -216,43 +216,33 @@ export default function DashboardPage() {
                       handleOpenProject(project);
                     }
                   }}
-                  style={{ ['--accent' as string]: accent }}
-                  className="group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0f]/90 shadow-[0_8px_30px_rgba(0,0,0,0.55)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] hover:shadow-[0_12px_40px_color-mix(in_srgb,var(--accent)_18%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  className="group relative cursor-pointer bg-black p-6 transition-colors hover:bg-[#0b0b0b] focus-visible:outline-none focus-visible:bg-[#0b0b0b]"
                 >
-                  {/* Accent line and corner glow */}
-                  <div
-                    className="absolute inset-x-0 top-0 h-px opacity-70 transition-opacity group-hover:opacity-100"
-                    style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
-                  />
-                  <div
-                    className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-[0.12] blur-2xl transition-opacity group-hover:opacity-25"
-                    style={{ background: accent }}
-                  />
-                  <div className="relative p-5">
+                  {/* Index, like the landing page feature grid */}
+                  <span className="absolute top-5 right-6 text-[10px] font-mono text-white/15 select-none group-hover:opacity-0 transition-opacity">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+
+                  <div className="relative">
                     {/* Icon + name */}
-                    <div className="flex items-start justify-between mb-5">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border"
-                          style={{ background: `${accent}1a`, borderColor: `${accent}40`, color: accent }}
-                        >
-                          <WorkspaceIcon size={18} />
+                    <div className="flex items-start justify-between mb-6">
+                      <div className="min-w-0">
+                        <div className="w-9 h-9 rounded-lg border border-white/[0.12] flex items-center justify-center text-white/60 mb-4 group-hover:border-white/30 group-hover:text-white transition-colors">
+                          <WorkspaceIcon size={15} />
                         </div>
-                        <div className="min-w-0">
-                          <h3 className="text-base font-semibold text-white truncate leading-tight">
-                            {project.name}
-                          </h3>
-                          <p className="text-xs text-white/50 mt-1 line-clamp-2 leading-relaxed">
-                            {project.description || 'No description'}
-                          </p>
-                        </div>
+                        <h3 className="text-sm font-semibold text-white truncate">
+                          {project.name}
+                        </h3>
+                        <p className="text-xs text-white/45 mt-1.5 line-clamp-2 leading-relaxed">
+                          {project.description || 'No description'}
+                        </p>
                       </div>
 
                       {/* Delete */}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <button
-                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer flex-shrink-0 ml-2"
+                            className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
                             title="Delete project"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -293,27 +283,20 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Footer */}
-                    <div className="flex items-center justify-between gap-2 pt-4 border-t border-white/[0.07]">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span
-                          className="text-[10px] font-medium px-2 py-0.5 rounded-md border"
-                          style={{ color: accent, background: `${accent}14`, borderColor: `${accent}33` }}
-                        >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap font-mono text-[10px] uppercase tracking-wider">
+                        <span className="text-white/70 px-2 py-0.5 rounded-md border border-white/[0.14]">
                           {workspaceLabel}
                         </span>
-                        <span className="text-[10px] font-mono text-white/60 px-2 py-0.5 rounded-md border border-white/10 bg-white/[0.04]">
-                          {project.target_compiler?.toUpperCase() || 'UNKNOWN'}
+                        <span className="text-white/45 px-2 py-0.5 rounded-md border border-white/[0.08]">
+                          {project.target_compiler || 'unknown'}
                         </span>
-                        <span className="text-[10px] text-white/45 px-1">
-                          {project.file_count ?? 0} file{project.file_count === 1 ? '' : 's'}
-                        </span>
-                        <span className="flex items-center gap-1 text-[10px] text-white/45">
-                          <Clock size={10} />
-                          {formatDate(project.updated_at)}
+                        <span className="text-white/30 normal-case tracking-normal pl-1">
+                          {project.file_count ?? 0} file{project.file_count === 1 ? '' : 's'} · {formatDate(project.updated_at)}
                         </span>
                       </div>
 
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-white/50 group-hover:text-white transition-colors flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-white/35 group-hover:text-white transition-colors flex-shrink-0">
                         Open
                         <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
                       </span>
