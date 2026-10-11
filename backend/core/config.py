@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     SANDBOX_MEMORY_LIMIT: str = "2Gi"
     SANDBOX_DISK_LIMIT: str = "5Gi"
 
+    # CAD Studio
+    CAD_STORAGE_DIR: str = "/tmp/cubot-cad"  # shared with the geometry worker
+    CAD_WORKER_URL: Optional[str] = None  # sandboxed worker service; unset = local pool
+    CAD_MODEL_ID: Optional[str] = None  # model for CAD code; unset = BEDROCK_MODEL_ID
+    CAD_PARALLEL_PARTS: int = 3
+    CAD_MAX_FIX_ATTEMPTS: int = 3
+    CAD_MAX_UPLOAD_MB: int = 50
+
     # Exa Web Search
     EXA_API_KEY: Optional[str] = None
 

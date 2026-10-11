@@ -1,75 +1,62 @@
+from typing import Any, Literal, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import datetime
-from enum import Enum
+
+Vec3 = list[float]
+ExportFormat = Literal["step", "stl", "3mf", "glb", "stl-zip", "urdf"]
 
 
-class CadMessageRole(str, Enum):
-    USER = "user"
-    ASSISTANT = "assistant"
+class GenerateRequest(BaseModel):
+    """Create new parts from a prompt and add them to the assembly."""
+    prompt: str = Field(min_length=1, max_length=4000)
 
 
-class CadMessage(BaseModel):
-    """A single message in the CAD conversation"""
-    role: CadMessageRole
-    content: str
-    cadquery_code: Optional[str] = None
-    has_model: bool = False
+class FaceRef(BaseModel):
+    id: int
+    type: Optional[str] = None
+    center: Optional[Vec3] = None
+    normal: Optional[Vec3] = None
+    area: Optional[float] = None
 
 
-class CadChatRequest(BaseModel):
-    """Request from frontend to generate/update a CAD model"""
-    message: str
-    conversation_history: Optional[List[dict]] = None
-    current_code: Optional[str] = None  # Current CadQuery code for iteration
+class EditRequest(BaseModel):
+    """Change one part with a prompt, optionally about a selected face."""
+    instruction: str = Field(min_length=1, max_length=4000)
+    face: Optional[FaceRef] = None
 
 
-class CadChatResponse(BaseModel):
-    """Response with generated CadQuery code and explanation"""
-    message: str
-    cadquery_code: Optional[str] = None
-    stl_base64: Optional[str] = None  # Base64-encoded STL for immediate preview
-    error: Optional[str] = None
+class ParamsRequest(BaseModel):
+    params: dict[str, Any]
 
 
-class CadExportRequest(BaseModel):
-    """Request to export model as STL"""
-    cadquery_code: str
+class CodeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=200_000)
 
 
-class CadPlanStep(BaseModel):
-    """A single part/component in a CAD build plan"""
+class RevertRequest(BaseModel):
+    version_id: str
+
+
+class PartUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=120)
+    color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class Instance(BaseModel):
     id: str
-    name: str
-    filename: str
-    description: str
-    dependencies: List[str] = []
-    approach_hint: str = ""
-
-
-class CadPlan(BaseModel):
-    """Structured decomposition of a CAD request into ordered parts"""
-    parts: List[CadPlanStep]
-
-
-class CadPartResult(BaseModel):
-    """Result of executing one part in the plan"""
     part_id: str
-    success: bool
-    code: Optional[str] = None
-    stl_b64: Optional[str] = None
-    error: Optional[str] = None
-    attempts: int = 1
+    name: str = Field(max_length=120)
+    position: Vec3 = Field(default_factory=lambda: [0.0, 0.0, 0.0], min_length=3, max_length=3)
+    rotation: Vec3 = Field(default_factory=lambda: [0.0, 0.0, 0.0], min_length=3, max_length=3)
+    color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    visible: bool = True
 
 
-class CadSessionInDB(BaseModel):
-    """CAD session stored in MongoDB"""
-    id: str = Field(alias="_id")
-    session_id: str
-    messages: List[CadMessage] = []
-    current_code: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+class AssemblyUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=120)
+    instances: list[Instance]
 
-    class Config:
-        populate_by_name = True
+
+class ExportRequest(BaseModel):
+    format: ExportFormat
+    instance_ids: Optional[list[str]] = None  # default: every visible instance
