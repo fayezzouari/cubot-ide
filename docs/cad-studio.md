@@ -161,6 +161,12 @@ Edits send the current code, the requested change and, if one was picked, the
 selected face (its type, centre, normal and area) so the model can select it
 with `NearestToPointSelector`.
 
+**The agent sees what you see.** When you send a prompt, the page captures the 3D viewport (JPEG,
+up to 1280 px wide), with your camera angle, the tinted selection, the orange face highlight and
+the port arrows. An edit's part agent starts with that screenshot plus a four-view render of the
+part as it is before the change. A prompt that adds parts to an existing assembly gives the
+planner the screenshot too. Review redesigns get the before render as well.
+
 ## Geometry execution
 
 ```

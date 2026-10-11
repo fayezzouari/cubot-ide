@@ -160,7 +160,8 @@ async def write_and_build(first_prompt: str, emit_retry: Callable[[int, str], Aw
 
 async def develop(brief: str, fallback_prompt: str, emit_retry: Callable[[int, str], Awaitable[None]],
                   notify: Callable[[str, str], Awaitable[None]], envelope: Optional[list] = None,
-                  assets: Optional[dict] = None, required_ports: Optional[list[str]] = None) -> tuple[str, str, dict]:
+                  assets: Optional[dict] = None, required_ports: Optional[list[str]] = None,
+                  images: Optional[list[tuple[bytes, str]]] = None) -> tuple[str, str, dict]:
     """Have a part agent design and verify a part; without a tool-capable
     model, fall back to one-shot writing with error feedback."""
     async def build_code(code: str) -> tuple[str, dict]:
@@ -168,7 +169,7 @@ async def develop(brief: str, fallback_prompt: str, emit_retry: Callable[[int, s
 
     try:
         code, key, meta, _ = await agents.run_part_agent(brief, build_code, notify, envelope,
-                                                         required_ports=required_ports)
+                                                         required_ports=required_ports, images=images)
         return code, key, meta
     except llm.ToolsUnsupported:
         return await write_and_build(fallback_prompt, emit_retry, assets=assets)
@@ -524,11 +525,16 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
             try:
                 if b["spec"].get("fastener"):
                     raise StudioError("standard fasteners are not redesigned; re-place them or change the plan")
+                try:
+                    before_render = await agents.render_part(b["version"]["key"])
+                except GeometryJobError:
+                    before_render = None
                 code, key, meta = await develop(
                     b["brief"] + "\n\n" + prompts.agent_revise(b["version"]["code"], instruction, None),
                     prompts.edit_user(b["version"]["code"], instruction, b["meta"], None),
                     retry, notify, b["spec"].get("envelope"),
-                    required_ports=[p["name"] for p in b["spec"].get("ports") or []])
+                    required_ports=[p["name"] for p in b["spec"].get("ports") or []],
+                    images=[(before_render, PART_CAPTION)] if before_render else None)
             except Exception as err:
                 await emit({"type": "part_failed", "plan_id": e["part"], "error": str(err)[:500]})
                 rejected.append(f"edit {e['part']} ({instruction[:120]}): failed to build")
@@ -581,7 +587,8 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
     await _say(emit, project_id, "assistant", text, {"kind": "review", "outcome": outcome, "rounds": rounds_done})
 
 
-async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncGenerator[dict, None]:
+async def generate(project_id: str, owner: Optional[str], prompt: str,
+                   view_image: Optional[bytes] = None) -> AsyncGenerator[dict, None]:
     queue: asyncio.Queue = asyncio.Queue()
 
     async def emit(event: dict):
@@ -601,9 +608,13 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                     existing.append({"name": inst["name"], "size": (p["version"]["bbox"] or {}).get("size"),
                                      "position": inst["position"]})
             try:
+                # With parts already in the assembly, the planner also sees what the user sees.
+                show = [view_image] if view_image and existing else None
                 plan = llm.extract_json(await llm.complete(
-                    prompts.PLANNER_SYSTEM, prompts.planner_user(prompt, existing[:30]), max_tokens=8000,
-                    temperature=0.1))
+                    prompts.PLANNER_SYSTEM,
+                    prompts.planner_user(prompt, existing[:30]) + (
+                        "\n\nThe attached image is the user's current 3D viewport (Z up)." if show else ""),
+                    max_tokens=8000, temperature=0.1, images=show))
                 parts = _expand_plan(plan)
             except Exception as e:
                 logger.warning("[cad] planning failed (%s); building a single part", e)
@@ -724,7 +735,15 @@ async def _current(project_id: str, part_id: str) -> tuple[dict, dict]:
     return part, version
 
 
-async def edit(project_id: str, part_id: str, instruction: str, face: Optional[dict]) -> AsyncGenerator[dict, None]:
+VIEW_CAPTION = ("What the user sees in the 3D viewport as they ask for this change (CAD axes: Z up; the "
+                "selected part is tinted blue, a selected face is highlighted orange, cyan arrows are its "
+                "ports, and the red/green/blue arrows are the move gizmo, not geometry):")
+PART_CAPTION = ("The part as it is now, rendered on its own: isometric, front (looking along +Y), right "
+                "(looking along -X) and top views:")
+
+
+async def edit(project_id: str, part_id: str, instruction: str, face: Optional[dict],
+               view_image: Optional[bytes] = None) -> AsyncGenerator[dict, None]:
     queue: asyncio.Queue = asyncio.Queue()
 
     async def emit(event: dict):
@@ -748,9 +767,19 @@ async def edit(project_id: str, part_id: str, instruction: str, face: Optional[d
 
             brief = (f"Part: {part['name']}\nCurrent bounding box: {(version.get('meta') or {}).get('bbox')}\n\n"
                      + prompts.agent_revise(version["code"], instruction, face))
+            images = [(view_image, VIEW_CAPTION)] if view_image else []
+            logger.info("[cad] edit %s: viewport image %s", part_id,
+                        f"{len(view_image) // 1024} KB" if view_image else "none")
+            try:
+                current_render = await agents.render_part(version["key"])
+            except GeometryJobError:
+                current_render = None
+            if current_render:
+                images.append((current_render, PART_CAPTION))
             code, key, meta = await develop(
                 brief, prompts.edit_user(version["code"], instruction, version.get("meta"), face), retry, notify,
-                assets=version.get("assets") or {},
+                assets=version.get("assets") or {}, images=images or None,
+                required_ports=list((version.get("meta") or {}).get("ports") or {}),
             )
             params = {k: v for k, v in (version.get("params") or {}).items() if k in (meta.get("params") or {})}
             if params:

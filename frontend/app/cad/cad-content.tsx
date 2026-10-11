@@ -318,12 +318,14 @@ export default function CadPageContent() {
     abort.current = controller;
     // The server saves and sends the conversation messages (user prompt,
     // result, review findings, errors) as `message` events.
+    // The AI gets a screenshot of the viewport as the user sees it right now.
+    const view = instances.length ? viewport.current?.capture() ?? null : null;
     try {
       if (selectedPart) {
         const { start: _s, count: _c, ...faceRef } = face ?? ({} as FaceInfo);
-        await cadApi.edit(projectId, selectedPart.id, text, face ? faceRef : null, onEvent, controller.signal);
+        await cadApi.edit(projectId, selectedPart.id, text, face ? faceRef : null, onEvent, controller.signal, view);
       } else {
-        await cadApi.generate(projectId, text, onEvent, controller.signal);
+        await cadApi.generate(projectId, text, onEvent, controller.signal, view);
         setTimeout(() => viewport.current?.fit(), 300);
       }
       if (tab === 'history') refreshHistory();
@@ -334,7 +336,7 @@ export default function CadPageContent() {
       setBusy(false);
       abort.current = null;
     }
-  }, [input, busy, projectId, face, selectedPart, onEvent, say, tab, refreshHistory]);
+  }, [input, busy, projectId, face, selectedPart, instances.length, onEvent, say, tab, refreshHistory]);
 
   // ── Part actions ────────────────────────────────────────────────────────
 

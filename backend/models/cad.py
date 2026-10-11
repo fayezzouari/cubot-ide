@@ -6,9 +6,15 @@ Vec3 = list[float]
 ExportFormat = Literal["step", "stl", "3mf", "glb", "stl-zip", "urdf"]
 
 
+# A screenshot of the user's viewport (data URL or bare base64, PNG/JPEG/WebP), ~3 MB max.
+ViewImage = Optional[str]
+VIEW_IMAGE_MAX = 4_000_000
+
+
 class GenerateRequest(BaseModel):
     """Create new parts from a prompt and add them to the assembly."""
     prompt: str = Field(min_length=1, max_length=4000)
+    view_image: ViewImage = Field(default=None, max_length=VIEW_IMAGE_MAX)
 
 
 class FaceRef(BaseModel):
@@ -23,6 +29,7 @@ class EditRequest(BaseModel):
     """Change one part with a prompt, optionally about a selected face."""
     instruction: str = Field(min_length=1, max_length=4000)
     face: Optional[FaceRef] = None
+    view_image: ViewImage = Field(default=None, max_length=VIEW_IMAGE_MAX)
 
 
 class ParamsRequest(BaseModel):

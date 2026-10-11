@@ -184,8 +184,10 @@ const meshCache = new Map<string, Promise<PartMesh>>();
 export const cadApi = {
   state: (projectId: string) => apiClient.get<CadState>(`/cad/${projectId}`),
 
-  generate: (projectId: string, prompt: string, onEvent: (e: CadEvent) => void, signal?: AbortSignal) =>
-    stream(`/cad/${projectId}/generate`, { prompt }, onEvent, signal),
+  /** `viewImage`: a screenshot of the viewport (data URL) so the AI sees what the user sees. */
+  generate: (projectId: string, prompt: string, onEvent: (e: CadEvent) => void, signal?: AbortSignal,
+             viewImage?: string | null) =>
+    stream(`/cad/${projectId}/generate`, { prompt, view_image: viewImage ?? null }, onEvent, signal),
 
   edit: (
     projectId: string,
@@ -194,7 +196,9 @@ export const cadApi = {
     face: Omit<FaceInfo, 'start' | 'count'> | null,
     onEvent: (e: CadEvent) => void,
     signal?: AbortSignal,
-  ) => stream(`/cad/${projectId}/parts/${partId}/edit`, { instruction, face }, onEvent, signal),
+    viewImage?: string | null,
+  ) =>
+    stream(`/cad/${projectId}/parts/${partId}/edit`, { instruction, face, view_image: viewImage ?? null }, onEvent, signal),
 
   setParams: (projectId: string, partId: string, params: Record<string, number | boolean>) =>
     apiClient.post<CadPart>(`/cad/${projectId}/parts/${partId}/params`, { params }),

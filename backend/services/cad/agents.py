@@ -69,10 +69,19 @@ async def render_part(key: str) -> Optional[bytes]:
 
 async def run_part_agent(brief: str, build: Build, notify: Notify, envelope: Optional[list] = None,
                          max_steps: Optional[int] = None,
-                         required_ports: Optional[list[str]] = None) -> tuple[str, str, dict, str]:
+                         required_ports: Optional[list[str]] = None,
+                         images: Optional[list[tuple[bytes, str]]] = None) -> tuple[str, str, dict, str]:
+    """`images` are (image bytes, caption) pairs shown with the brief, e.g. the
+    user's viewport and a render of the part before the change."""
     """Run one agent to completion. Returns (code, key, meta, notes)."""
     steps = max_steps or settings.CAD_AGENT_STEPS
-    messages: list[dict] = [{"role": "user", "content": brief}]
+    first: object = brief
+    if images:
+        first = []
+        for img, caption in images:
+            first += [{"type": "text", "text": caption}, llm.png_block(img)]
+        first.append({"type": "text", "text": brief})
+    messages: list[dict] = [{"role": "user", "content": first}]
     best: Optional[tuple[str, str, dict]] = None
     builds = 0
     viewed = False

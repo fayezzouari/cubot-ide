@@ -13,6 +13,8 @@ export type TransformMode = 'translate' | 'rotate';
 
 export interface ViewportHandle {
   fit: () => void;
+  /** JPEG data URL of the viewport as the user sees it (max 1280 px wide), for the AI. */
+  capture: () => string | null;
   /** Height (mm) to add to the instance's z so its lowest point rests on the ground. */
   dropToGround: (instanceId: string) => number | null;
 }
@@ -164,7 +166,12 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
   const { parts, instances, selectedId, face, mode, snap, onSelect, onFace, onTransform, handleRef } = props;
   const objects = useRef(new Map<string, THREE.Object3D>());
   const [target, setTarget] = useState<THREE.Object3D | null>(null);
-  const { camera, controls } = useThree() as unknown as { camera: THREE.PerspectiveCamera; controls: any };
+  const { camera, controls, gl, scene } = useThree() as unknown as {
+    camera: THREE.PerspectiveCamera;
+    controls: any;
+    gl: THREE.WebGLRenderer;
+    scene: THREE.Scene;
+  };
   const partById = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
   const fitted = useRef(false);
 
@@ -219,6 +226,21 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
     handleRef,
     () => ({
       fit,
+      capture: () => {
+        try {
+          // Draw a fresh frame so the buffer is current, then copy it before it's cleared.
+          gl.render(scene, camera);
+          const src = gl.domElement;
+          const scale = Math.min(1, 1280 / src.width);
+          const out = document.createElement('canvas');
+          out.width = Math.round(src.width * scale);
+          out.height = Math.round(src.height * scale);
+          out.getContext('2d')?.drawImage(src, 0, 0, out.width, out.height);
+          return out.toDataURL('image/jpeg', 0.85);
+        } catch {
+          return null;
+        }
+      },
       dropToGround: (id) => {
         const object = objects.current.get(id);
         if (!object || !object.children.length) return null;
@@ -226,7 +248,7 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
         return -new THREE.Box3().setFromObject(object).min.z;
       },
     }),
-    [fit],
+    [fit, gl, scene, camera],
   );
 
   const pick = useCallback(

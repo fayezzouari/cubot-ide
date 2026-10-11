@@ -136,9 +136,31 @@ class ToolsUnsupported(Exception):
     """No configured model this account can use supports tool use."""
 
 
+IMAGE_TYPES = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"RIFF": "image/webp"}
+
+
+def image_type(img: bytes) -> Optional[str]:
+    return next((t for magic, t in IMAGE_TYPES.items() if img.startswith(magic)), None)
+
+
 def png_block(img: bytes) -> dict:
-    return {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+    """An image content block (PNG, JPEG or WebP, detected from the bytes)."""
+    return {"type": "image", "source": {"type": "base64", "media_type": image_type(img) or "image/png",
                                         "data": base64.b64encode(img).decode()}}
+
+
+def decode_view_image(data: Optional[str]) -> Optional[bytes]:
+    """A viewport screenshot from the browser (data URL or bare base64), or
+    None if missing or not a supported image."""
+    if not data:
+        return None
+    if data.startswith("data:"):
+        data = data.split(",", 1)[-1]
+    try:
+        img = base64.b64decode(data, validate=True)
+    except (ValueError, TypeError):
+        return None
+    return img if image_type(img) and len(img) <= 3_000_000 else None
 
 
 async def agent_turn(system: str, messages: list[dict], tools: list[dict], max_tokens: int = 4096) -> dict:

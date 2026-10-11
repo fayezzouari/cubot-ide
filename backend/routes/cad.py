@@ -20,7 +20,7 @@ from models.cad import (
     RevertRequest,
     SnapshotRequest,
 )
-from services.cad import repository as repo, storage, studio
+from services.cad import llm, repository as repo, storage, studio
 from services.cad.studio import StudioError
 
 router = APIRouter(prefix="/cad", tags=["cad"])
@@ -75,13 +75,15 @@ async def generate(project_id: str, body: GenerateRequest, user: CurrentUser):
     """Plan the request into parts, build them in parallel and add them to the
     assembly. Streams progress as Server-Sent Events."""
     await _project(project_id, user)
-    return _sse(studio.generate(project_id, user.get("sub"), body.prompt))
+    return _sse(studio.generate(project_id, user.get("sub"), body.prompt,
+                                view_image=llm.decode_view_image(body.view_image)))
 
 
 @router.post("/{project_id}/parts/{part_id}/edit")
 async def edit_part(project_id: str, part_id: str, body: EditRequest, user: CurrentUser):
     await _project(project_id, user)
-    return _sse(studio.edit(project_id, part_id, body.instruction, body.face.model_dump() if body.face else None))
+    return _sse(studio.edit(project_id, part_id, body.instruction, body.face.model_dump() if body.face else None,
+                            view_image=llm.decode_view_image(body.view_image)))
 
 
 @router.post("/{project_id}/parts/{part_id}/params")
