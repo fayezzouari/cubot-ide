@@ -18,9 +18,11 @@ import ast
 import json
 import math
 import os
+import struct
 import sys
 import traceback
 import zipfile
+import zlib
 import xml.etree.ElementTree as ET
 
 # Keep the real stdout for the protocol and point fd 1 at stderr.
@@ -29,6 +31,7 @@ os.dup2(2, 1)
 sys.stdout = sys.stderr
 
 import cadquery as cq  # noqa: E402  (import after the fd swap on purpose)
+import numpy as np  # noqa: E402
 from OCP.BRepGProp import BRepGProp  # noqa: E402
 from OCP.GProp import GProp_GProps  # noqa: E402
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing  # noqa: E402
@@ -447,7 +450,130 @@ def run_assemble(job: dict) -> dict:
     return {"path": out_path, "size": os.path.getsize(out_path)}
 
 
-JOBS = {"build": run_build, "assemble": run_assemble}
+# ── Preview renders (for the review step) ────────────────────────────────
+
+
+def _rotation_matrix(rot_deg):
+    rx, ry, rz = (math.radians(a) for a in rot_deg)
+    cx, sx, cy, sy, cz, sz = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry), math.cos(rz), math.sin(rz)
+    return np.array([
+        [cy * cz, -cy * sz, sy],
+        [cx * sz + sx * sy * cz, cx * cz - sx * sy * sz, -sx * cy],
+        [sx * sz - cx * sy * cz, sx * cz + cx * sy * sz, cx * cy],
+    ])
+
+
+def _png(rgb: "np.ndarray") -> bytes:
+    h, w, _ = rgb.shape
+    raw = b"".join(b"\x00" + rgb[y].astype(np.uint8).tobytes() for y in range(h))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+
+
+def _raster(tris, colors, ids, forward, up, size, bounds):
+    """Orthographic z-buffer render with flat shading and outlines."""
+    f = np.asarray(forward, float) / np.linalg.norm(forward)
+    r = np.cross(f, up)
+    r /= np.linalg.norm(r)
+    u = np.cross(r, f)
+    lo, hi = bounds
+    corners = np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
+    cx, cy = corners @ r, corners @ u
+    span = max(cx.max() - cx.min(), cy.max() - cy.min(), 1e-6) * 1.12
+    mid = np.array([(cx.max() + cx.min()) / 2, (cy.max() + cy.min()) / 2])
+    scale = size / span
+
+    px = ((tris @ r) - mid[0]) * scale + size / 2
+    py = size / 2 - ((tris @ u) - mid[1]) * scale
+    depth = tris @ f
+    normals = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+    lengths = np.linalg.norm(normals, axis=1)
+    normals /= np.where(lengths > 0, lengths, 1)[:, None]
+    light = -f * 0.75 + u * 0.45 + r * 0.25
+    light /= np.linalg.norm(light)
+    shade = 0.32 + 0.68 * np.abs(normals @ light)
+
+    zbuf = np.full((size, size), np.inf)
+    image = np.full((size, size, 3), 236.0)
+    idbuf = np.full((size, size), -1)
+    for t in range(len(tris)):
+        xs, ys = px[t], py[t]
+        x0, x1 = max(int(xs.min()), 0), min(int(xs.max()) + 1, size)
+        y0, y1 = max(int(ys.min()), 0), min(int(ys.max()) + 1, size)
+        if x0 >= x1 or y0 >= y1:
+            continue
+        gx, gy = np.meshgrid(np.arange(x0, x1) + 0.5, np.arange(y0, y1) + 0.5)
+        (ax, bx, cx_), (ay, by, cy_) = xs, ys
+        det = (by - cy_) * (ax - cx_) + (cx_ - bx) * (ay - cy_)
+        if abs(det) < 1e-9:
+            continue
+        w0 = ((by - cy_) * (gx - cx_) + (cx_ - bx) * (gy - cy_)) / det
+        w1 = ((cy_ - ay) * (gx - cx_) + (ax - cx_) * (gy - cy_)) / det
+        w2 = 1 - w0 - w1
+        inside = (w0 >= -1e-4) & (w1 >= -1e-4) & (w2 >= -1e-4)
+        if not inside.any():
+            continue
+        z = w0 * depth[t, 0] + w1 * depth[t, 1] + w2 * depth[t, 2]
+        region = zbuf[y0:y1, x0:x1]
+        closer = inside & (z < region)
+        region[closer] = z[closer]
+        image[y0:y1, x0:x1][closer] = colors[t] * shade[t]
+        idbuf[y0:y1, x0:x1][closer] = ids[t]
+    # Outlines where the part changes or the depth jumps.
+    edge = np.zeros((size, size), bool)
+    finite = np.where(np.isfinite(zbuf), zbuf, 1e9)
+    jump = span * 0.02
+    for axis in (0, 1):
+        d_id = np.diff(idbuf, axis=axis) != 0
+        d_z = np.abs(np.diff(finite, axis=axis)) > jump
+        mark = d_id | d_z
+        if axis == 0:
+            edge[1:, :] |= mark
+        else:
+            edge[:, 1:] |= mark
+    image[edge] *= 0.25
+    return image
+
+
+def run_render(job: dict) -> dict:
+    """Four views of the assembly (iso, front, right, top) on one PNG."""
+    size = int(job.get("size", 360))
+    tris, colors, ids = [], [], []
+    for n, inst in enumerate(job["instances"]):
+        with open(inst["mesh_path"]) as fh:
+            mesh = json.load(fh)
+        pos = np.asarray(mesh["positions"], float).reshape(-1, 3)
+        idx = np.asarray(mesh["indices"], int).reshape(-1, 3)
+        world = pos @ _rotation_matrix(inst.get("rotation", [0, 0, 0])).T + np.asarray(inst.get("position", [0, 0, 0]))
+        tris.append(world[idx])
+        colors.append(np.tile(np.asarray(inst.get("color", [0.6, 0.6, 0.6])) * 255, (len(idx), 1)))
+        ids.append(np.full(len(idx), n))
+    if not tris:
+        raise JobError("Nothing to render")
+    tris, colors, ids = np.concatenate(tris), np.concatenate(colors), np.concatenate(ids)
+    pts = tris.reshape(-1, 3)
+    bounds = (pts.min(axis=0), pts.max(axis=0))
+    views = [
+        ((-1, 1, -0.8), (0, 0, 1)),   # isometric, from front-right-above
+        ((0, 1, 0), (0, 0, 1)),       # front: looking along +Y
+        ((-1, 0, 0), (0, 0, 1)),      # right: looking along -X
+        ((0, 0, -1), (0, 1, 0)),      # top: looking down, +Y up in the image
+    ]
+    tiles = [_raster(tris, colors, ids, f, u, size, bounds) for f, u in views]
+    sheet = np.full((size * 2 + 6, size * 2 + 6, 3), 160.0)
+    for k, tile in enumerate(tiles):
+        y, x = (k // 2) * (size + 6), (k % 2) * (size + 6)
+        sheet[y:y + size, x:x + size] = tile
+    with open(job["out_path"], "wb") as fh:
+        fh.write(_png(np.clip(sheet, 0, 255)))
+    return {"path": job["out_path"], "triangles": int(len(tris))}
+
+
+JOBS = {"build": run_build, "assemble": run_assemble, "render": run_render}
 
 
 def main() -> None:

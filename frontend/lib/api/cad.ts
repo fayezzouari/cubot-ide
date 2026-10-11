@@ -77,11 +77,21 @@ export interface PartMesh {
 
 export type CadEvent =
   | { type: 'planning' }
-  | { type: 'plan'; name: string; parts: { id: string; name: string; description: string; count: number }[] }
+  | {
+      type: 'plan';
+      name: string;
+      summary?: string;
+      interfaces?: Record<string, number | string>;
+      parts: { id: string; name: string; description: string; features?: string[]; count: number }[];
+    }
+  | { type: 'agent'; plan_id?: string; part_id?: string; action: 'build' | 'error' | 'view' | 'finish'; detail: string }
   | { type: 'part_started'; plan_id?: string; part_id?: string }
   | { type: 'part_retry'; plan_id?: string; part_id?: string; attempt: number; error: string }
   | { type: 'part_failed'; plan_id: string; error: string }
   | { type: 'part_done'; plan_id?: string; part_id?: string; part: CadPart; instances?: CadInstance[] }
+  | { type: 'state'; state: CadState }
+  | { type: 'reviewing'; round: number }
+  | { type: 'review'; round: number; ok: boolean; issues: string[]; fixed: number; note?: string }
   | { type: 'complete'; state: CadState }
   | { type: 'error'; message: string };
 

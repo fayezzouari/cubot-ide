@@ -14,7 +14,7 @@ import re
 from typing import AsyncGenerator, Awaitable, Callable, Optional
 
 from core.config import settings
-from services.cad import llm, prompts, repository as repo, storage
+from services.cad import agents, llm, prompts, repository as repo, storage
 from services.cad.geometry import GeometryJobError, geometry
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,23 @@ async def write_and_build(first_prompt: str, emit_retry: Callable[[int, str], Aw
     raise StudioError(error)
 
 
+async def develop(brief: str, fallback_prompt: str, emit_retry: Callable[[int, str], Awaitable[None]],
+                  notify: Callable[[str, str], Awaitable[None]], envelope: Optional[list] = None,
+                  assets: Optional[dict] = None) -> tuple[str, str, dict]:
+    """Have a part agent design and verify a part; without a tool-capable
+    model, fall back to one-shot writing with error feedback."""
+    async def build_code(code: str) -> tuple[str, dict]:
+        return await build(code, {}, assets or {})
+
+    try:
+        code, key, meta, _ = await agents.run_part_agent(brief, build_code, notify, envelope)
+        return code, key, meta
+    except llm.ToolsUnsupported:
+        return await write_and_build(fallback_prompt, emit_retry, assets=assets)
+    except agents.AgentFailed as e:
+        raise StudioError(str(e))
+
+
 # ── Generate from a prompt ────────────────────────────────────────────────
 
 
@@ -192,10 +209,16 @@ def _expand_plan(plan: dict) -> list[dict]:
                 "attach": attach,
             })
         color = raw.get("color")
+        envelope = raw.get("envelope")
         parts.append({
             "id": pid,
             "name": str(raw.get("name") or pid.replace("_", " ").title())[:120],
             "description": str(raw.get("description") or raw.get("name") or ""),
+            "role": str(raw.get("role") or "")[:300],
+            "envelope": _vec(envelope) if isinstance(envelope, list) else None,
+            "features": [str(f)[:400] for f in (raw.get("features") or []) if f][:20],
+            "checks": [str(c)[:300] for c in (raw.get("checks") or []) if c][:12],
+            "interfaces": [str(i) for i in (raw.get("interfaces") or [])][:20],
             "placements": placements or [{"position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "attach": None}],
             "color": color if isinstance(color, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", color)
             else PALETTE[i % len(PALETTE)],
@@ -312,16 +335,201 @@ def _solve_placements(built: dict[str, dict]) -> dict[str, list[float]]:
 
 
 async def _place(project_id: str, owner: Optional[str], built: dict[str, dict]) -> None:
+    """Solve attachments and store each instance's position and rotation."""
     positions = _solve_placements(built)
+    placed = {i["id"]: i for b in built.values() for i in b["instances"]}
+    for iid, pos in positions.items():
+        placed[iid]["position"] = pos
     assembly = await repo.get_assembly(project_id)
     instances = assembly.get("instances", [])
-    changed = False
     for inst in instances:
-        if inst["id"] in positions and positions[inst["id"]] != inst["position"]:
-            inst["position"] = positions[inst["id"]]
-            changed = True
-    if changed:
-        await repo.save_assembly(project_id, owner, None, instances)
+        if inst["id"] in placed:
+            inst["position"] = placed[inst["id"]]["position"]
+            inst["rotation"] = placed[inst["id"]]["rotation"]
+    await repo.save_assembly(project_id, owner, None, instances)
+
+
+# ── Review (reflection after generation) ─────────────────────────────────
+
+
+async def render_assembly(project_id: str) -> Optional[bytes]:
+    """Four-view PNG of the visible assembly, drawn by the geometry worker."""
+    current = await state(project_id)
+    parts = {p["id"]: p for p in current["parts"]}
+    jobs = []
+    for inst in current["assembly"]["instances"]:
+        part = parts.get(inst["part_id"])
+        version = part and part["version"]
+        mesh = version and storage.object_path(version["key"], "mesh.json")
+        if not inst.get("visible", True) or not mesh:
+            continue
+        jobs.append({"mesh_path": mesh, "position": inst["position"], "rotation": inst["rotation"],
+                     "color": _hex_to_rgb(inst.get("color") or part["color"])})
+    if not jobs:
+        return None
+    out = storage.new_export_path("review.png")
+    await geometry.run({"type": "render", "instances": jobs, "out_path": out, "size": 360})
+    with open(out, "rb") as f:
+        return f.read()
+
+
+def _severity(problems: list[str]) -> int:
+    """Overlaps count most, then parts touching nothing, then uneven footing."""
+    return sum(3 if "overlap" in p else 2 if "touches no" in p else 1 for p in problems)
+
+
+def _geometry_facts(built: dict[str, dict]) -> tuple[str, list[str]]:
+    """World box of every copy plus problems a person would spot: parts sunk
+    into each other, parts touching nothing, and an uneven footprint."""
+    boxes = []
+    for pid, b in built.items():
+        for k, inst in enumerate(b["instances"]):
+            rlo, rhi = _rotated_box(b["meta"]["bbox"], inst["rotation"])
+            lo = [rlo[i] + inst["position"][i] for i in range(3)]
+            hi = [rhi[i] + inst["position"][i] for i in range(3)]
+            boxes.append((f"{pid}#{k + 1}", lo, hi))
+    lines = [f"- {n}: min {[round(v, 1) for v in lo]} max {[round(v, 1) for v in hi]}" for n, lo, hi in boxes]
+    problems = []
+    for i, (a, alo, ahi) in enumerate(boxes):
+        touching = False
+        for j, (b, blo, bhi) in enumerate(boxes):
+            if i == j:
+                continue
+            overlap = [min(ahi[k], bhi[k]) - max(alo[k], blo[k]) for k in range(3)]
+            if all(o > -0.5 for o in overlap):
+                touching = True
+            if j > i and all(o > 1.0 for o in overlap):
+                vol = overlap[0] * overlap[1] * overlap[2]
+                smaller = min(
+                    (ahi[0] - alo[0]) * (ahi[1] - alo[1]) * (ahi[2] - alo[2]),
+                    (bhi[0] - blo[0]) * (bhi[1] - blo[1]) * (bhi[2] - blo[2]),
+                )
+                if smaller > 0 and vol / smaller > 0.2:
+                    problems.append(f"{a} and {b}: bounding boxes overlap by {[round(o, 1) for o in overlap]} mm")
+        if not touching and len(boxes) > 1:
+            problems.append(f"{a} touches no other part")
+    if boxes:
+        lowest = min(lo[2] for _, lo, _ in boxes)
+        on_ground = [n for n, lo, _ in boxes if lo[2] - lowest < 0.5]
+        near = [f"{n} ({lo[2] - lowest:.1f} mm up)" for n, lo, _ in boxes if 0.5 <= lo[2] - lowest < 15]
+        if near:
+            problems.append(f"Resting on the ground: {', '.join(on_ground)}; almost touching it: {', '.join(near)}")
+    return "\n".join(lines), problems
+
+
+async def _sync_positions(project_id: str, built: dict[str, dict]) -> None:
+    """Copy stored positions (after grounding) back into the working set."""
+    stored = {i["id"]: i for i in (await repo.get_assembly(project_id)).get("instances", [])}
+    for b in built.values():
+        for inst in b["instances"]:
+            if inst["id"] in stored:
+                inst["position"] = stored[inst["id"]]["position"]
+
+
+async def review(project_id: str, owner: Optional[str], request: str, built: dict[str, dict],
+                 emit: Emit, rounds: int, ground: bool, plan_parts: list[dict]) -> None:
+    """Reflection: look at the finished assembly (a render plus measured
+    geometry) against the request, then apply the fixes the reviewer asks
+    for: re-attaching copies and editing part designs."""
+    for round_no in range(1, rounds + 1):
+        await emit({"type": "reviewing", "round": round_no})
+        try:
+            image = await render_assembly(project_id)
+        except GeometryJobError as e:
+            logger.warning("[cad] review render failed: %s", e)
+            image = None
+        facts, problems = _geometry_facts(built)
+        parts = []
+        for pid, b in built.items():
+            params = {k: v["value"] for k, v in (b["meta"].get("params") or {}).items()}
+            parts.append({
+                "id": pid, "name": b["spec"]["name"], "description": b["spec"]["description"][:500],
+                "size": b["meta"]["bbox"]["size"], "params": params,
+                "copies": [{"rotation": inst["rotation"], "attach": pl.get("attach")}
+                           for inst, pl in zip(b["instances"], b["spec"]["placements"])],
+            })
+        try:
+            verdict = llm.extract_json(await llm.complete(
+                prompts.REVIEW_SYSTEM, prompts.review_user(request, parts, facts, problems, image is not None),
+                max_tokens=3000, temperature=0.1, images=[image] if image else None))
+        except Exception as e:
+            logger.warning("[cad] review failed: %s", e)
+            await emit({"type": "review", "round": round_no, "ok": True, "issues": [], "fixed": 0,
+                        "note": "Review skipped"})
+            return
+        issues = [str(i)[:300] for i in (verdict.get("issues") or [])][:10]
+        edits = [e for e in (verdict.get("edits") or []) if isinstance(e, dict) and e.get("part") in built][:4]
+        moves = [m for m in (verdict.get("attachments") or []) if isinstance(m, dict) and m.get("part") in built]
+        missing = [p["name"] for p in plan_parts if p["id"] not in built]
+        if missing:
+            issues.append(f"Not built: {', '.join(missing)}")
+        if not edits and not moves:
+            await emit({"type": "review", "round": round_no, "ok": not missing and bool(verdict.get("ok", True)),
+                        "issues": issues, "fixed": 0})
+            return
+
+        # Re-attach copies, but keep a move only if the measured checks don't get worse.
+        _, before = _geometry_facts(built)
+        saved = {pid: ([dict(p) for p in b["spec"]["placements"]], [list(i["rotation"]) for i in b["instances"]],
+                       [list(i["position"]) for i in b["instances"]]) for pid, b in built.items()}
+        for m in moves:
+            b = built[m["part"]]
+            k = int(m.get("copy") or 1) - 1
+            if not 0 <= k < len(b["instances"]):
+                continue
+            fixed = _expand_plan({"parts": [{"id": m["part"], "copies": [m]}]})[0]["placements"][0]
+            b["spec"]["placements"][k] = fixed
+            b["instances"][k]["rotation"] = fixed["rotation"]
+        if moves:
+            trial = _solve_placements(built)
+            for b in built.values():
+                for inst in b["instances"]:
+                    if inst["id"] in trial:
+                        inst["position"] = trial[inst["id"]]
+            _, after = _geometry_facts(built)
+            if _severity(after) > _severity(before):
+                logger.info("[cad] review moves rejected: %s → %s", before, after)
+                for pid, (placements, rotations, positions) in saved.items():
+                    built[pid]["spec"]["placements"] = placements
+                    for inst, rot, pos in zip(built[pid]["instances"], rotations, positions):
+                        inst["rotation"], inst["position"] = rot, pos
+                issues.append("Suggested re-placement was rejected: it made parts overlap or float")
+                moves = []
+
+        # Redesign parts, in parallel.
+        async def redesign(e: dict) -> bool:
+            b = built[e["part"]]
+            await emit({"type": "part_started", "plan_id": e["part"]})
+
+            async def retry(attempt: int, error: str):
+                await emit({"type": "part_retry", "plan_id": e["part"], "attempt": attempt, "error": error})
+
+            async def notify(action: str, detail: str):
+                await emit({"type": "agent", "plan_id": e["part"], "action": action, "detail": detail})
+
+            instruction = str(e.get("instruction") or "")
+            try:
+                code, key, meta = await develop(
+                    b["brief"] + "\n\n" + prompts.agent_revise(b["version"]["code"], instruction, None),
+                    prompts.edit_user(b["version"]["code"], instruction, b["meta"], None),
+                    retry, notify, b["spec"].get("envelope"))
+            except Exception as err:
+                await emit({"type": "part_failed", "plan_id": e["part"], "error": str(err)[:500]})
+                return False
+            b["version"] = await repo.add_version(b["part"], code, {}, {}, f"Review: {e.get('instruction')}",
+                                                  key, meta)
+            b["meta"] = meta
+            await emit({"type": "part_done", "plan_id": e["part"], "part": part_view(b["part"], b["version"])})
+            return True
+
+        results = await asyncio.gather(*(redesign(e) for e in edits))
+        await _place(project_id, owner, built)
+        if ground:
+            await _rest_on_ground(project_id, owner)
+        await _sync_positions(project_id, built)
+        await emit({"type": "state", "state": await state(project_id)})
+        await emit({"type": "review", "round": round_no, "ok": False, "issues": issues,
+                    "fixed": sum(results) + len(moves)})
 
 
 async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncGenerator[dict, None]:
@@ -343,8 +551,8 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                                      "position": inst["position"]})
             try:
                 plan = llm.extract_json(await llm.complete(
-                    prompts.PLANNER_SYSTEM, prompts.planner_user(prompt, existing[:30]), max_tokens=3000,
-                    temperature=0.1, fast=True))
+                    prompts.PLANNER_SYSTEM, prompts.planner_user(prompt, existing[:30]), max_tokens=8000,
+                    temperature=0.1))
                 parts = _expand_plan(plan)
             except Exception as e:
                 logger.warning("[cad] planning failed (%s); building a single part", e)
@@ -354,9 +562,14 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
             overall = plan.get("name") or prompt
             if plan.get("name"):
                 await repo.name_assembly_if_unnamed(project_id, owner, str(plan["name"]))
-            await emit({"type": "plan", "name": overall,
+            interfaces = {
+                str(k): v if isinstance(v, dict) else {"value": v}
+                for k, v in (plan.get("interfaces") or {}).items()
+            } if isinstance(plan.get("interfaces"), dict) else {}
+            await emit({"type": "plan", "name": overall, "summary": plan.get("summary"),
+                        "interfaces": {k: v.get("value") for k, v in interfaces.items()},
                         "parts": [{"id": p["id"], "name": p["name"], "description": p["description"],
-                                   "count": len(p["placements"])} for p in parts]})
+                                   "features": p["features"], "count": len(p["placements"])} for p in parts]})
 
             gate = asyncio.Semaphore(settings.CAD_PARALLEL_PARTS)
 
@@ -367,9 +580,16 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                     async def retry(attempt: int, error: str):
                         await emit({"type": "part_retry", "plan_id": spec["id"], "attempt": attempt, "error": error})
 
+                    async def notify(action: str, detail: str):
+                        await emit({"type": "agent", "plan_id": spec["id"], "action": action, "detail": detail})
+
+                    siblings = [{"name": o["name"], "description": o["description"]} for o in parts if o is not spec]
                     try:
-                        code, key, meta = await write_and_build(
-                            prompts.part_user(spec["name"], spec["description"], overall), retry)
+                        code, key, meta = await develop(
+                            prompts.agent_brief(spec, interfaces, overall, siblings),
+                            prompts.part_user(spec["name"], spec["description"] + "\n" + "\n".join(spec["features"]),
+                                              overall),
+                            retry, notify, spec.get("envelope"))
                     except Exception as e:
                         await emit({"type": "part_failed", "plan_id": spec["id"], "error": str(e)[:2000]})
                         return
@@ -382,16 +602,26 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                         for k, pl in enumerate(spec["placements"])
                     ]
                     await repo.add_instances(project_id, owner, instances)
-                    built[spec["id"]] = {"spec": spec, "meta": meta, "instances": instances}
+                    built[spec["id"]] = {"spec": spec, "meta": meta, "instances": instances,
+                                         "part": part, "version": version,
+                                         "brief": prompts.agent_brief(spec, interfaces, overall, siblings)}
                     await emit({"type": "part_done", "plan_id": spec["id"], "part": part_view(part, version),
                                 "instances": instances})
 
             built: dict[str, dict] = {}
             await asyncio.gather(*(make(s) for s in parts))
+            # Parts that failed (usually rate limits) get one more go, one at a time.
+            for spec in [p for p in parts if p["id"] not in built]:
+                await make(spec)
             if built:
                 await _place(project_id, owner, built)
             if not existing:
                 await _rest_on_ground(project_id, owner)
+            if built and settings.CAD_REVIEW_ROUNDS > 0:
+                await _sync_positions(project_id, built)
+                await emit({"type": "state", "state": await state(project_id)})
+                await review(project_id, owner, prompt, built, emit, settings.CAD_REVIEW_ROUNDS,
+                             ground=not existing, plan_parts=parts)
             await emit({"type": "complete", "state": await state(project_id)})
         except Exception as e:
             logger.exception("[cad] generate failed")
@@ -437,8 +667,13 @@ async def edit(project_id: str, part_id: str, instruction: str, face: Optional[d
 
             # Parameter values the user set are kept by baking them into the new
             # version's overrides when the names still exist.
-            code, key, meta = await write_and_build(
-                prompts.edit_user(version["code"], instruction, version.get("meta"), face), retry,
+            async def notify(action: str, detail: str):
+                await queue.put({"type": "agent", "part_id": part_id, "action": action, "detail": detail})
+
+            brief = (f"Part: {part['name']}\nCurrent bounding box: {(version.get('meta') or {}).get('bbox')}\n\n"
+                     + prompts.agent_revise(version["code"], instruction, face))
+            code, key, meta = await develop(
+                brief, prompts.edit_user(version["code"], instruction, version.get("meta"), face), retry, notify,
                 assets=version.get("assets") or {},
             )
             params = {k: v for k, v in (version.get("params") or {}).items() if k in (meta.get("params") or {})}

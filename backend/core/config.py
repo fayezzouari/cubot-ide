@@ -53,8 +53,10 @@ class Settings(BaseSettings):
     CAD_MODEL_ID: str = "us.anthropic.claude-opus-4-6-v1"
     # Faster model for planning and placing parts (falls back to CAD_MODEL_ID, then BEDROCK_MODEL_ID).
     CAD_FAST_MODEL_ID: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    CAD_PARALLEL_PARTS: int = 3
+    CAD_PARALLEL_PARTS: int = 3  # part agents working at once per request
+    CAD_AGENT_STEPS: int = 8  # model turns per part agent
     CAD_MAX_FIX_ATTEMPTS: int = 3
+    CAD_REVIEW_ROUNDS: int = 1  # reflection passes after generation (0 disables)
     CAD_MAX_UPLOAD_MB: int = 50
 
     # Exa Web Search

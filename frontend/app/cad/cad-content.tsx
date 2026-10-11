@@ -61,6 +61,7 @@ export default function CadPageContent() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<PlanRow[]>([]);
+  const [interfaces, setInterfaces] = useState<Record<string, number | string> | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [versions, setVersions] = useState<CadVersion[] | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -160,7 +161,14 @@ export default function CadPageContent() {
           break;
         case 'plan':
           setPlan(e.parts.map((p) => ({ ...p, status: 'pending' })));
+          setInterfaces(e.interfaces ?? null);
           break;
+        case 'agent': {
+          const label =
+            e.action === 'build' ? `Building (${e.detail})` : e.action === 'view' ? 'Inspecting its render' : e.action === 'error' ? `Fixing: ${e.detail}` : 'Handing in';
+          setPlan((rows) => rows.map((r) => (r.id === (e.plan_id ?? e.part_id) ? { ...r, detail: label } : r)));
+          break;
+        }
         case 'part_started':
           setPlan((rows) =>
             rows.length
@@ -181,8 +189,29 @@ export default function CadPageContent() {
             setState((s) => (s ? { ...s, assembly: { ...s.assembly, instances: [...s.assembly.instances, ...e.instances!] } } : s));
           }
           break;
+        case 'state':
         case 'complete':
           setState(e.state);
+          break;
+        case 'reviewing':
+          setPlan((rows) => [
+            ...rows,
+            { id: `__review${e.round}`, name: e.round > 1 ? `Reviewing again (${e.round})` : 'Reviewing the result', status: 'running' },
+          ]);
+          break;
+        case 'review':
+          setPlan((rows) =>
+            rows.map((r) =>
+              r.id === `__review${e.round}`
+                ? {
+                    ...r,
+                    status: 'done',
+                    name: e.note ?? (e.ok ? 'Review: looks right' : `Review: fixed ${e.fixed} issue${e.fixed === 1 ? '' : 's'}`),
+                  }
+                : r,
+            ),
+          );
+          if (e.issues.length) say('assistant', `Review found:\n${e.issues.map((i) => `• ${i}`).join('\n')}`);
           break;
         case 'error':
           say('error', e.message);
@@ -198,6 +227,7 @@ export default function CadPageContent() {
     setInput('');
     setBusy(true);
     setPlan([]);
+    setInterfaces(null);
     say('user', face && selectedPart ? `${text}  ·  (${face.type.toLowerCase()} face)` : text);
     const controller = new AbortController();
     abort.current = controller;
@@ -401,6 +431,7 @@ export default function CadPageContent() {
           <div className="flex-1 min-h-0">
             {tab === 'assistant' ? (
               <AssistantPanel
+                interfaces={interfaces}
                 input={input}
                 busy={busy}
                 editTarget={selectedPart ? { name: selectedPart.name } : null}

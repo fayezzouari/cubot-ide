@@ -42,28 +42,55 @@ plate with a `thickness` parameter.
 
 ## How a prompt becomes parts
 
-1. **Plan.** The planner (`CAD_FAST_MODEL_ID`) splits the request into up to 8
-   parts with dimensions that fit together. For each copy it says how the part
-   **attaches** rather than where it goes: a rotation, a target part (or the
-   ground), a side of the target (`top`, `bottom`, `left`, `right`, `front`,
-   `back`), an offset along that face and an optional gap.
-2. **Write and build.** Each part's code is written by `CAD_MODEL_ID` and built
-   **in parallel** (`CAD_PARALLEL_PARTS`, default 3). If a build fails, the error
-   goes back to the model, with at most `CAD_MAX_FIX_ATTEMPTS` (default 3)
-   attempts per part. If the code redefines a helper such as `P()`, that
-   definition is dropped so the parameters keep working.
-3. **Place.** Using each part's real bounding box after rotation, the backend
-   puts it against the chosen face of its target: touching it, outside it and
-   centred plus the offset. The whole assembly is then lowered so its lowest
-   point rests on z = 0.
+```
+request ─▶ architect ─▶ part agents (swarm, in parallel) ─▶ placement ─▶ review ─▶ fixes
+            granular      build → measure → look → fix        exact,        render +    back to the
+            plan          until the part meets its checks     from sizes    measurements part agents
+```
 
-Models are poor at coordinate arithmetic, so asking for positions gave
-floating or overlapping parts and took minutes with a correction round.
-Attachments are something they get right; the arithmetic is exact and
-instant.
+1. **Architect (granular plan).** One call to `CAD_MODEL_ID` produces:
+   - an **interfaces** table: every dimension parts must agree on (shaft and bore diameters,
+     hole patterns, thicknesses that set heights), with one value each
+   - for each part: its role, expected envelope, dimensioned features, acceptance checks, the
+     interfaces it uses, and how each copy **attaches**: a rotation, a target part or the
+     ground, a side (`top`, `bottom`, `left`, `right`, `front`, `back`), an offset along that
+     face and an optional gap
 
-The browser receives progress events and loads each part's preview mesh by its
-content key as soon as the part is built.
+   Part engineers only see their own part plus the interfaces table, so nothing shared is
+   allowed to live only in one part's text.
+2. **Part agents (swarm).** Each part gets its own tool-using agent, run concurrently with
+   `asyncio` (`CAD_PARALLEL_PARTS` at a time, `CAD_AGENT_STEPS` turns each). Its tools:
+   - `build_part(code)`: returns the measured geometry or the error
+   - `view_part()`: a four-view render of its part
+   - `finish(notes)`
+
+   Agents must look at their render before finishing. The best build is kept if an agent runs
+   out of turns. Parts that fail (for example on rate limits) are retried one at a time.
+   Without a tool-capable model, parts fall back to one-shot code with error feedback.
+3. **Placement.** Using each part's real bounding box after rotation, the backend puts it
+   against the chosen face of its target: touching it, outside it, centred plus the offset.
+   Then the assembly is lowered so its lowest point rests on z = 0.
+4. **Review (reflection).** `CAD_REVIEW_ROUNDS` passes. The reviewer gets:
+   - the request and the plan
+   - the measured world boxes
+   - automatic checks (overlaps, parts touching nothing, uneven footing)
+   - a four-view render of the whole assembly
+
+   It answers with re-attachments and part edits. Edits go back to the part's agent with its
+   original brief. A re-attachment is kept only if the measured checks don't get worse, since
+   one early run showed a review moving the wheels into the plate.
+
+Models are poor at coordinate arithmetic, so asking them for positions gave floating or
+overlapping parts. Attachments are something they get right, and the arithmetic is exact.
+
+**Concurrency and limits.** All agents run on one event loop:
+- Bedrock calls run in threads (`asyncio.to_thread`).
+- Geometry jobs are awaited over pipes or HTTP.
+- Throttling (`ThrottlingException`) is retried with exponential backoff, because several agents
+  sending renders can exceed an account's per-minute token quota.
+
+On the test account a 4-part robot chassis took about 5 minutes, mostly waiting out
+throttling. With a higher Bedrock quota, `CAD_PARALLEL_PARTS` can go up.
 
 Edits send the current code, the requested change and, if one was picked, the
 selected face (its type, centre, normal and area) so the model can select it
@@ -140,16 +167,18 @@ All routes are under `/api/cad` and require the project owner's token.
 |---|---|---|
 | `CAD_WORKER_URL` | unset (local pool) | Set to `http://cad-worker:8100` by docker-compose |
 | `CAD_STORAGE_DIR` | `/tmp/cubot-cad` | `/data/cad` (shared volume) in docker-compose |
-| `CAD_MODEL_ID` | `us.anthropic.claude-opus-4-6-v1` | Writes and fixes part code |
-| `CAD_FAST_MODEL_ID` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Plans parts and attachments |
+| `CAD_MODEL_ID` | `us.anthropic.claude-opus-4-6-v1` | Architect, part agents and reviewer |
+| `CAD_FAST_MODEL_ID` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | First choice for quick one-off calls |
+| `CAD_PARALLEL_PARTS` | 3 | Part agents working at once |
+| `CAD_AGENT_STEPS` | 8 | Model turns per part agent |
+| `CAD_REVIEW_ROUNDS` | 1 | Review passes after generation (0 turns it off) |
 | `CAD_WORKERS` | 2 (1 in compose) | Runners per worker service; each uses about 300 MB |
 | `CAD_JOB_TIMEOUT` | 60 s | Per job |
-| `CAD_PARALLEL_PARTS` | 3 | Parts built at once per request |
 | `CAD_MAX_UPLOAD_MB` | 50 | Import size limit; nginx allows 50 MB |
 
 If the account can't use a model (`AccessDenied` and similar), the next one in
 the chain is used from then on: `CAD_FAST_MODEL_ID` → `CAD_MODEL_ID` →
-`BEDROCK_MODEL_ID`. Newer models can be switched on by setting these once the
+`BEDROCK_MODEL_ID`. Part agents and the review's render need an Anthropic model. Newer models can be switched on by setting these once the
 account has access to them.
 
 ## Not done yet

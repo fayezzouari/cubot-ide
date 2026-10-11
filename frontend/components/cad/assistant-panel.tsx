@@ -12,6 +12,9 @@ export interface PlanRow {
   status: 'pending' | 'running' | 'done' | 'failed';
   attempt?: number;
   error?: string;
+  /** What the part's agent is doing now (building, inspecting the render…). */
+  detail?: string;
+  features?: string[];
 }
 
 export interface LogEntry {
@@ -21,6 +24,7 @@ export interface LogEntry {
 }
 
 interface Props {
+  interfaces?: Record<string, number | string> | null;
   input: string;
   busy: boolean;
   editTarget: { name: string } | null;
@@ -50,6 +54,7 @@ function StatusIcon({ status }: { status: PlanRow['status'] }) {
 }
 
 export default function AssistantPanel({
+  interfaces,
   input,
   busy,
   editTarget,
@@ -116,6 +121,18 @@ export default function AssistantPanel({
                 {plan.filter((p) => p.status === 'done').length}/{plan.length}
               </span>
             </div>
+            {interfaces && Object.keys(interfaces).length > 0 && (
+              <div className="px-2.5 py-1.5 border-b border-white/[0.06]">
+                <p className="text-[9.5px] uppercase tracking-wider text-white/30 mb-1">Shared dimensions</p>
+                <div className="flex flex-wrap gap-1">
+                  {Object.entries(interfaces).map(([k, v]) => (
+                    <span key={k} className="text-[9.5px] font-mono px-1 py-0.5 rounded bg-white/[0.05] text-white/55">
+                      {k} = {String(v)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {plan.map((row) => (
               <div key={row.id} className="flex gap-2 px-2.5 py-1.5">
                 <div className="mt-0.5">
@@ -131,6 +148,23 @@ export default function AssistantPanel({
                       <span className="text-[9px] px-1 rounded bg-amber-400/10 text-amber-300/80">fix {row.attempt}</span>
                     )}
                   </div>
+                  {row.status === 'running' && row.detail && (
+                    <p className="text-[10px] text-blue-300/70 mt-0.5 truncate">{row.detail}</p>
+                  )}
+                  {row.features && row.features.length > 0 && (
+                    <details className="mt-0.5">
+                      <summary className="text-[10px] text-white/30 cursor-pointer hover:text-white/60">
+                        {row.features.length} features
+                      </summary>
+                      <ul className="mt-1 space-y-0.5">
+                        {row.features.map((f) => (
+                          <li key={f} className="text-[10px] text-white/45 leading-snug">
+                            • {f}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                   {row.error && <p className="text-[10px] text-red-300/70 font-mono mt-0.5 line-clamp-2">{row.error}</p>}
                 </div>
               </div>
