@@ -269,8 +269,12 @@ async def _rest_on_ground(project_id: str, owner: Optional[str]) -> None:
     """Shift a freshly generated assembly so its lowest point sits on z = 0."""
     current = await state(project_id)
     boxes = {p["id"]: (p["version"] or {}).get("bbox") for p in current["parts"]}
-    lows = [assembly.world_box(boxes[i["part_id"]], i["position"], i["rotation"])[0][2]
-            for i in current["assembly"]["instances"] if boxes.get(i["part_id"])]
+    placed = [i for i in current["assembly"]["instances"] if boxes.get(i["part_id"])]
+    # Copies mated to the ground define the floor; a screw poking out underneath doesn't.
+    grounded = [i for i in placed if (i.get("mate") or {}).get("to") == "ground"]
+    if grounded:
+        return
+    lows = [assembly.world_box(boxes[i["part_id"]], i["position"], i["rotation"])[0][2] for i in placed]
     if not lows or abs(min(lows)) < 0.01:
         return
     lowest = min(lows)
@@ -292,13 +296,88 @@ async def _place(project_id: str, owner: Optional[str], built: dict[str, dict]) 
     the mates that couldn't be resolved."""
     placements, problems = assembly.solve(built)
     _apply(built, placements)
+    intent = {}
+    for b in built.values():
+        for k, inst in enumerate(b["instances"]):
+            pl = b["spec"]["placements"][k] if k < len(b["spec"]["placements"]) else {}
+            intent[inst["id"]] = (pl.get("mate"), pl.get("attach"))
     stored = await repo.get_assembly(project_id)
     instances = stored.get("instances", [])
     for inst in instances:
         if inst["id"] in placements:
             inst["position"], inst["rotation"] = placements[inst["id"]]
+        if inst["id"] in intent:
+            inst["mate"], inst["attach"] = intent[inst["id"]]
     await repo.save_assembly(project_id, owner, None, instances)
     return problems
+
+
+def _slug(text: str, taken: set) -> str:
+    base = re.sub(r"[^a-z0-9_]", "_", text.lower()).strip("_")[:40] or "part"
+    out, k = base, 2
+    while out in taken:
+        out, k = f"{base}_{k}", k + 1
+    taken.add(out)
+    return out
+
+
+async def _load_built(project_id: str, overall: str = "") -> dict[str, dict]:
+    """The whole assembly as a working set keyed by each part's plan id:
+    its spec (design intent), current build, copies with their mates and
+    the brief its agent would get. Parts made before specs were stored get
+    a minimal spec from what's known."""
+    parts = await repo.list_parts(project_id)
+    versions = await repo.get_versions([p["current_version"] for p in parts if p.get("current_version")])
+    assembly_doc = await repo.get_assembly(project_id)
+    interfaces = await repo.get_interfaces(project_id)
+    taken: set = set()
+    built: dict[str, dict] = {}
+    for part in parts:
+        version = versions.get(part.get("current_version"))
+        if not version:
+            continue
+        copies = [i for i in assembly_doc.get("instances", []) if i["part_id"] == part["_id"]]
+        if not copies:
+            continue
+        slug = part.get("slug") if part.get("slug") and part["slug"] not in taken else _slug(part["name"], taken)
+        taken.add(slug)
+        meta = version.get("meta") or {}
+        spec = dict(part.get("spec") or {})
+        spec.setdefault("description", part["name"])
+        spec.setdefault("features", [])
+        spec.setdefault("checks", [])
+        spec.setdefault("interfaces", [])
+        spec.setdefault("role", "")
+        spec.setdefault("envelope", None)
+        spec.setdefault("fastener", None)
+        spec.setdefault("ports", [{"name": n, "description": ""} for n in (meta.get("ports") or {})])
+        spec.update({"id": slug, "name": part["name"], "color": part["color"],
+                     "placements": [{"position": i["position"], "rotation": i["rotation"],
+                                     "mate": i.get("mate"), "attach": i.get("attach")} for i in copies]})
+        built[slug] = {"spec": spec, "meta": meta, "instances": copies, "part": part, "version": version,
+                       "brief": prompts.agent_brief(spec, interfaces, overall or assembly_doc.get("name", ""), [])}
+    return built
+
+
+def _describe_existing(slug: str, b: dict) -> dict:
+    """What the planner needs to know about a part already in the assembly."""
+    meta = b["meta"]
+    return {
+        "id": slug,
+        "name": b["spec"]["name"],
+        "role": b["spec"].get("role") or "",
+        "description": (b["spec"].get("description") or "")[:300],
+        "fastener": b["spec"].get("fastener"),
+        "size": (meta.get("bbox") or {}).get("size"),
+        "params": {k: v["value"] for k, v in (meta.get("params") or {}).items()},
+        "ports": {n: {"origin": v["origin"], "axis": v["axis"]} for n, v in (meta.get("ports") or {}).items()},
+        "copies": [{"mate": i.get("mate"), "position": i["position"]} for i in b["instances"]],
+    }
+
+
+def _spec_to_store(spec: dict) -> dict:
+    keys = ("role", "description", "features", "checks", "interfaces", "ports", "envelope", "fastener")
+    return {k: spec.get(k) for k in keys}
 
 
 # ── Review (reflection after generation) ─────────────────────────────────
@@ -599,54 +678,111 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
             await _say(emit, project_id, "user", prompt, {"kind": "generate"})
             await repo.create_snapshot(project_id, f"Before: {prompt[:60]}", auto=True)
             await emit({"type": "planning"})
-            existing = []
-            current = await state(project_id)
-            by_id = {p["id"]: p for p in current["parts"]}
-            for inst in current["assembly"]["instances"]:
-                p = by_id.get(inst["part_id"])
-                if p and p["version"]:
-                    existing.append({"name": inst["name"], "size": (p["version"]["bbox"] or {}).get("size"),
-                                     "position": inst["position"]})
+            built = await _load_built(project_id)
+            existing = [_describe_existing(slug, b) for slug, b in built.items()]
             try:
                 # With parts already in the assembly, the planner also sees what the user sees.
                 show = [view_image] if view_image and existing else None
                 plan = llm.extract_json(await llm.complete(
                     prompts.PLANNER_SYSTEM,
-                    prompts.planner_user(prompt, existing[:30]) + (
+                    prompts.planner_user(prompt, existing[:40]) + (
                         "\n\nThe attached image is the user's current 3D viewport (Z up)." if show else ""),
                     max_tokens=8000, temperature=0.1, images=show))
-                parts = _expand_plan(plan)
+                parts = [p for p in _expand_plan(plan) if p["id"] not in built]
             except Exception as e:
                 logger.warning("[cad] planning failed (%s); building a single part", e)
                 plan, parts = {}, []
-            if not parts:
+            updates = [u for u in (plan.get("update") or []) if isinstance(u, dict) and u.get("part") in built][:8]
+            removals = [r for r in (plan.get("remove") or []) if r in built]
+            remates = [m for m in (plan.get("placements") or []) if isinstance(m, dict) and m.get("part") in built]
+            if not parts and not updates and not removals and not remates:
+                if existing:
+                    raise StudioError("The planner found nothing to change; try describing the change more precisely")
                 parts = _expand_plan({"parts": [{"id": "model", "name": "Model", "description": prompt}]})
-            overall = plan.get("name") or prompt
+            overall = plan.get("name") or (await repo.get_assembly(project_id)).get("name") or prompt
             if plan.get("name"):
                 await repo.name_assembly_if_unnamed(project_id, owner, str(plan["name"]))
-            interfaces = {
+            new_interfaces = {
                 str(k): v if isinstance(v, dict) else {"value": v}
                 for k, v in (plan.get("interfaces") or {}).items()
             } if isinstance(plan.get("interfaces"), dict) else {}
+            await repo.merge_interfaces(project_id, new_interfaces)
+            interfaces = await repo.get_interfaces(project_id)
             await emit({"type": "plan", "name": overall, "summary": plan.get("summary"),
                         "interfaces": {k: v.get("value") for k, v in interfaces.items()},
-                        "parts": [{"id": p["id"], "name": p["name"], "description": p["description"],
-                                   "features": p["features"], "count": len(p["placements"])} for p in parts]})
+                        "parts": [{"id": u["part"], "name": f"Update {built[u['part']]['spec']['name']}",
+                                   "description": str(u.get("instruction") or ""), "features": [], "count": 1}
+                                  for u in updates]
+                        + [{"id": p["id"], "name": p["name"], "description": p["description"],
+                            "features": p["features"], "count": len(p["placements"])} for p in parts]})
+
+            # Remove parts the change drops (to the trash, restorable).
+            for slug in removals:
+                await delete(project_id, built[slug]["part"]["_id"])
+                built.pop(slug)
 
             gate = asyncio.Semaphore(settings.CAD_PARALLEL_PARTS)
 
+            def hooks(plan_id: str):
+                async def retry(attempt: int, error: str):
+                    await emit({"type": "part_retry", "plan_id": plan_id, "attempt": attempt, "error": error})
+
+                async def notify(action: str, detail: str):
+                    await emit({"type": "agent", "plan_id": plan_id, "action": action, "detail": detail})
+                return retry, notify
+
+            # Update existing parts with their agents.
+            async def update(u: dict):
+                slug = u["part"]
+                b = built[slug]
+                async with gate:
+                    await emit({"type": "part_started", "plan_id": slug})
+                    retry, notify = hooks(slug)
+                    instruction = str(u.get("instruction") or "")
+                    spec = b["spec"]
+                    for field in ("features", "checks"):
+                        if isinstance(u.get(field), list):
+                            spec[field] = [str(x)[:400] for x in u[field]][:20]
+                    if isinstance(u.get("ports"), list):
+                        known = {p["name"] for p in spec.get("ports") or []}
+                        spec["ports"] = (spec.get("ports") or []) + [
+                            {"name": str(p.get("name")), "description": str(p.get("description") or "")[:300]}
+                            for p in u["ports"] if isinstance(p, dict) and p.get("name") not in known]
+                    try:
+                        if spec.get("fastener"):
+                            raise StudioError("standard fasteners are replaced, not redesigned")
+                        try:
+                            before = await agents.render_part(b["version"]["key"])
+                        except GeometryJobError:
+                            before = None
+                        images = ([(view_image, VIEW_CAPTION)] if view_image else []) + (
+                            [(before, PART_CAPTION)] if before else [])
+                        brief = (prompts.agent_brief(spec, interfaces, overall, [])
+                                 + "\n\n" + prompts.agent_revise(b["version"]["code"], instruction, None))
+                        code, key, meta = await develop(
+                            brief, prompts.edit_user(b["version"]["code"], instruction, b["meta"], None),
+                            retry, notify, spec.get("envelope"), images=images or None,
+                            required_ports=[p["name"] for p in spec.get("ports") or []])
+                    except Exception as e:
+                        await emit({"type": "part_failed", "plan_id": slug, "error": str(e)[:2000]})
+                        return
+                    b["version"] = await repo.add_version(b["part"], code, b["version"].get("params") or {}, {},
+                                                          instruction, key, meta)
+                    b["meta"] = meta
+                    b["brief"] = prompts.agent_brief(spec, interfaces, overall, [])
+                    await repo.update_part(b["part"]["_id"], {"spec": _spec_to_store(spec)})
+                    updated.append(slug)
+                    await emit({"type": "part_done", "plan_id": slug, "part": part_view(b["part"], b["version"])})
+
+            # Build new parts (agents, or templates for fasteners).
             async def make(spec: dict):
                 async with gate:
                     await emit({"type": "part_started", "plan_id": spec["id"]})
-
-                    async def retry(attempt: int, error: str):
-                        await emit({"type": "part_retry", "plan_id": spec["id"], "attempt": attempt, "error": error})
-
-                    async def notify(action: str, detail: str):
-                        await emit({"type": "agent", "plan_id": spec["id"], "action": action, "detail": detail})
-
+                    retry, notify = hooks(spec["id"])
                     siblings = [{"name": o["name"], "description": o["description"]} for o in parts
-                                if o is not spec and not o["fastener"]]
+                                if o is not spec and not o["fastener"]] + [
+                        {"name": b["spec"]["name"], "description": b["spec"]["description"]}
+                        for b in built.values() if not b["spec"].get("fastener")]
                     try:
                         if spec["fastener"]:
                             # Standard hardware: fixed template, no agent needed.
@@ -663,42 +799,64 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
                         return
                     if spec["fastener"]:
                         spec["name"] = fasteners.name(spec["fastener"])
-                    part = await repo.create_part(project_id, owner, spec["name"], "generated", "brep", spec["color"])
+                    part = await repo.create_part(project_id, owner, spec["name"], "generated", "brep", spec["color"],
+                                                  slug=spec["id"], spec=_spec_to_store(spec))
                     version = await repo.add_version(part, code, {}, {}, prompt, key, meta)
                     instances = [
                         {"id": repo.new_id(), "part_id": part["_id"],
                          "name": spec["name"] if len(spec["placements"]) == 1 else f"{spec['name']} {k + 1}",
-                         "position": pl["position"], "rotation": pl["rotation"], "color": None, "visible": True}
+                         "position": pl["position"], "rotation": pl["rotation"], "color": None, "visible": True,
+                         "mate": pl.get("mate"), "attach": pl.get("attach")}
                         for k, pl in enumerate(spec["placements"])
                     ]
                     await repo.add_instances(project_id, owner, instances)
                     built[spec["id"]] = {"spec": spec, "meta": meta, "instances": instances,
                                          "part": part, "version": version,
                                          "brief": prompts.agent_brief(spec, interfaces, overall, siblings)}
+                    added.append(spec["id"])
                     await emit({"type": "part_done", "plan_id": spec["id"], "part": part_view(part, version),
                                 "instances": instances})
 
-            built: dict[str, dict] = {}
+            updated: list[str] = []
+            added: list[str] = []
+            await asyncio.gather(*(update(u) for u in updates))
             await asyncio.gather(*(make(s) for s in parts))
             # Parts that failed (usually rate limits) get one more go, one at a time.
             for spec in [p for p in parts if p["id"] not in built]:
                 await make(spec)
+
+            # Re-mate existing copies as planned.
+            for m in remates:
+                b = built[m["part"]]
+                k = int(m.get("copy") or 1) - 1
+                if 0 <= k < len(b["instances"]):
+                    b["spec"]["placements"][k] = _expand_plan(
+                        {"parts": [{"id": m["part"], "copies": [m]}]})[0]["placements"][0]
+
             mate_problems = await _place(project_id, owner, built) if built else []
-            if not existing:
-                await _rest_on_ground(project_id, owner)
-            names = [b["spec"]["name"] for b in built.values()]
-            failed = [p["name"] for p in parts if p["id"] not in built]
-            summary = (f"Added {len(names)} part{'s' if len(names) != 1 else ''} to {overall}: {', '.join(names)}."
-                       if names else "No parts were built.")
+            await _rest_on_ground(project_id, owner)
+
+            changed = []
+            if updated:
+                changed.append(f"updated {', '.join(built[s]['spec']['name'] for s in updated)}")
+            if added:
+                changed.append(f"added {', '.join(built[s]['spec']['name'] for s in added)}")
+            if removals:
+                changed.append(f"removed {', '.join(removals)}")
+            if remates:
+                changed.append(f"re-placed {len(remates)} cop{'ies' if len(remates) != 1 else 'y'}")
+            failed = [p["name"] for p in parts if p["id"] not in built] + [
+                built[u["part"]]["spec"]["name"] for u in updates if u["part"] not in updated and u["part"] in built]
+            summary = (f"{overall}: " + "; ".join(changed) + ".") if changed else "Nothing was changed."
             if failed:
                 summary += f" Couldn't build: {', '.join(failed)}."
             await _say(emit, project_id, "assistant", summary,
-                       {"kind": "generate", "parts": [b["part"]["_id"] for b in built.values()]})
+                       {"kind": "generate", "added": added, "updated": updated, "removed": removals})
             if built and settings.CAD_REVIEW_MAX_ROUNDS > 0:
                 await _sync_positions(project_id, built)
                 await emit({"type": "state", "state": await state(project_id)})
                 await review(project_id, owner, prompt, built, emit, settings.CAD_REVIEW_MAX_ROUNDS,
-                             ground=not existing, plan_parts=parts, mate_problems=mate_problems)
+                             ground=True, plan_parts=parts, mate_problems=mate_problems)
             await emit({"type": "complete", "state": await state(project_id)})
         except asyncio.CancelledError:
             await repo.add_message(project_id, "assistant", "Stopped.")
@@ -743,7 +901,7 @@ PART_CAPTION = ("The part as it is now, rendered on its own: isometric, front (l
 
 
 async def edit(project_id: str, part_id: str, instruction: str, face: Optional[dict],
-               view_image: Optional[bytes] = None) -> AsyncGenerator[dict, None]:
+               view_image: Optional[bytes] = None, owner: Optional[str] = None) -> AsyncGenerator[dict, None]:
     queue: asyncio.Queue = asyncio.Queue()
 
     async def emit(event: dict):
@@ -788,6 +946,23 @@ async def edit(project_id: str, part_id: str, instruction: str, face: Optional[d
             await _say(emit, project_id, "assistant", f"Updated {part['name']} (v{new['number']}).",
                        {"kind": "edit", "part": part_id})
             await queue.put({"type": "part_done", "part_id": part_id, "part": part_view(part, new)})
+
+            # The change can affect the rest of the assembly (ports moved, the part got bigger):
+            # re-solve the mates and review everything, updating neighbours where needed.
+            built = await _load_built(project_id)
+            if len(built) > 1:
+                mate_problems = await _place(project_id, owner, built)
+                await _rest_on_ground(project_id, owner)
+                await _sync_positions(project_id, built)
+                await queue.put({"type": "state", "state": await state(project_id)})
+                if settings.CAD_REVIEW_MAX_ROUNDS > 0:
+                    await review(
+                        project_id, owner,
+                        f"The user changed {part['name']}: {instruction}. The rest of the assembly must still fit "
+                        "and work with it; update other parts where they no longer do.",
+                        built, emit, settings.CAD_REVIEW_MAX_ROUNDS, ground=True, plan_parts=[],
+                        mate_problems=mate_problems)
+                await queue.put({"type": "complete", "state": await state(project_id)})
         except asyncio.CancelledError:
             await repo.add_message(project_id, "assistant", "Stopped.")
             raise

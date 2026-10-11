@@ -150,6 +150,11 @@ export default function InspectorPanel({
         </div>
         <Vec3Row title="Position" value={instance.position} suffix="mm" onCommit={(position) => onInstance({ position })} />
         <Vec3Row title="Rotation" value={instance.rotation} suffix="°" onCommit={(rotation) => onInstance({ rotation })} />
+        <p className="text-[10px] text-white/35">
+          {instance.mate
+            ? `Mated: ${instance.mate.port} → ${instance.mate.to === 'ground' ? 'ground' : `${instance.mate.to}.${instance.mate.to_port}`}`
+            : 'Placed by hand'}
+        </p>
         <button
           onClick={onDropToGround}
           className="inline-flex items-center gap-1 text-[10.5px] text-white/50 hover:text-white"

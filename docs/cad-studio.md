@@ -92,6 +92,30 @@ request ─▶ architect ─▶ part agents (swarm, in parallel) ─▶ placemen
    The conversation then gets one summary: what was fixed and anything still open. A snapshot is
    taken before the first fix.
 
+### Changing an existing assembly
+
+The design intent is stored, so the whole assembly can be re-planned, re-solved and reviewed at any
+time:
+- each copy's mate
+- each part's plan spec and id: role, features, ports, checks, interfaces and envelope
+- the assembly's shared dimensions
+
+**Prompts on a non-empty assembly are change plans.** The planner gets every existing part (its
+id, size, parameters, ports and mates) plus the viewport screenshot. It answers with:
+- `update`: instructions for the agents of existing parts, including neighbours that must follow
+  the change, and any new ports, features or checks
+- `parts`: genuinely new parts, which may mate to existing ones
+- `remove`: parts the change makes obsolete (they go to the trash)
+- `placements`: re-mates of existing copies
+- changed shared dimensions
+
+**Edits ripple.** After a part is edited, the mates are solved again (parts mated to it follow its
+new ports) and the review loop runs over the whole assembly, so it can update neighbours that no
+longer fit.
+
+**Manual moves win.** Dragging or typing a copy's position clears its mate (the inspector shows
+"Placed by hand"), and the solver leaves it where it was put.
+
 ### Ports and mates
 
 Part code declares its connection points with `PORT(name, origin, axis, ref=None)`:

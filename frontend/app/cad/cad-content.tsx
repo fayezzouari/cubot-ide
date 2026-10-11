@@ -644,7 +644,8 @@ export default function CadPageContent() {
                 if (!id) setFace(null);
               }}
               onFace={setFace}
-              onTransform={(id, position, rotation) => patchInstance(id, { position, rotation })}
+              // Moving a copy by hand replaces its mate: the solver then keeps it where it was put.
+              onTransform={(id, position, rotation) => patchInstance(id, { position, rotation, mate: null, attach: null })}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-white/30">
@@ -721,14 +722,19 @@ export default function CadPageContent() {
               busy={busy || !!working}
               versions={versions}
               onInstance={(patch) =>
-                // Typing a name or dragging the colour picker is one undo step.
-                patchInstance(selected.id, patch, 'name' in patch || 'color' in patch ? `${Object.keys(patch)[0]}:${selected.id}` : undefined)
+                patchInstance(
+                  selected.id,
+                  // Typing a placement by hand replaces the copy's mate.
+                  'position' in patch || 'rotation' in patch ? { ...patch, mate: null, attach: null } : patch,
+                  // Typing a name or dragging the colour picker is one undo step.
+                  'name' in patch || 'color' in patch ? `${Object.keys(patch)[0]}:${selected.id}` : undefined,
+                )
               }
               onDropToGround={() => {
                 const dz = viewport.current?.dropToGround(selected.id);
                 if (dz != null && Math.abs(dz) > 1e-6) {
                   const [x, y, z] = selected.position;
-                  patchInstance(selected.id, { position: [x, y, Math.round((z + dz) * 1000) / 1000] });
+                  patchInstance(selected.id, { position: [x, y, Math.round((z + dz) * 1000) / 1000], mate: null, attach: null });
                 }
               }}
               onPart={(fields) => patchPart(selectedPart, fields)}

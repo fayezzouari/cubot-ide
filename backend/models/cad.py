@@ -57,6 +57,9 @@ class Instance(BaseModel):
     rotation: Vec3 = Field(default_factory=lambda: [0.0, 0.0, 0.0], min_length=3, max_length=3)
     color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     visible: bool = True
+    # How the copy is placed: a mate to another port, a face attachment, or neither (placed by hand).
+    mate: Optional[dict[str, Any]] = None
+    attach: Optional[dict[str, Any]] = None
 
 
 class AssemblyUpdate(BaseModel):

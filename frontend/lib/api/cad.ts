@@ -53,6 +53,9 @@ export interface CadInstance {
   rotation: Vec3; // degrees, Euler XYZ, CAD frame (Z up)
   color: string | null;
   visible: boolean;
+  /** How the copy is placed: mated port to port, attached to a face, or neither (placed by hand). */
+  mate?: { port: string; to: string; to_port: string; gap: number; angle: number } | null;
+  attach?: Record<string, unknown> | null;
 }
 
 export interface CadAssembly {

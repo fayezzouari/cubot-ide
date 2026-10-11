@@ -57,7 +57,7 @@ async def get_part(project_id: str, part_id: str, include_deleted: bool = False)
 
 
 async def create_part(project_id: str, owner: Optional[str], name: str, source: str, kind: str,
-                      color: str) -> dict:
+                      color: str, slug: Optional[str] = None, spec: Optional[dict] = None) -> dict:
     doc = {
         "_id": new_id(),
         "project_id": project_id,
@@ -66,6 +66,8 @@ async def create_part(project_id: str, owner: Optional[str], name: str, source: 
         "source": source,
         "kind": kind,
         "color": color,
+        "slug": slug,  # the id the plan uses for this part
+        "spec": spec,  # the plan's design intent: role, features, ports, checks, interfaces, envelope
         "current_version": None,
         "created_at": _now(),
         "updated_at": _now(),
@@ -257,3 +259,14 @@ async def legacy_session(project_id: str) -> dict:
 
 async def mark_legacy_migrated(project_id: str) -> None:
     await get_collection("cad_sessions").update_one({"session_id": project_id}, {"$set": {"studio_migrated": True}})
+
+
+async def get_interfaces(project_id: str) -> dict:
+    doc = await get_collection(ASSEMBLIES).find_one({"_id": project_id}, {"interfaces": 1})
+    return (doc or {}).get("interfaces") or {}
+
+
+async def merge_interfaces(project_id: str, interfaces: dict) -> None:
+    if interfaces:
+        await get_collection(ASSEMBLIES).update_one(
+            {"_id": project_id}, {"$set": {f"interfaces.{k}": v for k, v in interfaces.items()}}, upsert=True)

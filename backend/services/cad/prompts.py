@@ -121,20 +121,41 @@ Rules:
 - Size the parts so the assembly stands level: everything that touches the floor reaches the same
   height.
 - List parts so that every part comes after the part it mates to.
-- Distinct, muted engineering colours for custom parts.""".replace("__CLEARANCE__", fasteners.clearance_table())
+- Distinct, muted engineering colours for custom parts.
+
+CHANGING AN EXISTING ASSEMBLY: when the request comes with the parts already in the assembly (their
+ids, sizes, parameters, ports and how each copy is mated), plan a CHANGE, not a new design:
+- Prefer changing what exists. To modify a part, add it to "update" with a precise instruction for
+  its engineer (dimensions in mm), plus any "ports" it must gain and, if they change, its full
+  "features" and "checks" lists. Parts that must change because a neighbour changes (holes that
+  must move with a wider plate, a mount that must fit a bigger motor) are updated too.
+- Only genuinely new parts go in "parts", with new ids; they may mate to existing part ids.
+- "remove": ids of parts the change makes obsolete.
+- "placements": re-mate existing copies: {"part": "<id>", "copy": 1, "mate": {...}}.
+- Add or change shared dimensions in "interfaces" (only the changed ones).
+Extra keys for a change:
+  "update": [{"part": "<existing id>", "instruction": "...", "ports": [...], "features": [...], "checks": [...]}],
+  "remove": ["<existing id>"],
+  "placements": [...]
+Leave out parts that don't change.""".replace("__CLEARANCE__", fasteners.clearance_table())
 
 
 def planner_user(prompt: str, existing: list[dict]) -> str:
-    context = ""
-    if existing:
-        listing = "\n".join(
-            f"- {p['name']} (size {p.get('size')}) at {p.get('position')}" for p in existing
-        )
-        context = (
-            "\n\nThe assembly already contains these parts (don't recreate them). New parts can only "
-            f"attach to each other or to the ground; the user positions them next to these:\n{listing}"
-        )
-    return f"Request: {prompt}{context}"
+    if not existing:
+        return f"Request: {prompt}"
+    listing = "\n".join(
+        f"- id {p['id']}: {p['name']}"
+        + (f" (standard {p['fastener']['size']} {p['fastener']['kind']})" if p.get("fastener") else "")
+        + f", size {p.get('size')} mm. {p.get('role') or ''} {p.get('description') or ''}\n"
+        f"  parameters: {json.dumps(p.get('params') or {})}\n"
+        f"  ports: {json.dumps(p.get('ports') or {})}\n"
+        f"  copies: {json.dumps(p.get('copies') or [])}"
+        for p in existing
+    )
+    return (
+        f"The assembly already contains these parts:\n{listing}\n\n"
+        f"Change requested: {prompt}\n\nPlan the change (update / add / remove / re-mate)."
+    )
 
 
 REVIEW_SYSTEM = """You are a senior mechanical designer reviewing an assembly that was just generated
