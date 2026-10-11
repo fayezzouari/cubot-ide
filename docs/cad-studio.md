@@ -42,13 +42,28 @@ plate with a `thickness` parameter.
 
 ## How a prompt becomes parts
 
-1. The planner splits the request into up to 8 parts, with dimensions that fit
-   together and a placement for each copy.
-2. Each part is written and built **in parallel** (`CAD_PARALLEL_PARTS`, default
-   3). If a build fails, the error goes back to the model, with at most
-   `CAD_MAX_FIX_ATTEMPTS` (default 3) attempts per part.
-3. Each finished part is added to the assembly right away; the browser receives
-   progress events and loads the part's preview mesh by its content key.
+1. **Plan.** The planner (`CAD_FAST_MODEL_ID`) splits the request into up to 8
+   parts with dimensions that fit together. For each copy it says how the part
+   **attaches** rather than where it goes: a rotation, a target part (or the
+   ground), a side of the target (`top`, `bottom`, `left`, `right`, `front`,
+   `back`), an offset along that face and an optional gap.
+2. **Write and build.** Each part's code is written by `CAD_MODEL_ID` and built
+   **in parallel** (`CAD_PARALLEL_PARTS`, default 3). If a build fails, the error
+   goes back to the model, with at most `CAD_MAX_FIX_ATTEMPTS` (default 3)
+   attempts per part. If the code redefines a helper such as `P()`, that
+   definition is dropped so the parameters keep working.
+3. **Place.** Using each part's real bounding box after rotation, the backend
+   puts it against the chosen face of its target: touching it, outside it and
+   centred plus the offset. The whole assembly is then lowered so its lowest
+   point rests on z = 0.
+
+Models are poor at coordinate arithmetic, so asking for positions gave
+floating or overlapping parts and took minutes with a correction round.
+Attachments are something they get right; the arithmetic is exact and
+instant.
+
+The browser receives progress events and loads each part's preview mesh by its
+content key as soon as the part is built.
 
 Edits send the current code, the requested change and, if one was picked, the
 selected face (its type, centre, normal and area) so the model can select it
@@ -125,11 +140,17 @@ All routes are under `/api/cad` and require the project owner's token.
 |---|---|---|
 | `CAD_WORKER_URL` | unset (local pool) | Set to `http://cad-worker:8100` by docker-compose |
 | `CAD_STORAGE_DIR` | `/tmp/cubot-cad` | `/data/cad` (shared volume) in docker-compose |
-| `CAD_MODEL_ID` | `BEDROCK_MODEL_ID` | Model for planning and code. A stronger coder means fewer fix-up rounds. |
+| `CAD_MODEL_ID` | `us.anthropic.claude-opus-4-6-v1` | Writes and fixes part code |
+| `CAD_FAST_MODEL_ID` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Plans parts and attachments |
 | `CAD_WORKERS` | 2 (1 in compose) | Runners per worker service; each uses about 300 MB |
 | `CAD_JOB_TIMEOUT` | 60 s | Per job |
 | `CAD_PARALLEL_PARTS` | 3 | Parts built at once per request |
 | `CAD_MAX_UPLOAD_MB` | 50 | Import size limit; nginx allows 50 MB |
+
+If the account can't use a model (`AccessDenied` and similar), the next one in
+the chain is used from then on: `CAD_FAST_MODEL_ID` → `CAD_MODEL_ID` →
+`BEDROCK_MODEL_ID`. Newer models can be switched on by setting these once the
+account has access to them.
 
 ## Not done yet
 

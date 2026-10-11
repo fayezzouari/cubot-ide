@@ -8,6 +8,7 @@ content key and the browser fetches its files (mesh.json for the viewer).
 """
 import asyncio
 import logging
+import math
 import os
 import re
 from typing import AsyncGenerator, Awaitable, Callable, Optional
@@ -148,8 +149,12 @@ async def write_and_build(first_prompt: str, emit_retry: Callable[[int, str], Aw
 # ── Generate from a prompt ────────────────────────────────────────────────
 
 
+SIDES = {"top", "bottom", "left", "right", "front", "back"}
+
+
 def _expand_plan(plan: dict) -> list[dict]:
-    """Normalise the planner's JSON into parts with a list of placements."""
+    """Normalise the planner's JSON: ids, colours and one placement per copy
+    ({rotation, attach}); older answers with plain positions still work."""
     parts = []
     seen = set()
     for i, raw in enumerate(plan.get("parts") or []):
@@ -157,22 +162,166 @@ def _expand_plan(plan: dict) -> list[dict]:
         while pid in seen:
             pid += "_"
         seen.add(pid)
-        positions = raw.get("positions") or [raw.get("position") or [0, 0, 0]]
-        rotations = raw.get("rotations") or [raw.get("rotation") or [0, 0, 0]] * len(positions)
-        placements = [
-            {"position": _vec(p), "rotation": _vec(rotations[k] if k < len(rotations) else [0, 0, 0])}
-            for k, p in enumerate(positions[:50])
-        ]
+        copies = raw.get("copies")
+        if not isinstance(copies, list) or not copies:
+            positions = raw.get("positions") or [raw.get("position") or [0, 0, 0]]
+            rotations = raw.get("rotations") or [raw.get("rotation") or [0, 0, 0]] * len(positions)
+            copies = [{"position": p, "rotation": rotations[k] if k < len(rotations) else [0, 0, 0]}
+                      for k, p in enumerate(positions)]
+        placements = []
+        for c in copies[:50]:
+            if not isinstance(c, dict):
+                continue
+            attach = c.get("attach") if isinstance(c.get("attach"), dict) else None
+            if attach:
+                side = str(attach.get("side") or "top").lower()
+                offset = attach.get("offset") if isinstance(attach.get("offset"), list) else [0, 0]
+                try:
+                    gap = float(attach.get("gap") or 0)
+                except (TypeError, ValueError):
+                    gap = 0.0
+                attach = {
+                    "to": str(attach.get("to") or "ground"),
+                    "side": side if side in SIDES else "top",
+                    "offset": (_vec(list(offset) + [0], (0, 0, 0)))[:2],
+                    "gap": gap,
+                }
+            placements.append({
+                "position": _vec(c.get("position")),
+                "rotation": _vec(c.get("rotation")),
+                "attach": attach,
+            })
         color = raw.get("color")
         parts.append({
             "id": pid,
             "name": str(raw.get("name") or pid.replace("_", " ").title())[:120],
             "description": str(raw.get("description") or raw.get("name") or ""),
-            "placements": placements,
+            "placements": placements or [{"position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "attach": None}],
             "color": color if isinstance(color, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", color)
             else PALETTE[i % len(PALETTE)],
         })
     return parts[:8]
+
+
+def _rotate(v: list[float], rot_deg: list[float]) -> list[float]:
+    """R = Rx·Ry·Rz (Euler XYZ, degrees), the convention the runner and viewer use."""
+    rx, ry, rz = (math.radians(a) for a in rot_deg)
+    x, y, z = v
+    # Rz, then Ry, then Rx (applied right to left).
+    x, y = x * math.cos(rz) - y * math.sin(rz), x * math.sin(rz) + y * math.cos(rz)
+    x, z = x * math.cos(ry) + z * math.sin(ry), -x * math.sin(ry) + z * math.cos(ry)
+    y, z = y * math.cos(rx) - z * math.sin(rx), y * math.sin(rx) + z * math.cos(rx)
+    return [x, y, z]
+
+
+async def _rest_on_ground(project_id: str, owner: Optional[str]) -> None:
+    """Shift a freshly generated assembly so its lowest point sits on z = 0
+    (the planner's placements are relative; this fixes their height)."""
+    current = await state(project_id)
+    boxes = {p["id"]: (p["version"] or {}).get("bbox") for p in current["parts"]}
+    lowest = None
+    for inst in current["assembly"]["instances"]:
+        bbox = boxes.get(inst["part_id"])
+        if not bbox:
+            continue
+        for cx in (bbox["min"][0], bbox["max"][0]):
+            for cy in (bbox["min"][1], bbox["max"][1]):
+                for cz in (bbox["min"][2], bbox["max"][2]):
+                    z = _rotate([cx, cy, cz], inst["rotation"])[2] + inst["position"][2]
+                    lowest = z if lowest is None else min(lowest, z)
+    if lowest is None or abs(lowest) < 0.01:
+        return
+    instances = current["assembly"]["instances"]
+    for inst in instances:
+        inst["position"][2] = round(inst["position"][2] - lowest, 3)
+    await repo.save_assembly(project_id, owner, None, instances)
+
+
+def _rotated_box(bbox: dict, rotation: list[float]) -> tuple[list[float], list[float]]:
+    """Bounds of the part's box after rotating it about its origin."""
+    corners = [
+        _rotate([x, y, z], rotation)
+        for x in (bbox["min"][0], bbox["max"][0])
+        for y in (bbox["min"][1], bbox["max"][1])
+        for z in (bbox["min"][2], bbox["max"][2])
+    ]
+    return [min(c[k] for c in corners) for k in range(3)], [max(c[k] for c in corners) for k in range(3)]
+
+
+# side → (normal axis, direction, the two in-face axes the offset runs along)
+_FACES = {
+    "top": (2, 1, (0, 1)), "bottom": (2, -1, (0, 1)),
+    "right": (0, 1, (1, 2)), "left": (0, -1, (1, 2)),
+    "back": (1, 1, (0, 2)), "front": (1, -1, (0, 2)),
+}
+
+
+def _solve_placements(built: dict[str, dict]) -> dict[str, list[float]]:
+    """Positions for every instance whose plan says what it attaches to.
+
+    Works on bounding boxes: the part (after its rotation) is put against
+    the chosen face of its target's world box, outside it, centred on the
+    face plus the offset. Targets are solved first; cycles and unknown
+    targets fall back to the planner's position."""
+    copies: dict[str, list[dict]] = {pid: b["instances"] for pid, b in built.items()}
+    world: dict[str, tuple[list[float], list[float]]] = {}  # instance id → world box
+    positions: dict[str, list[float]] = {}
+
+    def target_instance(ref: str) -> Optional[dict]:
+        pid, _, idx = ref.partition("#")
+        group = copies.get(pid)
+        if not group:
+            return None
+        k = int(idx) - 1 if idx.isdigit() else 0
+        return group[min(max(k, 0), len(group) - 1)]
+
+    def solve(pid: str, k: int, stack: tuple = ()) -> None:
+        inst = copies[pid][k]
+        if inst["id"] in world:
+            return
+        b = built[pid]
+        placement = b["spec"]["placements"][k] if k < len(b["spec"]["placements"]) else {}
+        rot = inst["rotation"]
+        rlo, rhi = _rotated_box(b["meta"]["bbox"], rot)
+        pos = list(inst["position"])
+        attach = placement.get("attach")
+        if attach and attach["to"] == "ground":
+            a, c = attach["offset"]
+            pos = [a - (rlo[0] + rhi[0]) / 2, c - (rlo[1] + rhi[1]) / 2, -rlo[2] + attach["gap"]]
+        elif attach:
+            target = target_instance(attach["to"])
+            tpid = attach["to"].partition("#")[0]
+            if target is not None and target["id"] != inst["id"] and inst["id"] not in stack:
+                tk = copies[tpid].index(target)
+                solve(tpid, tk, stack + (inst["id"],))
+                tlo, thi = world[target["id"]]
+                axis, direction, (u, v) = _FACES[attach["side"]]
+                if direction > 0:
+                    pos[axis] = thi[axis] + attach["gap"] - rlo[axis]
+                else:
+                    pos[axis] = tlo[axis] - attach["gap"] - rhi[axis]
+                for along, off in ((u, attach["offset"][0]), (v, attach["offset"][1])):
+                    pos[along] = (tlo[along] + thi[along]) / 2 + off - (rlo[along] + rhi[along]) / 2
+        world[inst["id"]] = ([rlo[i] + pos[i] for i in range(3)], [rhi[i] + pos[i] for i in range(3)])
+        positions[inst["id"]] = [round(v, 3) for v in pos]
+
+    for pid, group in copies.items():
+        for k in range(len(group)):
+            solve(pid, k)
+    return positions
+
+
+async def _place(project_id: str, owner: Optional[str], built: dict[str, dict]) -> None:
+    positions = _solve_placements(built)
+    assembly = await repo.get_assembly(project_id)
+    instances = assembly.get("instances", [])
+    changed = False
+    for inst in instances:
+        if inst["id"] in positions and positions[inst["id"]] != inst["position"]:
+            inst["position"] = positions[inst["id"]]
+            changed = True
+    if changed:
+        await repo.save_assembly(project_id, owner, None, instances)
 
 
 async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncGenerator[dict, None]:
@@ -195,7 +344,7 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
             try:
                 plan = llm.extract_json(await llm.complete(
                     prompts.PLANNER_SYSTEM, prompts.planner_user(prompt, existing[:30]), max_tokens=3000,
-                    temperature=0.1))
+                    temperature=0.1, fast=True))
                 parts = _expand_plan(plan)
             except Exception as e:
                 logger.warning("[cad] planning failed (%s); building a single part", e)
@@ -233,10 +382,16 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                         for k, pl in enumerate(spec["placements"])
                     ]
                     await repo.add_instances(project_id, owner, instances)
+                    built[spec["id"]] = {"spec": spec, "meta": meta, "instances": instances}
                     await emit({"type": "part_done", "plan_id": spec["id"], "part": part_view(part, version),
                                 "instances": instances})
 
+            built: dict[str, dict] = {}
             await asyncio.gather(*(make(s) for s in parts))
+            if built:
+                await _place(project_id, owner, built)
+            if not existing:
+                await _rest_on_ground(project_id, owner)
             await emit({"type": "complete", "state": await state(project_id)})
         except Exception as e:
             logger.exception("[cad] generate failed")

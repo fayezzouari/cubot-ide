@@ -49,7 +49,10 @@ class Settings(BaseSettings):
     # CAD Studio
     CAD_STORAGE_DIR: str = "/tmp/cubot-cad"  # shared with the geometry worker
     CAD_WORKER_URL: Optional[str] = None  # sandboxed worker service; unset = local pool
-    CAD_MODEL_ID: Optional[str] = None  # model for CAD code; unset = BEDROCK_MODEL_ID
+    # Model for CAD planning and code; falls back to BEDROCK_MODEL_ID if the account can't use it.
+    CAD_MODEL_ID: str = "us.anthropic.claude-opus-4-6-v1"
+    # Faster model for planning and placing parts (falls back to CAD_MODEL_ID, then BEDROCK_MODEL_ID).
+    CAD_FAST_MODEL_ID: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     CAD_PARALLEL_PARTS: int = 3
     CAD_MAX_FIX_ATTEMPTS: int = 3
     CAD_MAX_UPLOAD_MB: int = 50

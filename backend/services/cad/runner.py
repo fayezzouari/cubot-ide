@@ -14,6 +14,7 @@ Jobs:
 This file must not import application modules: it runs in the sandboxed
 geometry worker, which has no app settings or secrets.
 """
+import ast
 import json
 import math
 import os
@@ -235,6 +236,22 @@ def check_geometry(meta: dict) -> None:
 # ── Jobs ──────────────────────────────────────────────────────────────────
 
 
+HELPERS = {"P", "ASSET", "MESH", "IGES"}
+
+
+def strip_helper_overrides(code: str):
+    """Models sometimes define their own `P()` (returning the default) so the
+    script runs standalone; that would hide every parameter. Drop top-level
+    definitions of the helpers we provide."""
+    tree = ast.parse(code, "<part>")
+    tree.body = [
+        node for node in tree.body
+        if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in HELPERS)
+        and not (isinstance(node, ast.Assign) and all(isinstance(t, ast.Name) and t.id in HELPERS for t in node.targets))
+    ]
+    return tree
+
+
 def run_build(job: dict) -> dict:
     out_dir = job["out_dir"]
     os.makedirs(out_dir, exist_ok=True)
@@ -270,7 +287,7 @@ def run_build(job: dict) -> dict:
         "MESH": load_mesh,
         "IGES": load_iges,
     }
-    exec(compile(job["code"], "<part>", "exec"), namespace)
+    exec(compile(strip_helper_overrides(job["code"]), "<part>", "exec"), namespace)
     if "result" not in namespace:
         raise JobError("The code did not assign `result`")
     shape = to_shape(namespace["result"])

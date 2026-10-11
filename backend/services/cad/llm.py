@@ -7,6 +7,7 @@ from typing import Optional
 
 import boto3
 from botocore.config import Config as BotoConfig
+from botocore.exceptions import ClientError
 
 from core.config import settings
 
@@ -26,13 +27,41 @@ def _bedrock():
     return _client
 
 
-def model_id() -> str:
-    return settings.CAD_MODEL_ID or settings.BEDROCK_MODEL_ID
+_unavailable: set[str] = set()  # models this account turned out not to have access to
 
 
-async def complete(system: str, user: str, max_tokens: int = 4096, temperature: float = 0.2) -> str:
-    """One model call, run in a thread so the event loop keeps serving."""
-    model = model_id()
+def _candidates(fast: bool) -> list[str]:
+    chain = [settings.CAD_FAST_MODEL_ID] if fast else []
+    chain += [settings.CAD_MODEL_ID, settings.BEDROCK_MODEL_ID]
+    seen, out = set(), []
+    for m in chain:
+        if m and m not in seen and m not in _unavailable:
+            seen.add(m)
+            out.append(m)
+    return out or [settings.BEDROCK_MODEL_ID]
+
+
+async def complete(system: str, user: str, max_tokens: int = 4096, temperature: float = 0.2,
+                   think: int = 0, fast: bool = False) -> str:
+    """One model call, run in a thread so the event loop keeps serving.
+    `fast` prefers the quicker model (planning, placement); `think` gives
+    Anthropic models that many tokens of extended thinking. A model this
+    account can't use is skipped from then on."""
+    models = _candidates(fast)
+    for k, model in enumerate(models):
+        try:
+            return await _invoke(model, system, user, max_tokens, temperature, think if "anthropic" in model else 0)
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            last = k == len(models) - 1
+            if last or code not in ("AccessDeniedException", "ValidationException", "ResourceNotFoundException"):
+                raise
+            logger.warning("[cad] model %s unavailable (%s); trying %s", model, code, models[k + 1])
+            _unavailable.add(model)
+    raise RuntimeError("No model available")
+
+
+async def _invoke(model: str, system: str, user: str, max_tokens: int, temperature: float, think: int) -> str:
     body: dict = {
         "messages": [{"role": "user", "content": user}],
         "system": system,
@@ -41,6 +70,10 @@ async def complete(system: str, user: str, max_tokens: int = 4096, temperature: 
     }
     if "anthropic" in model:
         body["anthropic_version"] = "bedrock-2023-05-31"
+        if think:
+            body["thinking"] = {"type": "enabled", "budget_tokens": think}
+            body["max_tokens"] = max_tokens + think
+            body["temperature"] = 1  # required with extended thinking
     response = await asyncio.to_thread(
         _bedrock().invoke_model,
         modelId=model,
@@ -53,7 +86,8 @@ async def complete(system: str, user: str, max_tokens: int = 4096, temperature: 
         text = data["choices"][0].get("message", {}).get("content", "") or ""
     elif "content" in data:  # Anthropic
         content = data["content"]
-        text = "".join(c.get("text", "") for c in content) if isinstance(content, list) else str(content)
+        text = ("".join(c.get("text", "") for c in content if c.get("type", "text") == "text")
+                if isinstance(content, list) else str(content))
     else:
         text = data.get("completion", "") or str(data)
     # Some models wrap their reasoning in tags; it is never part of the answer.
