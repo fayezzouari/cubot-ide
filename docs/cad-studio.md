@@ -131,6 +131,16 @@ Measured locally, under x86 emulation:
 | 4 parts | sequential | 0.8 s on 2 workers |
 | Rebuilding an existing version | full rerun | ~2 ms (cached) |
 
+## History
+
+| What | How |
+|---|---|
+| **Part versions** | Every change to a part (generation, prompt edit, review fix, parameters, code) is a new immutable version. Inspector → History lists them; any one can be made current again. |
+| **Undo / redo** | Assembly edits (move, rotate, colour, visibility, names, adding or removing copies) are undoable with ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y) or the toolbar buttons. Typing in a field or dragging the colour picker counts as one step. The stack is per session; it resets when the server replaces the assembly (generation, snapshot restore). |
+| **Snapshots** | The assembly plus every part's current version. Saved by hand (History tab → name → Save) and automatically before each generation, before review fixes and before a restore. Restoring brings back positions and part versions, and un-deletes parts it needs; the automatic "Before restoring …" snapshot makes a restore itself reversible. The last 50 are kept. |
+| **Trash** | Deleting a part only marks it deleted and remembers its copies. History → Deleted parts restores it with its copies where they were. Parts are removed permanently after 30 days. |
+| **Conversation** | The assistant conversation is saved per project (prompts, what was built, review findings, errors) and reloaded when the project opens. Messages from the old CAD chat are carried over once. |
+
 ## Exports
 
 | Format | For |
@@ -155,8 +165,14 @@ All routes are under `/api/cad` and require the project owner's token.
 | GET | `/{project}/parts/{part}/versions` | Version history |
 | POST | `/{project}/parts/{part}/revert` | Make an older version current |
 | POST | `/{project}/parts/{part}/duplicate` | Copy as a new part |
-| PATCH / DELETE | `/{project}/parts/{part}` | Rename or recolour / delete |
+| PATCH / DELETE | `/{project}/parts/{part}` | Rename or recolour / move to the trash |
 | PUT | `/{project}/assembly` | Save instances and name |
+| GET / POST | `/{project}/snapshots` | List / save a snapshot (`{label}`) |
+| POST | `/{project}/snapshots/{id}/restore` | Restore one (the current state is snapshotted first) |
+| DELETE | `/{project}/snapshots/{id}` | Delete a snapshot |
+| GET | `/{project}/trash` | Deleted parts |
+| POST | `/{project}/parts/{part}/restore` | Restore a deleted part with its copies |
+| GET / DELETE | `/{project}/messages` | The saved conversation / clear it |
 | POST | `/{project}/import` | Multipart upload → new part and instance |
 | POST | `/{project}/export` | Download the assembly in a format |
 | GET | `/files/{key}/{name}` | A built part's `mesh.json`, `part.step` or `part.stl` |

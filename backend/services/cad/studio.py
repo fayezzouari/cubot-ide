@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import re
+from datetime import timezone
 from typing import AsyncGenerator, Awaitable, Callable, Optional
 
 from core.config import settings
@@ -59,6 +60,15 @@ def _vec(v, default=(0.0, 0.0, 0.0)) -> list[float]:
 # ── Serialisation ─────────────────────────────────────────────────────────
 
 
+def _iso(dt) -> Optional[str]:
+    """ISO time in UTC with an explicit zone (Mongo returns naive UTC datetimes)."""
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 def version_view(v: dict, with_code: bool = True) -> dict:
     meta = v.get("meta") or {}
     view = {
@@ -72,7 +82,7 @@ def version_view(v: dict, with_code: bool = True) -> dict:
         "valid": meta.get("valid"),
         "solids": meta.get("solids"),
         "faces": meta.get("faces"),
-        "created_at": v["created_at"].isoformat() if v.get("created_at") else None,
+        "created_at": _iso(v.get("created_at")),
     }
     if with_code:
         view["code"] = v.get("code")
@@ -464,10 +474,14 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
         if missing:
             issues.append(f"Not built: {', '.join(missing)}")
         if not edits and not moves:
+            if issues:
+                await _say(emit, project_id, "assistant", "Review found:\n" + "\n".join(f"• {i}" for i in issues),
+                           {"kind": "review"})
             await emit({"type": "review", "round": round_no, "ok": not missing and bool(verdict.get("ok", True)),
                         "issues": issues, "fixed": 0})
             return
 
+        await repo.create_snapshot(project_id, "Before review fixes", auto=True)
         # Re-attach copies, but keep a move only if the measured checks don't get worse.
         _, before = _geometry_facts(built)
         saved = {pid: ([dict(p) for p in b["spec"]["placements"]], [list(i["rotation"]) for i in b["instances"]],
@@ -528,8 +542,11 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
             await _rest_on_ground(project_id, owner)
         await _sync_positions(project_id, built)
         await emit({"type": "state", "state": await state(project_id)})
-        await emit({"type": "review", "round": round_no, "ok": False, "issues": issues,
-                    "fixed": sum(results) + len(moves)})
+        fixed = sum(results) + len(moves)
+        await _say(emit, project_id, "assistant",
+                   f"Review fixed {fixed} issue{'s' if fixed != 1 else ''}:\n" + "\n".join(f"• {i}" for i in issues),
+                   {"kind": "review"})
+        await emit({"type": "review", "round": round_no, "ok": False, "issues": issues, "fixed": fixed})
 
 
 async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncGenerator[dict, None]:
@@ -540,6 +557,8 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
 
     async def run():
         try:
+            await _say(emit, project_id, "user", prompt, {"kind": "generate"})
+            await repo.create_snapshot(project_id, f"Before: {prompt[:60]}", auto=True)
             await emit({"type": "planning"})
             existing = []
             current = await state(project_id)
@@ -622,9 +641,21 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                 await emit({"type": "state", "state": await state(project_id)})
                 await review(project_id, owner, prompt, built, emit, settings.CAD_REVIEW_ROUNDS,
                              ground=not existing, plan_parts=parts)
+            names = [b["spec"]["name"] for b in built.values()]
+            failed = [p["name"] for p in parts if p["id"] not in built]
+            summary = (f"Added {len(names)} part{'s' if len(names) != 1 else ''} to {overall}: {', '.join(names)}."
+                       if names else "No parts were built.")
+            if failed:
+                summary += f" Couldn't build: {', '.join(failed)}."
+            await _say(emit, project_id, "assistant", summary,
+                       {"kind": "generate", "parts": [b["part"]["_id"] for b in built.values()]})
             await emit({"type": "complete", "state": await state(project_id)})
+        except asyncio.CancelledError:
+            await repo.add_message(project_id, "assistant", "Stopped.")
+            raise
         except Exception as e:
             logger.exception("[cad] generate failed")
+            await _say(emit, project_id, "error", str(e)[:2000])
             await emit({"type": "error", "message": str(e)})
         finally:
             await queue.put(None)
@@ -657,9 +688,15 @@ async def _current(project_id: str, part_id: str) -> tuple[dict, dict]:
 async def edit(project_id: str, part_id: str, instruction: str, face: Optional[dict]) -> AsyncGenerator[dict, None]:
     queue: asyncio.Queue = asyncio.Queue()
 
+    async def emit(event: dict):
+        await queue.put(event)
+
     async def run():
         try:
             part, version = await _current(project_id, part_id)
+            await _say(emit, project_id, "user", instruction,
+                       {"kind": "edit", "part": part_id, "part_name": part["name"],
+                        "face": (face or {}).get("type")})
             await queue.put({"type": "part_started", "part_id": part_id})
 
             async def retry(attempt: int, error: str):
@@ -680,9 +717,15 @@ async def edit(project_id: str, part_id: str, instruction: str, face: Optional[d
             if params:
                 key, meta = await build(code, params, version.get("assets") or {})
             new = await repo.add_version(part, code, params, version.get("assets") or {}, instruction, key, meta)
+            await _say(emit, project_id, "assistant", f"Updated {part['name']} (v{new['number']}).",
+                       {"kind": "edit", "part": part_id})
             await queue.put({"type": "part_done", "part_id": part_id, "part": part_view(part, new)})
+        except asyncio.CancelledError:
+            await repo.add_message(project_id, "assistant", "Stopped.")
+            raise
         except Exception as e:
             logger.warning("[cad] edit failed: %s", e)
+            await _say(emit, project_id, "error", str(e)[:2000])
             await queue.put({"type": "error", "message": str(e)[:2000]})
         finally:
             await queue.put(None)
@@ -767,8 +810,101 @@ async def duplicate(project_id: str, owner: Optional[str], part_id: str) -> dict
 
 
 async def delete(project_id: str, part_id: str) -> None:
+    """Move a part to the trash, remembering its copies in the assembly."""
+    assembly = await repo.get_assembly(project_id)
+    copies = [i for i in assembly.get("instances", []) if i["part_id"] == part_id]
     await repo.remove_part_instances(project_id, part_id)
-    await repo.delete_part(project_id, part_id)
+    await repo.trash_part(project_id, part_id, copies)
+
+
+async def trash(project_id: str) -> list[dict]:
+    parts = await repo.list_trash(project_id)
+    versions = await repo.get_versions([p["current_version"] for p in parts if p.get("current_version")])
+    return [
+        {**part_view(p, versions.get(p.get("current_version"))),
+         "deleted_at": _iso(p.get("deleted_at")),
+         "copies": len(p.get("deleted_instances") or [])}
+        for p in parts
+    ]
+
+
+async def restore_part(project_id: str, owner: Optional[str], part_id: str) -> dict:
+    """Bring a part back from the trash, with its copies where they were."""
+    trashed = await repo.get_part(project_id, part_id, include_deleted=True)
+    if not trashed or not trashed.get("deleted_at"):
+        raise StudioError("Part not found in the trash")
+    copies = trashed.get("deleted_instances") or []
+    part = await repo.untrash_part(project_id, part_id)
+    if copies:
+        await repo.add_instances(project_id, owner, copies)
+    version = await repo.get_version(part_id, part["current_version"]) if part.get("current_version") else None
+    return {"part": part_view(part, version), "instances": copies}
+
+
+# ── Snapshots ─────────────────────────────────────────────────────────────
+
+
+def snapshot_view(doc: dict) -> dict:
+    return {
+        "id": doc["_id"],
+        "label": doc["label"],
+        "auto": doc.get("auto", False),
+        "created_at": _iso(doc["created_at"]),
+        "copies": len(doc["assembly"].get("instances", [])),
+        "parts": len(doc.get("versions", {})),
+    }
+
+
+async def snapshots(project_id: str) -> list[dict]:
+    return [snapshot_view(d) for d in await repo.list_snapshots(project_id)]
+
+
+async def save_snapshot(project_id: str, label: str) -> dict:
+    doc = await repo.create_snapshot(project_id, label or "Snapshot", auto=False)
+    if not doc:
+        raise StudioError("Nothing to save: the assembly is empty")
+    return snapshot_view(doc)
+
+
+async def restore_snapshot(project_id: str, owner: Optional[str], snapshot_id: str) -> dict:
+    """Put the assembly and each part's version back as they were. The
+    current state is snapshotted first, so a restore can itself be undone."""
+    snap = await repo.get_snapshot(project_id, snapshot_id)
+    if not snap:
+        raise StudioError("Snapshot not found")
+    label = re.sub(r"^(Before restoring )+", "", snap["label"])
+    await repo.create_snapshot(project_id, f"Before restoring {label}", auto=True)
+    alive = set()
+    for part_id, version_id in (snap.get("versions") or {}).items():
+        part = await repo.get_part(project_id, part_id, include_deleted=True)
+        if not part:
+            continue  # permanently deleted since
+        if part.get("deleted_at"):
+            await repo.untrash_part(project_id, part_id)
+        if version_id and await repo.get_version(part_id, version_id):
+            await repo.update_part(part_id, {"current_version": version_id})
+        alive.add(part_id)
+    instances = [i for i in snap["assembly"].get("instances", []) if i["part_id"] in alive]
+    await repo.save_assembly(project_id, owner, snap["assembly"].get("name"), instances)
+    return await state(project_id)
+
+
+# ── Assistant conversation ────────────────────────────────────────────────
+
+
+def message_view(doc: dict) -> dict:
+    return {"id": doc["_id"], "role": doc["role"], "text": doc["text"], "data": doc.get("data") or {},
+            "created_at": _iso(doc["created_at"])}
+
+
+async def messages(project_id: str) -> list[dict]:
+    return [message_view(d) for d in await repo.list_messages(project_id)]
+
+
+async def _say(emit: Emit, project_id: str, role: str, text: str, data: Optional[dict] = None) -> None:
+    """Save a conversation message and send it to the browser."""
+    doc = await repo.add_message(project_id, role, text, data)
+    await emit({"type": "message", "message": message_view(doc)})
 
 
 # ── Import ────────────────────────────────────────────────────────────────
@@ -850,9 +986,17 @@ async def export(project_id: str, fmt: str, instance_ids: Optional[list[str]] = 
 async def migrate_legacy(project_id: str, owner: Optional[str]) -> None:
     """Bring the model from the old single-model CAD chat into the studio,
     once, the first time the project is opened here."""
+    legacy = await repo.legacy_session(project_id)
+    if not legacy:
+        return
+    if legacy.get("messages") and not legacy.get("studio_migrated"):
+        for m in legacy["messages"]:
+            role = m.get("role") if m.get("role") in ("user", "assistant") else "assistant"
+            await repo.add_message(project_id, role, str(m.get("content") or ""), {"kind": "legacy"})
+        await repo.mark_legacy_migrated(project_id)
     if await repo.list_parts(project_id):
         return
-    code = await repo.legacy_session_code(project_id)
+    code = legacy.get("current_code")
     if not code or "from part_" in code:  # the old multi-file plans can't run standalone
         return
     try:

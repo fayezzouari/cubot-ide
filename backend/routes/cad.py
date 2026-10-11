@@ -18,6 +18,7 @@ from models.cad import (
     ParamsRequest,
     PartUpdate,
     RevertRequest,
+    SnapshotRequest,
 )
 from services.cad import repository as repo, storage, studio
 from services.cad.studio import StudioError
@@ -175,3 +176,64 @@ async def export(project_id: str, body: ExportRequest, user: CurrentUser):
     except StudioError as e:
         _fail(e, 422)
     return FileResponse(path, media_type=media, filename=filename)
+
+
+@router.post("/{project_id}/parts/{part_id}/restore")
+async def restore_part(project_id: str, part_id: str, user: CurrentUser):
+    """Bring a deleted part back from the trash, with its copies."""
+    await _project(project_id, user)
+    try:
+        return await studio.restore_part(project_id, user.get("sub"), part_id)
+    except StudioError as e:
+        _fail(e)
+
+
+@router.get("/{project_id}/trash")
+async def list_trash(project_id: str, user: CurrentUser):
+    await _project(project_id, user)
+    return await studio.trash(project_id)
+
+
+@router.get("/{project_id}/snapshots")
+async def list_snapshots(project_id: str, user: CurrentUser):
+    await _project(project_id, user)
+    return await studio.snapshots(project_id)
+
+
+@router.post("/{project_id}/snapshots")
+async def save_snapshot(project_id: str, body: SnapshotRequest, user: CurrentUser):
+    await _project(project_id, user)
+    try:
+        return await studio.save_snapshot(project_id, body.label)
+    except StudioError as e:
+        _fail(e, 422)
+
+
+@router.post("/{project_id}/snapshots/{snapshot_id}/restore")
+async def restore_snapshot(project_id: str, snapshot_id: str, user: CurrentUser):
+    """Restore the assembly and part versions; the current state is
+    snapshotted first."""
+    await _project(project_id, user)
+    try:
+        return await studio.restore_snapshot(project_id, user.get("sub"), snapshot_id)
+    except StudioError as e:
+        _fail(e)
+
+
+@router.delete("/{project_id}/snapshots/{snapshot_id}", status_code=204)
+async def delete_snapshot(project_id: str, snapshot_id: str, user: CurrentUser):
+    await _project(project_id, user)
+    await repo.delete_snapshot(project_id, snapshot_id)
+
+
+@router.get("/{project_id}/messages")
+async def list_messages(project_id: str, user: CurrentUser):
+    """The assistant conversation for this project."""
+    await _project(project_id, user)
+    return await studio.messages(project_id)
+
+
+@router.delete("/{project_id}/messages", status_code=204)
+async def clear_messages(project_id: str, user: CurrentUser):
+    await _project(project_id, user)
+    await repo.clear_messages(project_id)

@@ -92,8 +92,31 @@ export type CadEvent =
   | { type: 'state'; state: CadState }
   | { type: 'reviewing'; round: number }
   | { type: 'review'; round: number; ok: boolean; issues: string[]; fixed: number; note?: string }
+  | { type: 'message'; message: CadMessage }
   | { type: 'complete'; state: CadState }
   | { type: 'error'; message: string };
+
+export interface CadSnapshot {
+  id: string;
+  label: string;
+  auto: boolean;
+  created_at: string;
+  copies: number;
+  parts: number;
+}
+
+export interface TrashedPart extends CadPart {
+  deleted_at: string | null;
+  copies: number;
+}
+
+export interface CadMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'error';
+  text: string;
+  data: Record<string, unknown>;
+  created_at: string;
+}
 
 export type ExportFormat = 'step' | 'stl' | '3mf' | 'glb' | 'stl-zip' | 'urdf';
 
@@ -207,6 +230,26 @@ export const cadApi = {
     const name = /filename="?([^";]+)"?/.exec(disposition)?.[1] || `assembly.${format}`;
     return { blob: await res.blob(), name };
   },
+
+  messages: (projectId: string) => apiClient.get<CadMessage[]>(`/cad/${projectId}/messages`),
+
+  clearMessages: (projectId: string) => apiClient.delete<void>(`/cad/${projectId}/messages`),
+
+  snapshots: (projectId: string) => apiClient.get<CadSnapshot[]>(`/cad/${projectId}/snapshots`),
+
+  saveSnapshot: (projectId: string, label: string) =>
+    apiClient.post<CadSnapshot>(`/cad/${projectId}/snapshots`, { label }),
+
+  restoreSnapshot: (projectId: string, snapshotId: string) =>
+    apiClient.post<CadState>(`/cad/${projectId}/snapshots/${snapshotId}/restore`),
+
+  deleteSnapshot: (projectId: string, snapshotId: string) =>
+    apiClient.delete<void>(`/cad/${projectId}/snapshots/${snapshotId}`),
+
+  trash: (projectId: string) => apiClient.get<TrashedPart[]>(`/cad/${projectId}/trash`),
+
+  restorePart: (projectId: string, partId: string) =>
+    apiClient.post<{ part: CadPart; instances: CadInstance[] }>(`/cad/${projectId}/parts/${partId}/restore`),
 
   mesh: (key: string): Promise<PartMesh> => {
     let cached = meshCache.get(key);

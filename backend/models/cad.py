@@ -60,3 +60,7 @@ class AssemblyUpdate(BaseModel):
 class ExportRequest(BaseModel):
     format: ExportFormat
     instance_ids: Optional[list[str]] = None  # default: every visible instance
+
+
+class SnapshotRequest(BaseModel):
+    label: str = Field(default="Snapshot", max_length=120)

@@ -12,13 +12,30 @@ import {
   Magnet,
   Maximize,
   Move3d,
+  Redo2,
   Rotate3d,
+  Undo2,
   Upload,
 } from 'lucide-react';
-import { cadApi, type CadEvent, type CadInstance, type CadPart, type CadState, type CadVersion, type ExportFormat, type FaceInfo, type Vec3 } from '@/lib/api/cad';
+import {
+  cadApi,
+  type CadAssembly,
+  type CadEvent,
+  type CadInstance,
+  type CadMessage,
+  type CadPart,
+  type CadSnapshot,
+  type CadState,
+  type CadVersion,
+  type ExportFormat,
+  type FaceInfo,
+  type TrashedPart,
+  type Vec3,
+} from '@/lib/api/cad';
 import AssistantPanel, { type LogEntry, type PlanRow } from '@/components/cad/assistant-panel';
 import PartsPanel from '@/components/cad/parts-panel';
 import InspectorPanel from '@/components/cad/inspector-panel';
+import HistoryPanel from '@/components/cad/history-panel';
 import type { TransformMode, ViewportHandle } from '@/components/cad/studio-viewport';
 
 const StudioViewport = dynamic(() => import('@/components/cad/studio-viewport'), { ssr: false });
@@ -35,6 +52,11 @@ const EXPORTS: { format: ExportFormat; label: string; hint: string }[] = [
 ];
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+const UNDO_LIMIT = 100;
+const COALESCE_MS = 800; // typing in a field is one undo step
+
+const toEntry = (m: CadMessage): LogEntry => ({ id: m.id, role: m.role, text: m.text });
 
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -57,7 +79,10 @@ export default function CadPageContent() {
   const [face, setFace] = useState<FaceInfo | null>(null);
   const [mode, setMode] = useState<TransformMode>('translate');
   const [snap, setSnap] = useState(true);
-  const [tab, setTab] = useState<'assistant' | 'parts'>('assistant');
+  const [tab, setTab] = useState<'assistant' | 'parts' | 'history'>('assistant');
+  const [snapshots, setSnapshots] = useState<CadSnapshot[] | null>(null);
+  const [trash, setTrash] = useState<TrashedPart[] | null>(null);
+  const [undoDepth, setUndoDepth] = useState({ past: 0, future: 0 });
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<PlanRow[]>([]);
@@ -73,6 +98,22 @@ export default function CadPageContent() {
   const abort = useRef<AbortController | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Undo/redo of assembly edits (placement, colour, visibility, names, copies).
+  const stateRef = useRef<CadState | null>(null);
+  const past = useRef<CadAssembly[]>([]);
+  const future = useRef<CadAssembly[]>([]);
+  const lastEdit = useRef<{ key: string; at: number } | null>(null);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const resetUndo = useCallback(() => {
+    past.current = [];
+    future.current = [];
+    lastEdit.current = null;
+    setUndoDepth({ past: 0, future: 0 });
+  }, []);
 
   const say = useCallback((role: LogEntry['role'], text: string) => {
     setLog((l) => [...l, { id: uid(), role, text }]);
@@ -90,9 +131,23 @@ export default function CadPageContent() {
     }
     cadApi
       .state(projectId)
-      .then(setState)
+      .then((s) => {
+        setState(s);
+        resetUndo();
+        return cadApi.messages(projectId).then((m) => setLog(m.map(toEntry)));
+      })
       .catch((e) => setLoadError(e?.message || 'Could not load the project'));
+  }, [projectId, resetUndo]);
+
+  const refreshHistory = useCallback(() => {
+    if (!projectId) return;
+    cadApi.snapshots(projectId).then(setSnapshots).catch(() => setSnapshots([]));
+    cadApi.trash(projectId).then(setTrash).catch(() => setTrash([]));
   }, [projectId]);
+
+  useEffect(() => {
+    if (tab === 'history') refreshHistory();
+  }, [tab, refreshHistory]);
 
   const parts = useMemo(() => state?.parts ?? [], [state]);
   const instances = useMemo(() => state?.assembly.instances ?? [], [state]);
@@ -117,21 +172,52 @@ export default function CadPageContent() {
     [projectId, flash],
   );
 
+  /** Change the assembly as one undoable step. Edits with the same
+   *  `coalesce` key in quick succession (typing) merge into one step. */
   const updateAssembly = useCallback(
-    (fn: (instances: CadInstance[]) => CadInstance[], name?: string) => {
-      setState((s) => {
-        if (!s) return s;
-        const next = { ...s, assembly: { name: name ?? s.assembly.name, instances: fn(s.assembly.instances) } };
-        scheduleSave(next);
-        return next;
-      });
+    (fn: (instances: CadInstance[]) => CadInstance[], name?: string, coalesce?: string) => {
+      const s = stateRef.current;
+      if (!s) return;
+      const next = { ...s, assembly: { name: name ?? s.assembly.name, instances: fn(s.assembly.instances) } };
+      const now = Date.now();
+      const merge = coalesce && lastEdit.current?.key === coalesce && now - lastEdit.current.at < COALESCE_MS;
+      if (!merge) {
+        past.current = [...past.current, s.assembly].slice(-UNDO_LIMIT);
+      }
+      future.current = [];
+      lastEdit.current = coalesce ? { key: coalesce, at: now } : null;
+      setUndoDepth({ past: past.current.length, future: 0 });
+      stateRef.current = next;
+      setState(next);
+      scheduleSave(next);
     },
     [scheduleSave],
   );
 
   const patchInstance = useCallback(
-    (id: string, patch: Partial<CadInstance>) => updateAssembly((list) => list.map((i) => (i.id === id ? { ...i, ...patch } : i))),
+    (id: string, patch: Partial<CadInstance>, coalesce?: string) =>
+      updateAssembly((list) => list.map((i) => (i.id === id ? { ...i, ...patch } : i)), undefined, coalesce),
     [updateAssembly],
+  );
+
+  const stepHistory = useCallback(
+    (direction: 'undo' | 'redo') => {
+      const s = stateRef.current;
+      const from = direction === 'undo' ? past.current : future.current;
+      const to = direction === 'undo' ? future.current : past.current;
+      if (!s || !from.length) return;
+      const target = from[from.length - 1];
+      from.splice(from.length - 1, 1);
+      to.push(s.assembly);
+      lastEdit.current = null;
+      const known = new Set(s.parts.map((p) => p.id));
+      const next = { ...s, assembly: { ...target, instances: target.instances.filter((i) => known.has(i.part_id)) } };
+      setUndoDepth({ past: past.current.length, future: future.current.length });
+      stateRef.current = next;
+      setState(next);
+      scheduleSave(next);
+    },
+    [scheduleSave],
   );
 
   const replacePart = useCallback((part: CadPart) => {
@@ -192,6 +278,10 @@ export default function CadPageContent() {
         case 'state':
         case 'complete':
           setState(e.state);
+          resetUndo();
+          break;
+        case 'message':
+          setLog((l) => (l.some((x) => x.id === e.message.id) ? l : [...l, toEntry(e.message)]));
           break;
         case 'reviewing':
           setPlan((rows) => [
@@ -211,14 +301,10 @@ export default function CadPageContent() {
                 : r,
             ),
           );
-          if (e.issues.length) say('assistant', `Review found:\n${e.issues.map((i) => `• ${i}`).join('\n')}`);
-          break;
-        case 'error':
-          say('error', e.message);
           break;
       }
     },
-    [replacePart, say, selectedPart?.name],
+    [replacePart, resetUndo, selectedPart?.name],
   );
 
   const send = useCallback(async () => {
@@ -228,25 +314,19 @@ export default function CadPageContent() {
     setBusy(true);
     setPlan([]);
     setInterfaces(null);
-    say('user', face && selectedPart ? `${text}  ·  (${face.type.toLowerCase()} face)` : text);
     const controller = new AbortController();
     abort.current = controller;
-    let made = 0;
-    const handle = (e: CadEvent) => {
-      if (e.type === 'part_done') made++;
-      onEvent(e);
-    };
+    // The server saves and sends the conversation messages (user prompt,
+    // result, review findings, errors) as `message` events.
     try {
       if (selectedPart) {
-        const target = selectedPart;
         const { start: _s, count: _c, ...faceRef } = face ?? ({} as FaceInfo);
-        await cadApi.edit(projectId, target.id, text, face ? faceRef : null, handle, controller.signal);
-        if (made) say('assistant', `Updated ${target.name}.`);
+        await cadApi.edit(projectId, selectedPart.id, text, face ? faceRef : null, onEvent, controller.signal);
       } else {
-        await cadApi.generate(projectId, text, handle, controller.signal);
-        say('assistant', made > 0 ? `Added ${made} part${made > 1 ? 's' : ''} to the assembly.` : 'No parts were built.');
+        await cadApi.generate(projectId, text, onEvent, controller.signal);
         setTimeout(() => viewport.current?.fit(), 300);
       }
+      if (tab === 'history') refreshHistory();
     } catch (e: any) {
       if (e?.name !== 'AbortError') say('error', e?.message || 'Request failed');
       else say('assistant', 'Stopped.');
@@ -254,7 +334,7 @@ export default function CadPageContent() {
       setBusy(false);
       abort.current = null;
     }
-  }, [input, busy, projectId, face, selectedPart, onEvent, say]);
+  }, [input, busy, projectId, face, selectedPart, onEvent, say, tab, refreshHistory]);
 
   // ── Part actions ────────────────────────────────────────────────────────
 
@@ -319,7 +399,19 @@ export default function CadPageContent() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
-      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return;
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return; // keep the fields' own undo
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        stepHistory(e.shiftKey ? 'redo' : 'undo');
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        stepHistory('redo');
+        return;
+      }
+      if (mod) return;
       if (e.key === 'Escape') {
         if (face) setFace(null);
         else setSelectedId(null);
@@ -333,7 +425,7 @@ export default function CadPageContent() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [face, selectedId, updateAssembly]);
+  }, [face, selectedId, updateAssembly, stepHistory]);
 
   if (loadError) {
     return (
@@ -358,7 +450,7 @@ export default function CadPageContent() {
         <span className="text-white/15">/</span>
         <input
           value={state?.assembly.name ?? ''}
-          onChange={(e) => updateAssembly((l) => l, e.target.value)}
+          onChange={(e) => updateAssembly((l) => l, e.target.value, 'assembly-name')}
           className="bg-transparent text-[12.5px] text-white/80 focus:outline-none border-b border-transparent focus:border-white/20 w-56"
           placeholder="Assembly"
         />
@@ -418,13 +510,13 @@ export default function CadPageContent() {
       <div className="flex-1 min-h-0 flex">
         <aside className="w-[300px] shrink-0 border-r border-white/[0.06] flex flex-col min-h-0 bg-[#070707]">
           <div className="flex border-b border-white/[0.06] text-[11px]">
-            {(['assistant', 'parts'] as const).map((t) => (
+            {(['assistant', 'parts', 'history'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
                 className={`flex-1 py-2 capitalize ${tab === t ? 'text-white border-b border-white' : 'text-white/40 hover:text-white/70'}`}
               >
-                {t === 'parts' ? `Parts (${parts.length})` : 'Assistant'}
+                {t === 'parts' ? `Parts (${parts.length})` : t === 'history' ? 'History' : 'Assistant'}
               </button>
             ))}
           </div>
@@ -442,6 +534,54 @@ export default function CadPageContent() {
                 onSend={send}
                 onStop={() => abort.current?.abort()}
                 onClearFace={() => setFace(null)}
+              />
+            ) : tab === 'history' ? (
+              <HistoryPanel
+                snapshots={snapshots}
+                trash={trash}
+                busy={busy || !!working}
+                onSave={async (label) => {
+                  try {
+                    const snap = await cadApi.saveSnapshot(projectId, label);
+                    setSnapshots((list) => [snap, ...(list ?? [])]);
+                  } catch (e: any) {
+                    flash(e?.message || 'Could not save');
+                  }
+                }}
+                onRestore={(snap) =>
+                  withWork('Restoring', async () => {
+                    if (saveTimer.current) {
+                      clearTimeout(saveTimer.current);
+                      if (stateRef.current) await cadApi.saveAssembly(projectId, stateRef.current.assembly);
+                    }
+                    setState(await cadApi.restoreSnapshot(projectId, snap.id));
+                    resetUndo();
+                    setSelectedId(null);
+                    refreshHistory();
+                    flash(`Restored “${snap.label}”. The previous state was saved as a snapshot.`);
+                  })
+                }
+                onDelete={(snap) =>
+                  withWork('Deleting snapshot', async () => {
+                    await cadApi.deleteSnapshot(projectId, snap.id);
+                    setSnapshots((list) => (list ?? []).filter((x) => x.id !== snap.id));
+                  })
+                }
+                onRestorePart={(p) =>
+                  withWork('Restoring part', async () => {
+                    const { part, instances: copies } = await cadApi.restorePart(projectId, p.id);
+                    setState((s) =>
+                      s
+                        ? {
+                            parts: [...s.parts, part],
+                            assembly: { ...s.assembly, instances: [...s.assembly.instances, ...copies] },
+                          }
+                        : s,
+                    );
+                    resetUndo();
+                    refreshHistory();
+                  })
+                }
               />
             ) : (
               <PartsPanel
@@ -472,6 +612,8 @@ export default function CadPageContent() {
                         : s,
                     );
                     if (selected?.part_id === p.id) setSelectedId(null);
+                    resetUndo();
+                    flash(`Deleted ${p.name}. Restore it from History for 30 days.`);
                   })
                 }
                 onToggleVisible={(i) => patchInstance(i.id, { visible: !i.visible })}
@@ -533,6 +675,23 @@ export default function CadPageContent() {
             <button onClick={() => viewport.current?.fit()} title="Frame all (F)" className="p-1.5 rounded text-white/45 hover:text-white">
               <Maximize size={14} />
             </button>
+            <span className="w-px bg-white/10 mx-0.5" />
+            <button
+              onClick={() => stepHistory('undo')}
+              disabled={!undoDepth.past}
+              title="Undo (⌘Z)"
+              className="p-1.5 rounded text-white/45 hover:text-white disabled:opacity-25"
+            >
+              <Undo2 size={14} />
+            </button>
+            <button
+              onClick={() => stepHistory('redo')}
+              disabled={!undoDepth.future}
+              title="Redo (⇧⌘Z)"
+              className="p-1.5 rounded text-white/45 hover:text-white disabled:opacity-25"
+            >
+              <Redo2 size={14} />
+            </button>
           </div>
 
           {state && instances.length === 0 && !busy && (
@@ -559,7 +718,10 @@ export default function CadPageContent() {
               face={face}
               busy={busy || !!working}
               versions={versions}
-              onInstance={(patch) => patchInstance(selected.id, patch)}
+              onInstance={(patch) =>
+                // Typing a name or dragging the colour picker is one undo step.
+                patchInstance(selected.id, patch, 'name' in patch || 'color' in patch ? `${Object.keys(patch)[0]}:${selected.id}` : undefined)
+              }
               onDropToGround={() => {
                 const dz = viewport.current?.dropToGround(selected.id);
                 if (dz != null && Math.abs(dz) > 1e-6) {
