@@ -2,6 +2,8 @@
 import json
 from typing import Optional
 
+from services.cad import fasteners
+
 CODE_SYSTEM = (
     "You are an expert mechanical designer who writes clean, robust CadQuery code. "
     "You answer with a single python code block."
@@ -19,6 +21,13 @@ Rules:
   `P(name, default, min=None, max=None)`, e.g. `width = P("width", 40.0, min=5, max=500)`.
   Use snake_case names, floats for lengths, ints for counts. Declare them at the top.
 - Assign the final solid to a module-level variable named `result` (Workplane or Shape).
+- Declare every connection point with `PORT(name, origin, axis, ref=None)`, also injected:
+  `origin` is a point ON the contact surface (e.g. the centre of a hole on the face a screw head
+  sits on, the tip of a shaft, the centre of a mounting face), `axis` is the outward normal of
+  that contact face, pointing away from the part's material (out of a top face: (0,0,1); out of
+  a bottom face: (0,0,-1); out of a shaft tip: along the shaft), and `ref` an optional direction
+  perpendicular to it that fixes the rotation (needed for non-round interfaces like a motor's
+  flat sides). Compute origins from the same parameters as the geometry.
 - One solid if possible. Keep it under ~80 lines. No file I/O, no exports, no prints,
   no `if __name__ == "__main__"`, no imports other than cadquery/math.
 - Prefer robust operations: box/cylinder/extrude/revolve/loft, `.hole()`, `.cboreHole()`,
@@ -31,10 +40,11 @@ PLANNER_SYSTEM = """You are the lead engineer planning a 3D design for a paramet
 part engineers will each model ONE part from your plan, in parallel and without talking to each
 other, so your plan must be complete and precise enough for the parts to fit together.
 
-Split the request into the distinct physical parts that would be manufactured separately
-(1 part for a simple object, up to 8 for an assembly). Each part is modelled on its own
-(millimetres, Z up, centred on X/Y, resting on Z = 0). You do NOT compute coordinates: you say
-how each part attaches to another, and the system places it exactly from the real geometry.
+Split the request into the distinct physical parts that would be manufactured or bought separately
+(1 part for a simple object, up to 8 custom parts for an assembly) PLUS the standard fasteners that
+hold them together. Each custom part is modelled on its own (millimetres, Z up, centred on X/Y,
+resting on Z = 0). You do NOT compute coordinates: parts are joined by MATES between named PORTS,
+and the system places them exactly from the real geometry.
 
 Answer ONLY with JSON:
 {
@@ -52,51 +62,66 @@ Answer ONLY with JSON:
       "envelope": [x, y, z],
       "features": ["each feature with its dimensions in mm, naming the interface it uses", "..."],
       "interfaces": ["names from the interfaces table this part must use"],
-      "checks": ["verifiable acceptance checks, e.g. 'bounding box about 120 x 80 x 3 mm',
-                 '4 through holes of 3.2 mm on a 9 mm pitch'"],
+      "ports": [{"name": "snake_case", "description": "where exactly it is and which way its axis points"}],
+      "checks": ["verifiable acceptance checks, e.g. '4 through holes of 3.4 mm on a 20 mm pitch'"],
       "color": "#rrggbb",
       "copies": [
-        {"rotation": [rx, ry, rz], "attach": {"to": "ground", "side": "top", "offset": [0, 0]}}
+        {"mate": {"port": "bottom", "to": "ground", "to_port": "", "gap": 0, "angle": 0}}
       ]
+    },
+    {
+      "id": "m3x10_screw",
+      "fastener": {"kind": "screw", "size": "M3", "length": 10},
+      "copies": [{"mate": {"port": "seat", "to": "plate", "to_port": "motor_hole_1"}}]
     }
   ]
 }
 
+PORTS: a port is a frame the part engineer declares: an origin ON the contact surface and an
+axis = the outward normal of that contact face (pointing away from the part's material).
+Describe each port precisely ("centre of hole 1 on the plate's TOP face, axis +Z"), and give every
+part the ports its mates need, including one per fastener hole on each face a head, washer or nut
+sits on.
+
+MATES: each copy has exactly one mate joining one of ITS ports to a port of a part listed BEFORE it
+("to": "<id>" or "<id>#<copy number>"), or to "ground" (a floor at z = 0 facing up; to_port empty).
+The system turns the part so the two port axes face each other, puts the origins together, then
+moves it "gap" mm along the target's axis (negative pushes it in, e.g. a wheel slid 8 mm onto a
+shaft: gap -8) and turns it "angle" degrees about that axis. So: a part resting ON a face mates
+its bottom port (axis down) to that face's port (axis up); a part hanging UNDER a plate mates its
+top port (axis up) to a port on the plate's underside (axis down); a wheel mates its hub port to
+the motor's shaft-tip port. Everything is joined to something; one root part mates to the ground.
+
+FASTENERS (always include them): every joint that is bolted in reality gets standard hardware as
+separate parts with a "fastener" spec instead of a description. Kinds: screw (socket head,
+ISO 4762; needs "length"), nut (ISO 4032), washer (ISO 7089), standoff (female-female hex; needs
+"length"). Sizes: M2, M2.5, M3, M4, M5, M6. Their ports:
+  screw: "seat" = underside of the head, axis along the shank; "tip" = shank end.
+  nut and washer: "seat" = the face that touches the part (axis away from the nut), "top" = other face.
+  standoff: "bottom" and "top" faces.
+A screw from above mates "seat" to the hole's TOP-face port; its nut (if any) mates "seat" to the
+same hole's port on the face where the screw comes out. Choose screw lengths that pass through
+all clamped thicknesses plus the nut. Clearance holes: __CLEARANCE__.
+One fastener part per size/length, with one copy per hole. Up to 8 fastener kinds.
+
 Interfaces: every dimension two parts must agree on (shaft and bore diameters, hole patterns and
-pitches, thicknesses that set heights, slot widths, clearances) goes in "interfaces" once, with
-a value, and is referenced by name from each part that uses it. Part engineers only see their
-own part plus this table, so nothing shared may live only in one part's text.
+pitches, thicknesses, clearance holes, port positions) goes in "interfaces" once, with a value,
+and is referenced by name from each part that uses it. Part engineers only see their own part
+plus this table.
 
-Granularity: features are concrete and dimensioned ("2 x M3 clearance holes, 3.2 mm, 18 mm
-apart along X, 6 mm from the rear edge"), never vague ("some mounting holes"). The envelope is
-the expected bounding size of the part as modelled (before rotation).
-
-Attaching (one entry in "copies" per physical copy; identical parts are ONE part with several copies):
-- "rotation": degrees, Euler XYZ, applied to the part as modelled before attaching.
-  [90, 0, 0] lays a part modelled along Z onto its side with its axis along Y (a wheel on a
-  left/right axle); [0, 90, 0] puts the axis along X; [180, 0, 0] turns it upside down.
-- "attach.to": "ground", or the id of a part listed BEFORE this one ("motor_mount#2" for its 2nd copy).
-- "attach.side": which face of the target the part touches:
-  "top" (+Z), "bottom" (-Z), "left" (-X), "right" (+X), "front" (-Y), "back" (+Y).
-  The part is placed against that face, outside the target, touching it.
-- "attach.offset": [a, b] mm from the centre of that face, along the face:
-  top/bottom → [x, y]; left/right → [y, z]; front/back → [x, z].
-- "attach.gap": optional mm between the faces (negative sinks the part in, e.g. a shaft into a hole).
-- With "to": "ground", the part rests on z = 0 and offset is its [x, y].
-
-Example: a chassis plate on the ground; motor mounts under the plate near its rear corners
-(to plate, side bottom, offsets [-35, ±25]); wheels on the outer sides of the mounts
-(to motor_mount#1, side front, rotation [90,0,0]; to motor_mount#2, side back, rotation [-90,0,0]);
-a caster under the plate at the front (to plate, side bottom, offset [45, 0]).
-The system then lifts the whole assembly so its lowest point touches the ground.
+Granularity: features are concrete and dimensioned ("2 x M3 clearance holes, 3.4 mm, 18 mm apart
+along X, 6 mm from the rear edge"), never vague. The envelope is the expected bounding size of the
+part as modelled.
 
 Rules:
-- Use realistic dimensions and standard parts' real sizes (N20 motor, M3 screws, 608 bearing...).
-- List parts so that every part comes after the part it attaches to.
-- Size the parts so the assembly stands level: everything that touches the floor (wheels, casters,
-  feet) must reach the same height, e.g. a caster's height below the plate equals the wheel
-  radius plus the axle's distance below the plate.
-- Distinct, muted engineering colours."""
+- Use realistic dimensions and standard parts' real sizes (N20 motor, ball casters, 608 bearing...).
+  Include bought parts that other parts connect to (a motor between its mount and its wheel, a
+  caster ball in its holder) as parts too, so every connection is physical.
+- Parts must touch only where they mate, never intersect.
+- Size the parts so the assembly stands level: everything that touches the floor reaches the same
+  height.
+- List parts so that every part comes after the part it mates to.
+- Distinct, muted engineering colours for custom parts.""".replace("__CLEARANCE__", fasteners.clearance_table())
 
 
 def planner_user(prompt: str, existing: list[dict]) -> str:
@@ -113,31 +138,36 @@ def planner_user(prompt: str, existing: list[dict]) -> str:
 
 
 REVIEW_SYSTEM = """You are a senior mechanical designer reviewing an assembly that was just generated
-from a request. You get the request, every part (description, size, parameters), how each copy is
-attached, the measured world bounding boxes, problems found automatically, and usually a render
-with four views: top-left isometric (from front-right, above), top-right front (looking along +Y),
-bottom-left right side (looking along -X), bottom-right top view (+Y up). Z is up; the ground is z = 0.
+from a request. You get the request, every part (description, size, parameters, ports and how each
+copy is mated), the measured world bounding boxes, the results of EXACT geometry checks (collisions
+from real solid intersections, mates whose parts don't touch, floating parts), what earlier review
+rounds did, and usually a render with four views: top-left isometric (from front-right, above),
+top-right front (looking along +Y), bottom-left right side (looking along -X), bottom-right top view
+(+Y up). Z is up; the ground is z = 0.
 
-Judge it as a person would: does it fulfil the request, do parts that should connect actually
-connect, is anything floating, sunk into another part, upside down, on the wrong side, the wrong
-size for its neighbours, or missing an obvious feature (holes, shaft, mounting)?
+Judge it as a person would: does it do what was asked, is every part connected to what it should be
+(wheel on its shaft, screws through their holes with nuts), is anything upside down, on the wrong
+side, the wrong size for its neighbours, or missing (fasteners, holes for them, a caster's ball)?
+Every exact-check failure is a real defect and must be fixed before you answer ok.
 
 Fix with the smallest change. Two kinds of fix:
-- "attachments": re-attach a copy (same schema as planning: rotation, attach {to, side, offset, gap};
-  sides top/bottom/left/right/front/back, offsets along that face from its centre). Use this for
-  anything about position or orientation.
-- "edits": change a part's design with a precise instruction (dimensions in mm), e.g. make the
-  caster holder 12 mm taller so the robot stands level. Use this only for shape or size problems.
+- "placements": re-mate a copy, same schema as planning:
+  {"part": "<id>", "copy": 1, "mate": {"port": "...", "to": "<id or id#n or ground>", "to_port": "...",
+   "gap": 0, "angle": 0}}. Use this for position and orientation problems; you can only use ports
+  the parts already have.
+- "edits": change a part's design with a precise instruction (dimensions in mm), e.g. "move port
+  hole_2 to the top face at (20, 15, 3)", "add a 3.4 mm through hole at ... with ports on both
+  faces", "make the caster holder 12 mm taller". Use this for shape, size, missing holes and wrong
+  or missing ports. Standard fasteners can't be edited; re-mate them instead.
 
 Answer ONLY with JSON:
 {
   "ok": true or false,
   "issues": ["short description of each real problem"],
-  "attachments": [{"part": "<id>", "copy": 1, "rotation": [rx, ry, rz],
-                   "attach": {"to": "<id or id#n or ground>", "side": "bottom", "offset": [0, 0], "gap": 0}}],
+  "placements": [...],
   "edits": [{"part": "<id>", "instruction": "..."}]
 }
-If it is good enough, answer {"ok": true, "issues": [], "attachments": [], "edits": []}.
+If it meets the request and the exact checks pass, answer {"ok": true, "issues": [], "placements": [], "edits": []}.
 Don't invent problems; don't restyle parts that are fine."""
 
 
@@ -146,10 +176,11 @@ def review_user(request: str, parts: list[dict], facts: str, problems: list[str]
     listing = "\n".join(
         f"- {p['id']}: {p['name']} (size {p['size']} mm). {p['description']}\n"
         f"  parameters: {json.dumps(p['params'])}\n"
+        f"  ports: {json.dumps(p.get('ports') or {})}\n"
         f"  copies: {json.dumps(p['copies'])}"
         for p in parts
     )
-    found = "\n".join(f"- {p}" for p in problems) or "- none"
+    found = "\n".join(f"- {p}" for p in problems) or "- all pass"
     image = "The render is attached.\n" if has_image else "No render is available.\n"
     earlier = ""
     if history:
@@ -164,7 +195,7 @@ def review_user(request: str, parts: list[dict], facts: str, problems: list[str]
         )
     return (
         f"Request: {request}\n\nParts:\n{listing}\n\n"
-        f"World bounding boxes:\n{facts}\n\nAutomatic checks:\n{found}\n\n{earlier}{image}"
+        f"World bounding boxes:\n{facts}\n\nExact geometry checks (must all pass):\n{found}\n\n{earlier}{image}"
         "Review the assembly. If it now meets the request, answer ok: true with no fixes."
     )
 
@@ -178,6 +209,8 @@ Tools:
   validity, solids, faces, parameters) or the error.
 - view_part(): a render of your last successful build: isometric, front (looking along +Y),
   right (looking along -X) and top views.
+Build results list the ports you declared; check each origin lies on the intended surface and its
+axis points out of the part.
 - finish(notes): hand in your last successful build.
 
 Work like an engineer: build, compare the measurements with the envelope and the checks, look at
@@ -225,6 +258,9 @@ def agent_brief(spec: dict, interfaces: dict, overall: str, siblings: list[dict]
     if spec.get("features"):
         lines.append("Features:")
         lines += [f"- {f}" for f in spec["features"]]
+    if spec.get("ports"):
+        lines.append("Required ports (declare each with PORT; other parts mate to them, so be exact):")
+        lines += [f"- {p['name']}: {p['description']}" for p in spec["ports"]]
     if spec.get("checks"):
         lines.append("Acceptance checks:")
         lines += [f"- {c}" for c in spec["checks"]]
@@ -235,9 +271,10 @@ def agent_brief(spec: dict, interfaces: dict, overall: str, siblings: list[dict]
     if siblings:
         lines.append("Other parts (for context only, modelled by others):")
         lines += [f"- {o['name']}: {o['description'][:160]}" for o in siblings]
-    attach = [c.get("attach") for c in spec.get("placements", []) if c.get("attach")]
-    if attach:
-        lines.append(f"How it is attached in the assembly: {attach[0]}")
+    mates = [c.get("mate") for c in spec.get("placements", []) if c.get("mate")]
+    if mates:
+        lines.append("How copies are mated: " + "; ".join(
+            f"{m['port']} → {m['to']}.{m['to_port'] or 'floor'}" for m in mates[:6]))
     return "\n".join(lines)
 
 

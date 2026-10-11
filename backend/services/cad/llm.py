@@ -49,6 +49,12 @@ async def _call(model: str, body: dict) -> dict:
             return json.loads(response["body"].read())
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
+            message = e.response.get("Error", {}).get("Message", "")
+            if code == "ThrottlingException" and "per day" in message:
+                raise QuotaExceeded(
+                    f"The AWS account's daily Bedrock token quota for {model} is used up. Try again tomorrow, "
+                    "ask AWS for a higher quota, or set a cheaper model for the part agents (CAD_AGENT_MODEL_ID)."
+                ) from e
             if code not in RETRYABLE or attempt == 6:
                 raise
             wait = min(delay, 40.0) * (0.75 + random.random() / 2)
@@ -122,6 +128,10 @@ async def _invoke(model: str, system: str, user: str, max_tokens: int, temperatu
     return re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=re.DOTALL).strip()
 
 
+class QuotaExceeded(Exception):
+    """The account's daily Bedrock token quota is used up; retrying won't help today."""
+
+
 class ToolsUnsupported(Exception):
     """No configured model this account can use supports tool use."""
 
@@ -132,9 +142,11 @@ def png_block(img: bytes) -> dict:
 
 
 async def agent_turn(system: str, messages: list[dict], tools: list[dict], max_tokens: int = 4096) -> dict:
-    """One turn of a tool-using agent (Anthropic Messages API on Bedrock).
-    Returns the raw response: {"content": [...blocks], "stop_reason": ...}."""
-    for model in _candidates(fast=False):
+    """One turn of a tool-using agent (Anthropic Messages API on Bedrock),
+    on CAD_AGENT_MODEL_ID first. Returns the raw response:
+    {"content": [...blocks], "stop_reason": ...}."""
+    chain = [settings.CAD_AGENT_MODEL_ID] if settings.CAD_AGENT_MODEL_ID not in _unavailable else []
+    for model in chain + [m for m in _candidates(fast=False) if m != settings.CAD_AGENT_MODEL_ID]:
         if "anthropic" not in model:
             continue
         body = {

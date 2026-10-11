@@ -69,6 +69,44 @@ function faceGeometry(source: THREE.BufferGeometry, face: FaceInfo) {
   return g;
 }
 
+/** Connection points of the selected part: a dot on the contact surface and
+ *  an arrow along the port's outward axis. */
+function PortMarkers({ part }: { part: CadPart }) {
+  const ports = part.version?.ports;
+  const size = part.version?.bbox?.size;
+  const arrows = useMemo(() => {
+    if (!ports) return [];
+    const length = Math.max(4, Math.min(30, Math.max(...(size ?? [20])) * 0.25));
+    return Object.entries(ports).map(([name, p]) => {
+      const dir = new THREE.Vector3(...p.axis).normalize();
+      const origin = new THREE.Vector3(...p.origin);
+      return { name, origin, arrow: new THREE.ArrowHelper(dir, origin, length, 0x22d3ee, length * 0.3, length * 0.18) };
+    });
+  }, [ports, size]);
+  useEffect(
+    () => () =>
+      arrows.forEach(({ arrow }) => {
+        arrow.line.geometry.dispose();
+        arrow.cone.geometry.dispose();
+      }),
+    [arrows],
+  );
+  const dot = Math.max(0.6, Math.min(3, Math.max(...(size ?? [20])) * 0.02));
+  return (
+    <group renderOrder={3}>
+      {arrows.map(({ name, origin, arrow }) => (
+        <group key={name}>
+          <primitive object={arrow} />
+          <mesh position={origin}>
+            <sphereGeometry args={[dot, 12, 8]} />
+            <meshBasicMaterial color="#22d3ee" depthTest={false} transparent opacity={0.9} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
 interface InstanceProps {
   instance: CadInstance;
   part: CadPart;
@@ -112,6 +150,7 @@ function InstanceObject({ instance, part, selected, face, register, onPick }: In
           {part.kind === 'brep' && <Edges threshold={25} color={selected ? '#93c5fd' : '#1a1a1a'} />}
         </mesh>
       )}
+      {selected && <PortMarkers part={part} />}
       {highlight && (
         <mesh geometry={highlight} renderOrder={2}>
           <meshBasicMaterial color="#f59e0b" transparent opacity={0.55} depthTest polygonOffset polygonOffsetFactor={-2} />

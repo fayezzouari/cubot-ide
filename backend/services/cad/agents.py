@@ -26,7 +26,7 @@ class AgentFailed(Exception):
     pass
 
 
-def _measurements(meta: dict, envelope: Optional[list]) -> str:
+def _measurements(meta: dict, envelope: Optional[list], required_ports: Optional[list[str]] = None) -> str:
     report = {
         "bbox_min": meta["bbox"]["min"],
         "bbox_max": meta["bbox"]["max"],
@@ -37,7 +37,13 @@ def _measurements(meta: dict, envelope: Optional[list]) -> str:
         "faces": meta.get("faces"),
         "parameters": {k: v["value"] for k, v in (meta.get("params") or {}).items()},
     }
+    report["ports"] = meta.get("ports") or {}
     text = json.dumps(report)
+    lacking = [p for p in (required_ports or []) if p not in report["ports"]]
+    if lacking:
+        text += f"\nMissing required ports: {lacking}."
+    if meta.get("port_issues"):
+        text += "\nPort problems (fix before finishing):\n" + "\n".join(f"- {i}" for i in meta["port_issues"])
     if envelope:
         text += f"\nExpected envelope: {envelope} mm."
     if meta["bbox"]["min"][2] < -0.01 or abs(meta["bbox"]["min"][2]) > 0.5:
@@ -62,7 +68,8 @@ async def render_part(key: str) -> Optional[bytes]:
 
 
 async def run_part_agent(brief: str, build: Build, notify: Notify, envelope: Optional[list] = None,
-                         max_steps: Optional[int] = None) -> tuple[str, str, dict, str]:
+                         max_steps: Optional[int] = None,
+                         required_ports: Optional[list[str]] = None) -> tuple[str, str, dict, str]:
     """Run one agent to completion. Returns (code, key, meta, notes)."""
     steps = max_steps or settings.CAD_AGENT_STEPS
     messages: list[dict] = [{"role": "user", "content": brief}]
@@ -99,7 +106,7 @@ async def run_part_agent(brief: str, build: Build, notify: Notify, envelope: Opt
                     continue
                 best = (code, key, meta)
                 results.append({"type": "tool_result", "tool_use_id": call["id"],
-                                "content": "Built.\n" + _measurements(meta, envelope)})
+                                "content": "Built.\n" + _measurements(meta, envelope, required_ports)})
             elif name == "view_part":
                 if not best:
                     results.append({"type": "tool_result", "tool_use_id": call["id"], "is_error": True,
@@ -116,6 +123,14 @@ async def run_part_agent(brief: str, build: Build, notify: Notify, envelope: Opt
                                 "content": [llm.png_block(image), {"type": "text", "text": "Render of your part."}]
                                 if image else "Render unavailable."})
             elif name == "finish":
+                lacking = [p for p in (required_ports or []) if best and p not in (best[2].get("ports") or {})]
+                bad = (best[2].get("port_issues") or []) if best else []
+                if best and (lacking or bad) and not last:
+                    problems = ([f"missing ports {lacking}"] if lacking else []) + bad
+                    results.append({"type": "tool_result", "tool_use_id": call["id"], "is_error": True,
+                                    "content": "Can't finish yet:\n" + "\n".join(f"- {p}" for p in problems)
+                                               + "\nFix the PORT declarations and build again."})
+                    continue
                 if best:
                     if not viewed and not last:
                         # One look before handing in catches most misplaced features.

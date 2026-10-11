@@ -32,15 +32,19 @@ sys.stdout = sys.stderr
 
 import cadquery as cq  # noqa: E402  (import after the fd swap on purpose)
 import numpy as np  # noqa: E402
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Common  # noqa: E402
+from OCP.BRepExtrema import BRepExtrema_DistShapeShape  # noqa: E402
 from OCP.BRepGProp import BRepGProp  # noqa: E402
 from OCP.GProp import GProp_GProps  # noqa: E402
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing  # noqa: E402
+from OCP.BRepClass3d import BRepClass3d_SolidClassifier  # noqa: E402
 from OCP.BRepCheck import BRepCheck_Analyzer  # noqa: E402
 from OCP.IGESControl import IGESControl_Reader  # noqa: E402
 from OCP.IFSelect import IFSelect_RetDone  # noqa: E402
 from OCP.StlAPI import StlAPI_Reader  # noqa: E402
 from OCP.TopoDS import TopoDS_Shape  # noqa: E402
-from OCP.gp import gp_Trsf  # noqa: E402
+from OCP.TopAbs import TopAbs_IN, TopAbs_OUT  # noqa: E402
+from OCP.gp import gp_Pnt, gp_Trsf  # noqa: E402
 
 MAX_MESH_TRIANGLES = 40_000  # meshes are sewn into a B-rep; beyond this it gets too slow
 MESH_TOLERANCE = 0.1  # mm, chordal deviation of the preview mesh
@@ -239,7 +243,7 @@ def check_geometry(meta: dict) -> None:
 # ── Jobs ──────────────────────────────────────────────────────────────────
 
 
-HELPERS = {"P", "ASSET", "MESH", "IGES"}
+HELPERS = {"P", "PORT", "ASSET", "MESH", "IGES"}
 
 
 def strip_helper_overrides(code: str):
@@ -253,6 +257,60 @@ def strip_helper_overrides(code: str):
         and not (isinstance(node, ast.Assign) and all(isinstance(t, ast.Name) and t.id in HELPERS for t in node.targets))
     ]
     return tree
+
+
+PORT_TOLERANCE = 0.05  # mm: how far a port origin may be from the surface
+PORT_PROBE = 0.25  # mm: distance of the inside/outside probe points
+
+
+def _classify(shape: cq.Shape, point) -> str:
+    c = BRepClass3d_SolidClassifier(shape.wrapped, gp_Pnt(*point), 1e-4)
+    state = c.State()
+    return "in" if state == TopAbs_IN else "out" if state == TopAbs_OUT else "on"
+
+
+def check_ports(shape: cq.Shape, ports: dict) -> list[str]:
+    """Each port's origin must be on the part's surface, or at the centre of a
+    round edge (a hole or a shaft end) whose plane it lies in; and its axis
+    must point out of the material: just outside along the axis is empty,
+    just inside is solid."""
+    issues = []
+    circles = []
+    for edge in shape.Edges():
+        if edge.geomType() == "CIRCLE":
+            try:
+                circles.append((edge.Center(), edge.radius(), edge.normal()))
+            except Exception:
+                pass
+    for name, port in ports.items():
+        o = cq.Vector(*port["origin"])
+        a = cq.Vector(*port["axis"])
+        try:
+            dist = BRepExtrema_DistShapeShape(shape.wrapped, cq.Vertex.makeVertex(o.x, o.y, o.z).wrapped)
+            d = dist.Value()
+        except Exception:
+            continue
+        probe = o
+        if d > PORT_TOLERANCE:
+            centre = next(((c, r) for c, r, n in circles
+                           if (c - o).Length < PORT_TOLERANCE * 4 and abs(abs(n.dot(a)) - 1) < 1e-3), None)
+            if centre is None:
+                issues.append(f"port {name!r}: origin {port['origin']} is {d:.2f} mm from the part's surface; "
+                              "put it on the contact face (or at the centre of the hole/shaft end)")
+                continue
+            # Hole or shaft centre: test beside it, just past the rim, in the same plane.
+            perp = a.cross(cq.Vector(1, 0, 0))
+            if perp.Length < 1e-6:
+                perp = a.cross(cq.Vector(0, 1, 0))
+            probe = o + perp.normalized() * (centre[1] + 0.4)
+        outside = _classify(shape, (probe + a * PORT_PROBE).toTuple())
+        inside = _classify(shape, (probe - a * PORT_PROBE).toTuple())
+        if outside == "in" and inside != "in":
+            issues.append(f"port {name!r}: axis {port['axis']} points INTO the material; flip it to point out of "
+                          "the contact face")
+        elif outside == "in" and inside == "in":
+            issues.append(f"port {name!r}: origin {port['origin']} is inside the material, not on a face")
+    return issues
 
 
 def run_build(job: dict) -> dict:
@@ -276,6 +334,27 @@ def run_build(job: dict) -> dict:
         }
         return value
 
+    ports: dict[str, dict] = {}
+
+    def PORT(name, origin=(0, 0, 0), axis=(0, 0, 1), ref=None):  # noqa: N802
+        """A named connection frame: a point on the contact feature, the outward
+        normal of the contact face, and optionally a perpendicular reference
+        direction that fixes the rotation about it."""
+        o = [float(v) for v in origin]
+        a = [float(v) for v in axis]
+        n = math.sqrt(sum(v * v for v in a))
+        if len(o) != 3 or len(a) != 3 or n < 1e-9:
+            raise JobError(f"PORT {name!r}: origin and axis must be 3 numbers, axis non-zero")
+        a = [v / n for v in a]
+        r = None
+        if ref is not None:
+            r = [float(v) for v in ref]
+            dot = sum(x * y for x, y in zip(r, a))
+            r = [x - dot * y for x, y in zip(r, a)]  # make it perpendicular to the axis
+            rn = math.sqrt(sum(v * v for v in r))
+            r = [round(v / rn, 6) for v in r] if rn > 1e-9 else None
+        ports[str(name)] = {"origin": [round(v, 4) for v in o], "axis": [round(v, 6) for v in a], "ref": r}
+
     def ASSET(name):
         if name not in assets:
             raise JobError(f"Unknown asset {name!r}")
@@ -286,6 +365,7 @@ def run_build(job: dict) -> dict:
         "cq": cq,
         "math": math,
         "P": P,
+        "PORT": PORT,
         "ASSET": ASSET,
         "MESH": load_mesh,
         "IGES": load_iges,
@@ -297,6 +377,8 @@ def run_build(job: dict) -> dict:
     meta = shape_meta(shape)
     check_geometry(meta)
     meta["params"] = declared
+    meta["ports"] = ports
+    meta["port_issues"] = check_ports(shape, ports) if job.get("check_ports", True) else []
 
     cq.exporters.export(shape, os.path.join(out_dir, "part.step"))
     cq.exporters.export(shape, os.path.join(out_dir, "part.stl"), tolerance=MESH_TOLERANCE,
@@ -573,7 +655,51 @@ def run_render(job: dict) -> dict:
     return {"path": job["out_path"], "triangles": int(len(tris))}
 
 
-JOBS = {"build": run_build, "assemble": run_assemble, "render": run_render}
+# ── Exact interference and contact checks ────────────────────────────────
+
+
+def run_check(job: dict) -> dict:
+    """For every pair of placed parts whose boxes come within `near` mm:
+    the volume they share (exact boolean) and their minimum distance. Plus
+    each part's lowest point. Pairs listed in `pairs` are always measured."""
+    near = float(job.get("near", 1.0))
+    shapes = []
+    for inst in job["instances"]:
+        shape = cq.importers.importStep(inst["step_path"]).val()
+        shape = shape.moved(location(inst.get("position", [0, 0, 0]), inst.get("rotation", [0, 0, 0])))
+        bb = shape.BoundingBox()
+        shapes.append((inst["id"], shape, (bb.xmin, bb.ymin, bb.zmin), (bb.xmax, bb.ymax, bb.zmax)))
+    wanted = {tuple(sorted(p)) for p in job.get("pairs", [])}
+    pairs = []
+    for i in range(len(shapes)):
+        for j in range(i + 1, len(shapes)):
+            ida, a, alo, ahi = shapes[i]
+            idb, b, blo, bhi = shapes[j]
+            close = all(min(ahi[k], bhi[k]) - max(alo[k], blo[k]) > -near for k in range(3))
+            if not close and tuple(sorted((ida, idb))) not in wanted:
+                continue
+            overlap = 0.0
+            if close:
+                try:
+                    common = BRepAlgoAPI_Common(a.wrapped, b.wrapped)
+                    common.Build()
+                    if common.IsDone():
+                        props = GProp_GProps()
+                        BRepGProp.VolumeProperties_s(common.Shape(), props)
+                        overlap = max(props.Mass(), 0.0)
+                except Exception:
+                    overlap = -1.0  # could not compute
+            try:
+                dist = BRepExtrema_DistShapeShape(a.wrapped, b.wrapped)
+                distance = dist.Value() if dist.IsDone() else -1.0
+            except Exception:
+                distance = -1.0
+            pairs.append({"a": ida, "b": idb, "overlap": round(overlap, 3), "distance": round(distance, 3)})
+    lowest = {iid: round(lo[2], 3) for iid, _, lo, _ in shapes}
+    return {"pairs": pairs, "lowest": lowest}
+
+
+JOBS = {"build": run_build, "assemble": run_assemble, "render": run_render, "check": run_check}
 
 
 def main() -> None:

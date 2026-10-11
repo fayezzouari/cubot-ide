@@ -14,12 +14,19 @@ export interface CadParam {
   unit: string;
 }
 
+export interface CadPort {
+  origin: Vec3;
+  axis: Vec3;
+  ref: Vec3 | null;
+}
+
 export interface CadVersion {
   id: string;
   number: number;
   key: string;
   prompt: string | null;
   params: Record<string, CadParam>;
+  ports?: Record<string, CadPort>;
   bbox: { min: Vec3; max: Vec3; size: Vec3 } | null;
   volume: number | null;
   valid: boolean | null;

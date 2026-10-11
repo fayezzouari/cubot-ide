@@ -23,6 +23,7 @@ Parts are plain CadQuery scripts. The runner provides:
 |---|---|
 | `cq`, `math` | CadQuery and the math module |
 | `P(name, default, min=None, max=None, unit="mm")` | Declares a tunable parameter. The inspector shows it as a field; changing it rebuilds the part without the model. |
+| `PORT(name, origin, axis, ref=None)` | Declares a connection point other parts mate to (see Ports and mates) |
 | `ASSET(name)` | Path of a file imported with the part |
 | `MESH(path)`, `IGES(path)` | Load a mesh (STL/OBJ/3MF) or IGES file as a shape |
 
@@ -67,9 +68,9 @@ request ─▶ architect ─▶ part agents (swarm, in parallel) ─▶ placemen
    Agents must look at their render before finishing. The best build is kept if an agent runs
    out of turns. Parts that fail (for example on rate limits) are retried one at a time.
    Without a tool-capable model, parts fall back to one-shot code with error feedback.
-3. **Placement.** Using each part's real bounding box after rotation, the backend puts it
-   against the chosen face of its target: touching it, outside it, centred plus the offset.
-   Then the assembly is lowered so its lowest point rests on z = 0.
+3. **Placement by mates.** Parts are joined port to port (see below). The backend solves the mates
+   in order and sets each copy's position and rotation exactly. Then the assembly is lowered so its
+   lowest point rests on z = 0.
 4. **Review (reflection loop).** The review repeats until the reviewer is satisfied. Each round
    the reviewer gets:
    - the request and the plan
@@ -79,7 +80,8 @@ request ─▶ architect ─▶ part agents (swarm, in parallel) ─▶ placemen
    - what earlier rounds found, applied and rejected, so it doesn't undo its own fixes or retry
      one that failed
 
-   It answers with re-attachments and part edits. Edits go back to the part's agent with its
+   It also gets the results of the exact checks, which must all pass before it can sign off.
+   It answers with re-mates and part edits. Edits go back to the part's agent with its
    original brief. A re-attachment is kept only if the measured checks don't get worse.
    The loop ends when:
    - the reviewer says the assembly meets the request
@@ -89,6 +91,59 @@ request ─▶ architect ─▶ part agents (swarm, in parallel) ─▶ placemen
 
    The conversation then gets one summary: what was fixed and anything still open. A snapshot is
    taken before the first fix.
+
+### Ports and mates
+
+Part code declares its connection points with `PORT(name, origin, axis, ref=None)`:
+- `origin` is a point on the contact surface
+- `axis` is the outward normal of that face (pointing away from the part's material)
+- `ref` optionally fixes the rotation about the axis
+
+The plan lists the ports each part needs. Every build checks each port:
+- its origin must be on the part's surface, or at the centre of a hole or shaft end in that face's
+  plane
+- its axis must point out of the material
+
+An agent can't hand in a part with a missing or wrong port; it's told exactly which one and why.
+
+Each copy has one mate: `{port, to, to_port, gap, angle}`. The solver:
+1. turns the part so the two axes face each other
+2. lines up `ref` if both ports have one
+3. puts the origins together, `gap` mm apart along the target's axis (negative pushes it in, e.g.
+   a wheel slid onto a shaft)
+4. turns it `angle` degrees about the axis
+
+The ground is a port at the origin facing +Z. Plans that still use the older face attachments fall
+back to bounding-box placement.
+
+### Fasteners
+
+Every bolted joint gets standard hardware as separate parts: socket head screws (ISO 4762), hex
+nuts (ISO 4032), washers (ISO 7089) and hex standoffs, in M2–M6. They're built from fixed templates
+in `services/cad/fasteners.py`, not by an agent, and come with ports:
+- screw: `seat` (under the head, axis along the shank) and `tip`
+- nut and washer: `seat` and `top`
+- standoff: `bottom` and `top`
+
+The planner gives one fastener part per size and length, with a copy mated into each hole port.
+Clearance hole sizes are part of the planner's instructions. Threads aren't modelled, so a screw
+in a clearance hole doesn't register as a collision.
+
+### Exact checks
+
+After placement the geometry worker measures every pair of placed parts whose boxes come within
+1 mm of each other:
+- the volume they share, from a real boolean intersection
+- their minimum distance
+
+From those it reports:
+- collisions (shared volume over 1 mm³)
+- mates whose parts are more than 0.3 mm apart (a port that isn't on its surface)
+- parts that touch nothing
+- unresolvable mates (missing ports, unknown targets)
+
+The review must clear all of these before it can be satisfied, and a re-mate that makes them worse
+is rejected. A typical assembly is checked in a fraction of a second.
 
 Models are poor at coordinate arithmetic, so asking them for positions gave floating or
 overlapping parts. Attachments are something they get right, and the arithmetic is exact.
@@ -193,8 +248,9 @@ All routes are under `/api/cad` and require the project owner's token.
 |---|---|---|
 | `CAD_WORKER_URL` | unset (local pool) | Set to `http://cad-worker:8100` by docker-compose |
 | `CAD_STORAGE_DIR` | `/tmp/cubot-cad` | `/data/cad` (shared volume) in docker-compose |
-| `CAD_MODEL_ID` | `us.anthropic.claude-opus-4-6-v1` | Architect, part agents and reviewer |
+| `CAD_MODEL_ID` | `us.anthropic.claude-opus-4-6-v1` | Architect and reviewer |
 | `CAD_FAST_MODEL_ID` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | First choice for quick one-off calls |
+| `CAD_AGENT_MODEL_ID` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Part agents. They make the most calls (with renders), so a lighter model keeps daily token quotas in reach. |
 | `CAD_PARALLEL_PARTS` | 3 | Part agents working at once |
 | `CAD_AGENT_STEPS` | 8 | Model turns per part agent |
 | `CAD_REVIEW_MAX_ROUNDS` | 5 | Cap on review rounds; the review stops earlier once it's satisfied (0 turns it off) |
@@ -215,5 +271,8 @@ account has access to them.
   exports are.
 - **Storage.** Files live on a local volume; S3 storage would fit the
   content-addressed layout.
+- **Daily quotas.** A generation with fasteners and several review rounds can use a large share of an
+  account's daily Bedrock token quota. When it runs out, the run stops with a clear message
+  instead of retrying.
 - **Large meshes.** Meshes over 40,000 triangles are rejected because they are
   sewn into a B-rep.

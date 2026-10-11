@@ -177,6 +177,20 @@ export default function InspectorPanel({
             {version?.valid === false && <span className="text-amber-300/80"> · not watertight</span>}
           </p>
         )}
+        {version?.ports && Object.keys(version.ports).length > 0 && (
+          <details>
+            <summary className="text-[10.5px] text-cyan-300/70 cursor-pointer hover:text-cyan-200">
+              {Object.keys(version.ports).length} ports (shown as cyan arrows)
+            </summary>
+            <ul className="mt-1 space-y-0.5">
+              {Object.entries(version.ports).map(([name, p]) => (
+                <li key={name} className="text-[10px] font-mono text-white/45">
+                  {name}: ({p.origin.map((v) => +v.toFixed(1)).join(', ')}) → ({p.axis.map((v) => +v.toFixed(2)).join(', ')})
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {face && (
           <p className="text-[10.5px] text-amber-300/80">
             Face {face.id}: {face.type.toLowerCase()}, {face.area.toFixed(1)} mm², at ({face.center.map((v) => v.toFixed(1)).join(', ')})

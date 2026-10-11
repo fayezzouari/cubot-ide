@@ -7,15 +7,15 @@ browser as SSE. Geometry never travels in events: a built part is stored by
 content key and the browser fetches its files (mesh.json for the viewer).
 """
 import asyncio
+import json
 import logging
-import math
 import os
 import re
 from datetime import timezone
 from typing import AsyncGenerator, Awaitable, Callable, Optional
 
 from core.config import settings
-from services.cad import agents, llm, prompts, repository as repo, storage
+from services.cad import agents, assembly, fasteners, llm, prompts, repository as repo, storage
 from services.cad.geometry import GeometryJobError, geometry
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,7 @@ def version_view(v: dict, with_code: bool = True) -> dict:
         "key": v["key"],
         "prompt": v.get("prompt"),
         "params": meta.get("params", {}),
+        "ports": meta.get("ports", {}),
         "bbox": meta.get("bbox"),
         "volume": meta.get("volume"),
         "valid": meta.get("valid"),
@@ -118,7 +119,7 @@ def _asset_paths(assets: dict[str, str]) -> dict[str, str]:
     return {name: storage.asset_path(sha, name) for name, sha in assets.items()}
 
 
-async def build(code: str, params: dict, assets: dict[str, str]) -> tuple[str, dict]:
+async def build(code: str, params: dict, assets: dict[str, str], check_ports: bool = True) -> tuple[str, dict]:
     """Build (or reuse) one part version; returns (content key, meta)."""
     key = storage.build_key(code, params, assets)
     cached = storage.cached_meta(key)
@@ -130,6 +131,7 @@ async def build(code: str, params: dict, assets: dict[str, str]) -> tuple[str, d
         "params": params,
         "assets": _asset_paths(assets),
         "out_dir": storage.object_dir(key),
+        "check_ports": check_ports,
     })
     return key, meta
 
@@ -158,14 +160,15 @@ async def write_and_build(first_prompt: str, emit_retry: Callable[[int, str], Aw
 
 async def develop(brief: str, fallback_prompt: str, emit_retry: Callable[[int, str], Awaitable[None]],
                   notify: Callable[[str, str], Awaitable[None]], envelope: Optional[list] = None,
-                  assets: Optional[dict] = None) -> tuple[str, str, dict]:
+                  assets: Optional[dict] = None, required_ports: Optional[list[str]] = None) -> tuple[str, str, dict]:
     """Have a part agent design and verify a part; without a tool-capable
     model, fall back to one-shot writing with error feedback."""
     async def build_code(code: str) -> tuple[str, dict]:
         return await build(code, {}, assets or {})
 
     try:
-        code, key, meta, _ = await agents.run_part_agent(brief, build_code, notify, envelope)
+        code, key, meta, _ = await agents.run_part_agent(brief, build_code, notify, envelope,
+                                                         required_ports=required_ports)
         return code, key, meta
     except llm.ToolsUnsupported:
         return await write_and_build(fallback_prompt, emit_retry, assets=assets)
@@ -176,7 +179,9 @@ async def develop(brief: str, fallback_prompt: str, emit_retry: Callable[[int, s
 # ── Generate from a prompt ────────────────────────────────────────────────
 
 
-SIDES = {"top", "bottom", "left", "right", "front", "back"}
+SIDES = assembly.SIDES
+MAX_CUSTOM_PARTS = 8
+MAX_FASTENER_KINDS = 8
 
 
 def _expand_plan(plan: dict) -> list[dict]:
@@ -199,6 +204,15 @@ def _expand_plan(plan: dict) -> list[dict]:
         for c in copies[:50]:
             if not isinstance(c, dict):
                 continue
+            mate = c.get("mate") if isinstance(c.get("mate"), dict) else None
+            if mate:
+                try:
+                    gap = float(mate.get("gap") or 0)
+                    angle = float(mate.get("angle") or 0)
+                except (TypeError, ValueError):
+                    gap, angle = 0.0, 0.0
+                mate = {"port": str(mate.get("port") or ""), "to": str(mate.get("to") or "ground"),
+                        "to_port": str(mate.get("to_port") or ""), "gap": gap, "angle": angle}
             attach = c.get("attach") if isinstance(c.get("attach"), dict) else None
             if attach:
                 side = str(attach.get("side") or "top").lower()
@@ -216,11 +230,21 @@ def _expand_plan(plan: dict) -> list[dict]:
             placements.append({
                 "position": _vec(c.get("position")),
                 "rotation": _vec(c.get("rotation")),
-                "attach": attach,
+                "mate": mate,
+                "attach": None if mate else attach,
             })
         color = raw.get("color")
         envelope = raw.get("envelope")
+        fastener = fasteners.normalise(raw["fastener"]) if isinstance(raw.get("fastener"), dict) else None
+        ports = [
+            {"name": str(p.get("name")), "description": str(p.get("description") or "")[:300]}
+            for p in (raw.get("ports") or []) if isinstance(p, dict) and p.get("name")
+        ][:40]
+        if fastener and not color:
+            color = fasteners.COLORS[fastener["kind"]]
         parts.append({
+            "fastener": fastener,
+            "ports": ports,
             "id": pid,
             "name": str(raw.get("name") or pid.replace("_", " ").title())[:120],
             "description": str(raw.get("description") or raw.get("name") or ""),
@@ -229,134 +253,51 @@ def _expand_plan(plan: dict) -> list[dict]:
             "features": [str(f)[:400] for f in (raw.get("features") or []) if f][:20],
             "checks": [str(c)[:300] for c in (raw.get("checks") or []) if c][:12],
             "interfaces": [str(i) for i in (raw.get("interfaces") or [])][:20],
-            "placements": placements or [{"position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "attach": None}],
+            "placements": placements or [{"position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0],
+                                          "mate": None, "attach": None}],
             "color": color if isinstance(color, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", color)
             else PALETTE[i % len(PALETTE)],
         })
-    return parts[:8]
-
-
-def _rotate(v: list[float], rot_deg: list[float]) -> list[float]:
-    """R = Rx·Ry·Rz (Euler XYZ, degrees), the convention the runner and viewer use."""
-    rx, ry, rz = (math.radians(a) for a in rot_deg)
-    x, y, z = v
-    # Rz, then Ry, then Rx (applied right to left).
-    x, y = x * math.cos(rz) - y * math.sin(rz), x * math.sin(rz) + y * math.cos(rz)
-    x, z = x * math.cos(ry) + z * math.sin(ry), -x * math.sin(ry) + z * math.cos(ry)
-    y, z = y * math.cos(rx) - z * math.sin(rx), y * math.sin(rx) + z * math.cos(rx)
-    return [x, y, z]
+    custom = [p for p in parts if not p["fastener"]][:MAX_CUSTOM_PARTS]
+    hardware = [p for p in parts if p["fastener"]][:MAX_FASTENER_KINDS]
+    keep = {id(p) for p in custom + hardware}
+    return [p for p in parts if id(p) in keep]
 
 
 async def _rest_on_ground(project_id: str, owner: Optional[str]) -> None:
-    """Shift a freshly generated assembly so its lowest point sits on z = 0
-    (the planner's placements are relative; this fixes their height)."""
+    """Shift a freshly generated assembly so its lowest point sits on z = 0."""
     current = await state(project_id)
     boxes = {p["id"]: (p["version"] or {}).get("bbox") for p in current["parts"]}
-    lowest = None
-    for inst in current["assembly"]["instances"]:
-        bbox = boxes.get(inst["part_id"])
-        if not bbox:
-            continue
-        for cx in (bbox["min"][0], bbox["max"][0]):
-            for cy in (bbox["min"][1], bbox["max"][1]):
-                for cz in (bbox["min"][2], bbox["max"][2]):
-                    z = _rotate([cx, cy, cz], inst["rotation"])[2] + inst["position"][2]
-                    lowest = z if lowest is None else min(lowest, z)
-    if lowest is None or abs(lowest) < 0.01:
+    lows = [assembly.world_box(boxes[i["part_id"]], i["position"], i["rotation"])[0][2]
+            for i in current["assembly"]["instances"] if boxes.get(i["part_id"])]
+    if not lows or abs(min(lows)) < 0.01:
         return
+    lowest = min(lows)
     instances = current["assembly"]["instances"]
     for inst in instances:
         inst["position"][2] = round(inst["position"][2] - lowest, 3)
     await repo.save_assembly(project_id, owner, None, instances)
 
 
-def _rotated_box(bbox: dict, rotation: list[float]) -> tuple[list[float], list[float]]:
-    """Bounds of the part's box after rotating it about its origin."""
-    corners = [
-        _rotate([x, y, z], rotation)
-        for x in (bbox["min"][0], bbox["max"][0])
-        for y in (bbox["min"][1], bbox["max"][1])
-        for z in (bbox["min"][2], bbox["max"][2])
-    ]
-    return [min(c[k] for c in corners) for k in range(3)], [max(c[k] for c in corners) for k in range(3)]
+def _apply(built: dict[str, dict], placements: dict) -> None:
+    for b in built.values():
+        for inst in b["instances"]:
+            if inst["id"] in placements:
+                inst["position"], inst["rotation"] = placements[inst["id"]]
 
 
-# side → (normal axis, direction, the two in-face axes the offset runs along)
-_FACES = {
-    "top": (2, 1, (0, 1)), "bottom": (2, -1, (0, 1)),
-    "right": (0, 1, (1, 2)), "left": (0, -1, (1, 2)),
-    "back": (1, 1, (0, 2)), "front": (1, -1, (0, 2)),
-}
-
-
-def _solve_placements(built: dict[str, dict]) -> dict[str, list[float]]:
-    """Positions for every instance whose plan says what it attaches to.
-
-    Works on bounding boxes: the part (after its rotation) is put against
-    the chosen face of its target's world box, outside it, centred on the
-    face plus the offset. Targets are solved first; cycles and unknown
-    targets fall back to the planner's position."""
-    copies: dict[str, list[dict]] = {pid: b["instances"] for pid, b in built.items()}
-    world: dict[str, tuple[list[float], list[float]]] = {}  # instance id → world box
-    positions: dict[str, list[float]] = {}
-
-    def target_instance(ref: str) -> Optional[dict]:
-        pid, _, idx = ref.partition("#")
-        group = copies.get(pid)
-        if not group:
-            return None
-        k = int(idx) - 1 if idx.isdigit() else 0
-        return group[min(max(k, 0), len(group) - 1)]
-
-    def solve(pid: str, k: int, stack: tuple = ()) -> None:
-        inst = copies[pid][k]
-        if inst["id"] in world:
-            return
-        b = built[pid]
-        placement = b["spec"]["placements"][k] if k < len(b["spec"]["placements"]) else {}
-        rot = inst["rotation"]
-        rlo, rhi = _rotated_box(b["meta"]["bbox"], rot)
-        pos = list(inst["position"])
-        attach = placement.get("attach")
-        if attach and attach["to"] == "ground":
-            a, c = attach["offset"]
-            pos = [a - (rlo[0] + rhi[0]) / 2, c - (rlo[1] + rhi[1]) / 2, -rlo[2] + attach["gap"]]
-        elif attach:
-            target = target_instance(attach["to"])
-            tpid = attach["to"].partition("#")[0]
-            if target is not None and target["id"] != inst["id"] and inst["id"] not in stack:
-                tk = copies[tpid].index(target)
-                solve(tpid, tk, stack + (inst["id"],))
-                tlo, thi = world[target["id"]]
-                axis, direction, (u, v) = _FACES[attach["side"]]
-                if direction > 0:
-                    pos[axis] = thi[axis] + attach["gap"] - rlo[axis]
-                else:
-                    pos[axis] = tlo[axis] - attach["gap"] - rhi[axis]
-                for along, off in ((u, attach["offset"][0]), (v, attach["offset"][1])):
-                    pos[along] = (tlo[along] + thi[along]) / 2 + off - (rlo[along] + rhi[along]) / 2
-        world[inst["id"]] = ([rlo[i] + pos[i] for i in range(3)], [rhi[i] + pos[i] for i in range(3)])
-        positions[inst["id"]] = [round(v, 3) for v in pos]
-
-    for pid, group in copies.items():
-        for k in range(len(group)):
-            solve(pid, k)
-    return positions
-
-
-async def _place(project_id: str, owner: Optional[str], built: dict[str, dict]) -> None:
-    """Solve attachments and store each instance's position and rotation."""
-    positions = _solve_placements(built)
-    placed = {i["id"]: i for b in built.values() for i in b["instances"]}
-    for iid, pos in positions.items():
-        placed[iid]["position"] = pos
-    assembly = await repo.get_assembly(project_id)
-    instances = assembly.get("instances", [])
+async def _place(project_id: str, owner: Optional[str], built: dict[str, dict]) -> list[str]:
+    """Solve the mates, store every copy's position and rotation, and return
+    the mates that couldn't be resolved."""
+    placements, problems = assembly.solve(built)
+    _apply(built, placements)
+    stored = await repo.get_assembly(project_id)
+    instances = stored.get("instances", [])
     for inst in instances:
-        if inst["id"] in placed:
-            inst["position"] = placed[inst["id"]]["position"]
-            inst["rotation"] = placed[inst["id"]]["rotation"]
+        if inst["id"] in placements:
+            inst["position"], inst["rotation"] = placements[inst["id"]]
     await repo.save_assembly(project_id, owner, None, instances)
+    return problems
 
 
 # ── Review (reflection after generation) ─────────────────────────────────
@@ -383,47 +324,61 @@ async def render_assembly(project_id: str) -> Optional[bytes]:
         return f.read()
 
 
+COLLISION_MM3 = 1.0  # shared volume that counts as a collision
+CONTACT_MM = 0.3  # parts closer than this touch
+
+
 def _severity(problems: list[str]) -> int:
-    """Overlaps count most, then parts touching nothing, then uneven footing."""
-    return sum(3 if "overlap" in p else 2 if "touches no" in p else 1 for p in problems)
+    """Collisions count most, then broken mates and floating parts, then the rest."""
+    return sum(3 if "collide" in p else 2 if ("apart" in p or "touches nothing" in p) else 1 for p in problems)
 
 
-def _geometry_facts(built: dict[str, dict]) -> tuple[str, list[str]]:
-    """World box of every copy plus problems a person would spot: parts sunk
-    into each other, parts touching nothing, and an uneven footprint."""
-    boxes = []
+async def _check(built: dict[str, dict], mate_problems: list[str]) -> tuple[str, list[str]]:
+    """Exact checks on the placed solids (geometry worker): every pair's
+    shared volume and distance. Returns (world-box listing, problems):
+    collisions, mates whose parts don't touch, parts touching nothing,
+    plus mates that couldn't be resolved."""
+    labels, jobs, mates = {}, [], []
+    lines = []
     for pid, b in built.items():
+        step = storage.object_path(b["version"]["key"], "part.step")
         for k, inst in enumerate(b["instances"]):
-            rlo, rhi = _rotated_box(b["meta"]["bbox"], inst["rotation"])
-            lo = [rlo[i] + inst["position"][i] for i in range(3)]
-            hi = [rhi[i] + inst["position"][i] for i in range(3)]
-            boxes.append((f"{pid}#{k + 1}", lo, hi))
-    lines = [f"- {n}: min {[round(v, 1) for v in lo]} max {[round(v, 1) for v in hi]}" for n, lo, hi in boxes]
-    problems = []
-    for i, (a, alo, ahi) in enumerate(boxes):
-        touching = False
-        for j, (b, blo, bhi) in enumerate(boxes):
-            if i == j:
-                continue
-            overlap = [min(ahi[k], bhi[k]) - max(alo[k], blo[k]) for k in range(3)]
-            if all(o > -0.5 for o in overlap):
-                touching = True
-            if j > i and all(o > 1.0 for o in overlap):
-                vol = overlap[0] * overlap[1] * overlap[2]
-                smaller = min(
-                    (ahi[0] - alo[0]) * (ahi[1] - alo[1]) * (ahi[2] - alo[2]),
-                    (bhi[0] - blo[0]) * (bhi[1] - blo[1]) * (bhi[2] - blo[2]),
-                )
-                if smaller > 0 and vol / smaller > 0.2:
-                    problems.append(f"{a} and {b}: bounding boxes overlap by {[round(o, 1) for o in overlap]} mm")
-        if not touching and len(boxes) > 1:
-            problems.append(f"{a} touches no other part")
-    if boxes:
-        lowest = min(lo[2] for _, lo, _ in boxes)
-        on_ground = [n for n, lo, _ in boxes if lo[2] - lowest < 0.5]
-        near = [f"{n} ({lo[2] - lowest:.1f} mm up)" for n, lo, _ in boxes if 0.5 <= lo[2] - lowest < 15]
-        if near:
-            problems.append(f"Resting on the ground: {', '.join(on_ground)}; almost touching it: {', '.join(near)}")
+            labels[inst["id"]] = f"{pid}#{k + 1}"
+            lo, hi = assembly.world_box(b["meta"]["bbox"], inst["position"], inst["rotation"])
+            lines.append(f"- {pid}#{k + 1}: min {[round(v, 1) for v in lo]} max {[round(v, 1) for v in hi]}")
+            if step:
+                jobs.append({"id": inst["id"], "step_path": step, "position": inst["position"],
+                             "rotation": inst["rotation"]})
+            placement = b["spec"]["placements"][k] if k < len(b["spec"]["placements"]) else {}
+            mate = placement.get("mate")
+            if mate and mate["to"] != "ground":
+                tpid, _, idx = mate["to"].partition("#")
+                if tpid in built:
+                    group = built[tpid]["instances"]
+                    tk = min(max(int(idx) - 1 if idx.isdigit() else 0, 0), len(group) - 1)
+                    mates.append((inst["id"], group[tk]["id"], mate))
+    problems = list(mate_problems)
+    if len(jobs) < 2:
+        return "\n".join(lines), problems
+    result = await geometry.run({"type": "check", "instances": jobs,
+                                 "pairs": [[a, b] for a, b, _ in mates], "near": 1.0})
+    by_pair = {tuple(sorted((p["a"], p["b"]))): p for p in result["pairs"]}
+    for p in result["pairs"]:
+        if p["overlap"] > COLLISION_MM3:
+            problems.append(f"{labels[p['a']]} and {labels[p['b']]} collide: {p['overlap']:.1f} mm³ of shared volume")
+    for a, b, mate in mates:
+        p = by_pair.get(tuple(sorted((a, b))))
+        if p and p["distance"] > CONTACT_MM + max(mate["gap"], 0):
+            problems.append(f"{labels[a]} is mated to {labels[b]} ({mate['port']} → {mate['to_port']}) but they're "
+                            f"{p['distance']:.1f} mm apart: a port isn't on the part's surface")
+    lowest = min(result["lowest"].values())
+    for iid, label in labels.items():
+        touching = any(p["distance"] >= 0 and p["distance"] <= CONTACT_MM and iid in (p["a"], p["b"])
+                       for p in result["pairs"])
+        if not touching and result["lowest"].get(iid, lowest) - lowest > CONTACT_MM:
+            problems.append(f"{label} touches nothing: it floats")
+    grounded = [labels[i] for i, z in result["lowest"].items() if z - lowest <= CONTACT_MM]
+    lines.append(f"Parts touching the ground (z = {lowest:.1f}): {', '.join(grounded)}")
     return "\n".join(lines), problems
 
 
@@ -437,18 +392,21 @@ async def _sync_positions(project_id: str, built: dict[str, dict]) -> None:
 
 
 async def review(project_id: str, owner: Optional[str], request: str, built: dict[str, dict],
-                 emit: Emit, max_rounds: int, ground: bool, plan_parts: list[dict]) -> None:
-    """Reflection loop: render the assembly, measure it, let the reviewer
-    judge it against the request and apply its fixes (re-attachments and part
-    redesigns by the part agents), then review again, until the reviewer is
-    satisfied. Stops early when two rounds in a row change nothing, and after
-    `max_rounds` at most."""
+                 emit: Emit, max_rounds: int, ground: bool, plan_parts: list[dict],
+                 mate_problems: Optional[list[str]] = None) -> None:
+    """Reflection loop: render the assembly, check it exactly (collisions,
+    mates in contact, floating parts), let the reviewer judge it against the
+    request and apply its fixes (re-mates and part redesigns by the part
+    agents), then review again. It ends when the reviewer is satisfied and
+    the exact checks pass, when it has no fix left, when two rounds in a row
+    change nothing, or after `max_rounds`."""
     history: list[dict] = []  # what earlier rounds found and did, so fixes aren't undone
     fixed_total: list[str] = []
     idle_rounds = 0
     snapshotted = False
     outcome, remaining = "limit", []
     missing = [p["name"] for p in plan_parts if p["id"] not in built]
+    mate_problems = list(mate_problems or [])
 
     for round_no in range(1, max_rounds + 1):
         await emit({"type": "reviewing", "round": round_no})
@@ -457,42 +415,58 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
         except GeometryJobError as e:
             logger.warning("[cad] review render failed: %s", e)
             image = None
-        facts, problems = _geometry_facts(built)
+        try:
+            facts, problems = await _check(built, mate_problems)
+        except GeometryJobError as e:
+            logger.warning("[cad] exact check failed: %s", e)
+            facts, problems = "(exact check unavailable)", list(mate_problems)
         parts = []
         for pid, b in built.items():
             params = {k: v["value"] for k, v in (b["meta"].get("params") or {}).items()}
             parts.append({
                 "id": pid, "name": b["spec"]["name"], "description": b["spec"]["description"][:500],
                 "size": b["meta"]["bbox"]["size"], "params": params,
-                "copies": [{"rotation": inst["rotation"], "attach": pl.get("attach")}
+                "ports": {n: {"origin": v["origin"], "axis": v["axis"]} for n, v in (b["meta"].get("ports") or {}).items()},
+                "copies": [{"mate": pl.get("mate"), "attach": pl.get("attach"), "rotation": inst["rotation"]}
                            for inst, pl in zip(b["instances"], b["spec"]["placements"])],
             })
         try:
             verdict = llm.extract_json(await llm.complete(
                 prompts.REVIEW_SYSTEM,
                 prompts.review_user(request, parts, facts, problems, image is not None, history),
-                max_tokens=3000, temperature=0.1, images=[image] if image else None))
+                max_tokens=4000, temperature=0.1, images=[image] if image else None))
         except Exception as e:
             logger.warning("[cad] review failed: %s", e)
             await emit({"type": "review", "round": round_no, "ok": True, "issues": [], "fixed": 0,
                         "note": "Review skipped"})
-            outcome = "error"
+            outcome = "quota" if isinstance(e, llm.QuotaExceeded) else "error"
+            remaining = [str(e)] if outcome == "quota" else problems
             break
         issues = [str(i)[:300] for i in (verdict.get("issues") or [])][:10]
         edits = [e for e in (verdict.get("edits") or []) if isinstance(e, dict) and e.get("part") in built][:4]
-        moves = [m for m in (verdict.get("attachments") or []) if isinstance(m, dict) and m.get("part") in built]
-        satisfied = bool(verdict.get("ok")) and not edits and not moves
+        moves = [m for m in (verdict.get("placements") or verdict.get("attachments") or [])
+                 if isinstance(m, dict) and m.get("part") in built]
 
-        if satisfied:
-            await emit({"type": "review", "round": round_no, "ok": True, "issues": [], "fixed": 0,
-                        "note": f"Review: satisfied (round {round_no})"})
-            outcome = "satisfied"
-            break
+        if verdict.get("ok") and not edits and not moves:
+            if not problems:
+                await emit({"type": "review", "round": round_no, "ok": True, "issues": [], "fixed": 0,
+                            "note": f"Review: satisfied (round {round_no})"})
+                outcome = "satisfied"
+                break
+            # The reviewer is happy but the exact checks aren't: ask again with that on record.
+            history.append({"round": round_no, "issues": problems, "applied": [],
+                            "rejected": ["You answered ok, but these exact checks still fail; they must be fixed."]})
+            await emit({"type": "review", "round": round_no, "ok": False, "issues": problems, "fixed": 0})
+            idle_rounds += 1
+            if idle_rounds >= 2:
+                outcome, remaining = "stalled", problems
+                break
+            continue
         if not edits and not moves:
-            # Problems it can't fix with re-attachments or edits: nothing more to do.
-            await emit({"type": "review", "round": round_no, "ok": False, "issues": issues, "fixed": 0,
+            # Problems it can't fix with re-mates or edits: nothing more to do.
+            await emit({"type": "review", "round": round_no, "ok": False, "issues": issues + problems, "fixed": 0,
                         "note": "Review: no further fixes"})
-            outcome, remaining = "stuck", issues
+            outcome, remaining = "stuck", issues + problems
             break
 
         if not snapshotted:
@@ -501,8 +475,8 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
         applied: list[str] = []
         rejected: list[str] = []
 
-        # Re-attach copies, but keep the moves only if the measured checks don't get worse.
-        _, before = _geometry_facts(built)
+        # Re-mate copies, but keep the moves only if the exact checks don't get worse.
+        before = problems
         saved = {pid: ([dict(p) for p in b["spec"]["placements"]], [list(i["rotation"]) for i in b["instances"]],
                        [list(i["position"]) for i in b["instances"]]) for pid, b in built.items()}
         described = []
@@ -513,24 +487,24 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
                 continue
             fixed = _expand_plan({"parts": [{"id": m["part"], "copies": [m]}]})[0]["placements"][0]
             b["spec"]["placements"][k] = fixed
-            b["instances"][k]["rotation"] = fixed["rotation"]
-            att = fixed.get("attach") or {}
-            described.append(f"re-attached {m['part']}#{k + 1} to the {att.get('side')} of {att.get('to')}"
-                             f" (rotation {fixed['rotation']}, offset {att.get('offset')})")
+            if fixed.get("attach"):
+                b["instances"][k]["rotation"] = fixed["rotation"]
+            how = fixed.get("mate") or fixed.get("attach") or {}
+            described.append(f"re-placed {m['part']}#{k + 1}: {json.dumps(how)}")
         if described:
-            trial = _solve_placements(built)
-            for b in built.values():
-                for inst in b["instances"]:
-                    if inst["id"] in trial:
-                        inst["position"] = trial[inst["id"]]
-            _, after = _geometry_facts(built)
+            trial, trial_problems = assembly.solve(built)
+            _apply(built, trial)
+            try:
+                _, after = await _check(built, trial_problems)
+            except GeometryJobError:
+                after = before
             if _severity(after) > _severity(before):
                 logger.info("[cad] review moves rejected: %s → %s", before, after)
                 for pid, (placements, rotations, positions) in saved.items():
                     built[pid]["spec"]["placements"] = placements
                     for inst, rot, pos in zip(built[pid]["instances"], rotations, positions):
                         inst["rotation"], inst["position"] = rot, pos
-                rejected += [f"{d}: rejected, it made the measured checks worse ({'; '.join(after[:3])})"
+                rejected += [f"{d}: rejected, it made the exact checks worse ({'; '.join(after[:3])})"
                              for d in described]
             else:
                 applied += described
@@ -548,10 +522,13 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
 
             instruction = str(e.get("instruction") or "")
             try:
+                if b["spec"].get("fastener"):
+                    raise StudioError("standard fasteners are not redesigned; re-place them or change the plan")
                 code, key, meta = await develop(
                     b["brief"] + "\n\n" + prompts.agent_revise(b["version"]["code"], instruction, None),
                     prompts.edit_user(b["version"]["code"], instruction, b["meta"], None),
-                    retry, notify, b["spec"].get("envelope"))
+                    retry, notify, b["spec"].get("envelope"),
+                    required_ports=[p["name"] for p in b["spec"].get("ports") or []])
             except Exception as err:
                 await emit({"type": "part_failed", "plan_id": e["part"], "error": str(err)[:500]})
                 rejected.append(f"edit {e['part']} ({instruction[:120]}): failed to build")
@@ -562,7 +539,7 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
             return f"edited {e['part']}: {instruction[:200]}"
 
         applied += [r for r in await asyncio.gather(*(redesign(e) for e in edits)) if r]
-        await _place(project_id, owner, built)
+        mate_problems = await _place(project_id, owner, built)
         if ground:
             await _rest_on_ground(project_id, owner)
         await _sync_positions(project_id, built)
@@ -586,8 +563,11 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
         text = f"Review satisfied after {rounds_done} round{'s' if rounds_done != 1 else ''}."
         if fixed_total:
             text += f" Fixed along the way:\n{bullets(fixed_total)}"
-    elif outcome == "error":
-        text = "The review couldn't run; the assembly is as generated."
+    elif outcome in ("error", "quota"):
+        text = ("The review stopped: " + remaining[0]) if outcome == "quota" else \
+            "The review couldn't run; the assembly is as generated."
+        if outcome == "error" and remaining:
+            text += f"\nOpen exact-check problems:\n{bullets(remaining)}"
     else:
         why = {"stuck": "it found no further fixes", "stalled": "two rounds in a row changed nothing",
                "limit": f"it reached the limit of {max_rounds} rounds"}[outcome]
@@ -654,16 +634,24 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                     async def notify(action: str, detail: str):
                         await emit({"type": "agent", "plan_id": spec["id"], "action": action, "detail": detail})
 
-                    siblings = [{"name": o["name"], "description": o["description"]} for o in parts if o is not spec]
+                    siblings = [{"name": o["name"], "description": o["description"]} for o in parts
+                                if o is not spec and not o["fastener"]]
                     try:
-                        code, key, meta = await develop(
-                            prompts.agent_brief(spec, interfaces, overall, siblings),
-                            prompts.part_user(spec["name"], spec["description"] + "\n" + "\n".join(spec["features"]),
-                                              overall),
-                            retry, notify, spec.get("envelope"))
+                        if spec["fastener"]:
+                            # Standard hardware: fixed template, no agent needed.
+                            code = fasteners.code(spec["fastener"])
+                            key, meta = await build(code, {}, {}, check_ports=False)
+                        else:
+                            code, key, meta = await develop(
+                                prompts.agent_brief(spec, interfaces, overall, siblings),
+                                prompts.part_user(spec["name"],
+                                                  spec["description"] + "\n" + "\n".join(spec["features"]), overall),
+                                retry, notify, spec.get("envelope"), required_ports=[p["name"] for p in spec["ports"]])
                     except Exception as e:
                         await emit({"type": "part_failed", "plan_id": spec["id"], "error": str(e)[:2000]})
                         return
+                    if spec["fastener"]:
+                        spec["name"] = fasteners.name(spec["fastener"])
                     part = await repo.create_part(project_id, owner, spec["name"], "generated", "brep", spec["color"])
                     version = await repo.add_version(part, code, {}, {}, prompt, key, meta)
                     instances = [
@@ -684,8 +672,7 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
             # Parts that failed (usually rate limits) get one more go, one at a time.
             for spec in [p for p in parts if p["id"] not in built]:
                 await make(spec)
-            if built:
-                await _place(project_id, owner, built)
+            mate_problems = await _place(project_id, owner, built) if built else []
             if not existing:
                 await _rest_on_ground(project_id, owner)
             names = [b["spec"]["name"] for b in built.values()]
@@ -700,7 +687,7 @@ async def generate(project_id: str, owner: Optional[str], prompt: str) -> AsyncG
                 await _sync_positions(project_id, built)
                 await emit({"type": "state", "state": await state(project_id)})
                 await review(project_id, owner, prompt, built, emit, settings.CAD_REVIEW_MAX_ROUNDS,
-                             ground=not existing, plan_parts=parts)
+                             ground=not existing, plan_parts=parts, mate_problems=mate_problems)
             await emit({"type": "complete", "state": await state(project_id)})
         except asyncio.CancelledError:
             await repo.add_message(project_id, "assistant", "Stopped.")

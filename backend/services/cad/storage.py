@@ -19,7 +19,7 @@ from typing import Optional
 from core.config import settings
 
 # Bump when the runner's output changes so old cached builds are not reused.
-RUNNER_VERSION = "1"
+RUNNER_VERSION = "3"  # 2: ports in meta, 3: port checks
 EXPORT_TTL = 24 * 3600
 OBJECT_FILES = {"part.step", "part.stl", "mesh.json", "meta.json"}
 
