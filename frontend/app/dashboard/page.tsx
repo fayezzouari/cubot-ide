@@ -309,12 +309,12 @@ export default function DashboardPage() {
             {/* New project card */}
             <button
               onClick={handleNewProject}
-              className="rounded-xl border border-dashed border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.02] transition-all p-5 flex flex-col items-center justify-center gap-2 min-h-[10rem] cursor-pointer group"
+              className="bg-black hover:bg-[#0b0b0b] transition-colors p-6 flex flex-col items-center justify-center gap-3 min-h-[10rem] cursor-pointer group focus-visible:outline-none focus-visible:bg-[#0b0b0b]"
             >
-              <div className="w-8 h-8 rounded-lg border border-dashed border-white/[0.1] group-hover:border-white/20 flex items-center justify-center transition-colors">
-                <Plus size={14} className="text-white/25 group-hover:text-white/50 transition-colors" />
+              <div className="w-9 h-9 rounded-lg border border-dashed border-white/[0.18] group-hover:border-white/40 flex items-center justify-center transition-colors">
+                <Plus size={15} className="text-white/40 group-hover:text-white transition-colors" />
               </div>
-              <span className="text-xs text-white/25 group-hover:text-white/50 transition-colors">New Project</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-white/40 group-hover:text-white transition-colors">New Project</span>
             </button>
           </div>
         )}
