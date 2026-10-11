@@ -46,6 +46,9 @@ services:
       - DD_LOGS_INJECTION=true
       # ROS sandbox pods: kubeconfig written by scripts/setup-k3s.sh
       - KUBECONFIG=/kube/config
+      # CAD Studio: geometry runs in the sandboxed cad-worker service
+      - CAD_WORKER_URL=http://cad-worker:8100
+      - CAD_STORAGE_DIR=/data/cad
     extra_hosts:
       - "host.docker.internal:host-gateway"
     group_add:
@@ -54,10 +57,42 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${COMPILE_HOST_DIR:-/opt/cubot/compiles}:/compile_tmp
       - ${KUBE_CONFIG_DIR:-/opt/cubot/kube}:/kube:ro
+      - cad_data:/data/cad
     depends_on:
       - mongodb
+      - cad-worker
     networks:
       - cubot-network
+      - cad-internal
+
+  # Runs model-written CadQuery code. Same image as the backend, but with no
+  # Docker socket, no secrets, a read-only filesystem, no outbound network
+  # (cad-internal is internal-only) and capped memory/CPU.
+  cad-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cubot-cad-worker
+    restart: unless-stopped
+    command: [".venv/bin/uvicorn", "services.cad.server:app", "--host", "0.0.0.0", "--port", "8100"]
+    environment:
+      - CAD_WORKERS=${CAD_WORKERS:-1}
+      - CAD_JOB_TIMEOUT=60
+      - CAD_WORKER_MAX_JOBS=100
+    volumes:
+      - cad_data:/data/cad
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: ${CAD_WORKER_MEMORY:-900m}
+    cpus: 1.5
+    pids_limit: 128
+    networks:
+      - cad-internal
 
   frontend:
     build:
@@ -119,7 +154,11 @@ services:
 
 volumes:
   mongodb_data:
+  cad_data:
 
 networks:
   cubot-network:
     driver: bridge
+  cad-internal:
+    driver: bridge
+    internal: true
