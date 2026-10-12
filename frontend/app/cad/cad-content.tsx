@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
+  Atom,
   ChevronDown,
   Download,
   Home,
@@ -36,7 +37,7 @@ import AssistantPanel, { type LogEntry, type PlanRow } from '@/components/cad/as
 import PartsPanel from '@/components/cad/parts-panel';
 import InspectorPanel from '@/components/cad/inspector-panel';
 import HistoryPanel from '@/components/cad/history-panel';
-import type { TransformMode, ViewportHandle } from '@/components/cad/studio-viewport';
+import type { PhysicsStatus, TransformMode, ViewportHandle } from '@/components/cad/studio-viewport';
 
 const StudioViewport = dynamic(() => import('@/components/cad/studio-viewport'), { ssr: false });
 
@@ -79,6 +80,8 @@ export default function CadPageContent() {
   const [face, setFace] = useState<FaceInfo | null>(null);
   const [mode, setMode] = useState<TransformMode>('translate');
   const [snap, setSnap] = useState(true);
+  const [physics, setPhysics] = useState(false);
+  const [physicsStatus, setPhysicsStatus] = useState<PhysicsStatus | null>(null);
   const [tab, setTab] = useState<'assistant' | 'parts' | 'history'>('assistant');
   const [snapshots, setSnapshots] = useState<CadSnapshot[] | null>(null);
   const [trash, setTrash] = useState<TrashedPart[] | null>(null);
@@ -246,12 +249,27 @@ export default function CadPageContent() {
           setPlan([{ id: '__plan', name: 'Planning parts…', status: 'running' }]);
           break;
         case 'plan':
+          if (e.append) {
+            // Parts derived after the first build (screws, nuts) join the list.
+            setPlan((rows) => [...rows, ...e.parts.map((p) => ({ ...p, status: 'pending' as const }))]);
+            break;
+          }
           setPlan(e.parts.map((p) => ({ ...p, status: 'pending' })));
           setInterfaces(e.interfaces ?? null);
           break;
         case 'agent': {
           const label =
-            e.action === 'build' ? `Building (${e.detail})` : e.action === 'view' ? 'Inspecting its render' : e.action === 'error' ? `Fixing: ${e.detail}` : 'Handing in';
+            e.action === 'build'
+              ? `Building (${e.detail})`
+              : e.action === 'view'
+                ? 'Inspecting its render'
+                : e.action === 'measure'
+                  ? 'Measuring its features'
+                  : e.action === 'error'
+                    ? `Fixing: ${e.detail}`
+                    : e.action === 'detail' || e.action === 'check'
+                      ? e.detail
+                      : 'Handing in';
           setPlan((rows) => rows.map((r) => (r.id === (e.plan_id ?? e.part_id) ? { ...r, detail: label } : r)));
           break;
         }
@@ -653,6 +671,8 @@ export default function CadPageContent() {
               face={face}
               mode={mode}
               snap={snap}
+              physics={physics}
+              onPhysics={setPhysicsStatus}
               onSelect={(id) => {
                 setSelectedId(id);
                 if (!id) setFace(null);
@@ -667,7 +687,53 @@ export default function CadPageContent() {
             </div>
           )}
 
+          {physics && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-md border border-amber-400/30 bg-black/75 backdrop-blur px-3 py-1.5 text-[11.5px] text-amber-100/90">
+              <Atom size={13} className="text-amber-300" />
+              {physicsStatus?.status === 'ready' && physicsStatus.summary ? (
+                <span>
+                  Physics on: drag parts. {physicsStatus.summary.bodies} bodies, {physicsStatus.summary.hinges} hinge
+                  {physicsStatus.summary.hinges === 1 ? '' : 's'}, {physicsStatus.summary.fixed} fixed to the ground
+                  {physicsStatus.summary.overlapping > 0
+                    ? `, ${physicsStatus.summary.overlapping} overlapping pair${physicsStatus.summary.overlapping === 1 ? '' : 's'} left as they are`
+                    : ''}
+                  .
+                </span>
+              ) : physicsStatus?.status === 'error' ? (
+                <span className="text-red-300">Physics failed: {physicsStatus.error}</span>
+              ) : (
+                <span>Building the physics world…</span>
+              )}
+              <button
+                onClick={() => {
+                  // Keep where the simulation put things; mates stay, so a re-solve restores the plan.
+                  const poses = viewport.current?.physicsPoses();
+                  if (poses?.size) {
+                    updateAssembly((list) => list.map((i) => (poses.get(i.id) ? { ...i, ...poses.get(i.id)! } : i)));
+                  }
+                  setPhysics(false);
+                }}
+                disabled={physicsStatus?.status !== 'ready'}
+                className="ml-2 px-2 py-0.5 rounded bg-white text-black font-medium disabled:opacity-40"
+              >
+                Keep poses
+              </button>
+              <button onClick={() => setPhysics(false)} className="px-2 py-0.5 rounded text-white/70 hover:text-white">
+                Reset
+              </button>
+            </div>
+          )}
+
           <div className="absolute top-3 left-3 flex gap-1 rounded-md border border-white/[0.08] bg-black/70 backdrop-blur p-1">
+            <button
+              onClick={() => setPhysics((v) => !v)}
+              disabled={!instances.length}
+              title={physics ? 'Stop physics (parts go back where they were)' : 'Physics: parts fall, hinge, collide and can be dragged'}
+              className={`p-1.5 rounded disabled:opacity-25 ${physics ? 'bg-amber-400/25 text-amber-200' : 'text-white/45 hover:text-white'}`}
+            >
+              <Atom size={14} />
+            </button>
+            <span className="w-px bg-white/10 mx-0.5" />
             {[
               { id: 'translate', icon: Move3d, title: 'Move (G)' },
               { id: 'rotate', icon: Rotate3d, title: 'Rotate (R)' },
