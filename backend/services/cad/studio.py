@@ -19,9 +19,9 @@ import numpy as np
 
 from core.config import settings
 from services.cad import agents, assembly, catalog, fasteners, llm, prompts, repository as repo, storage
+from services.cad.geometry import GeometryJobError, geometry
 
 assembly_mod = assembly  # for functions whose local `assembly` is the stored document
-from services.cad.geometry import GeometryJobError, geometry
 
 logger = logging.getLogger(__name__)
 
