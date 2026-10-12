@@ -424,6 +424,21 @@ def rpy_from_xyz(rot_deg):
     return roll, pitch, yaw
 
 
+def _mat4(pos, rot_deg) -> "np.ndarray":
+    m = np.eye(4)
+    m[:3, :3] = _rotation_matrix(rot_deg)
+    m[:3, 3] = np.asarray(pos, float)
+    return m
+
+
+def _rpy(m: "np.ndarray"):
+    """Fixed-axis roll/pitch/yaw (R = Rz·Ry·Rx) of a rotation matrix, as URDF wants."""
+    pitch = math.asin(max(-1.0, min(1.0, -m[2, 0])))
+    roll = math.atan2(m[2, 1], m[2, 2])
+    yaw = math.atan2(m[1, 0], m[0, 0])
+    return roll, pitch, yaw
+
+
 def mass_properties(shape: cq.Shape, density: float):
     """Mass (kg), centre of mass (mm) and inertia about it (kg·m²: ixx, iyy,
     izz, ixy, ixz, iyz) of a uniform solid; tiny fallbacks for open meshes."""
@@ -482,10 +497,14 @@ def run_assemble(job: dict) -> dict:
                 z.write(tmp, f"{name}.stl")
                 os.remove(tmp)
     elif fmt == "urdf":
+        # The mate tree is the kinematic tree: each copy's link hangs off the link it is mated
+        # to (base_link for the ground or an unplaced target), fixed or revolute about the mate axis.
         robot = job.get("name") or "assembly"
         robot = safe_name(robot, set())
         links = ['  <link name="base_link"/>']
         joints = []
+        frames = {inst.get("id"): (name, _mat4(inst.get("position", [0, 0, 0]), inst.get("rotation", [0, 0, 0])))
+                  for name, _, _, inst in placed}
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
             for name, shape, _, inst in placed:
                 tmp = f"{out_path}.{name}.stl"
@@ -505,13 +524,28 @@ def run_assemble(job: dict) -> dict:
                     f'ixy="{inertia[3]:.6g}" ixz="{inertia[4]:.6g}" iyz="{inertia[5]:.6g}"/></inertial>\n'
                     f'  </link>'
                 )
-                p = inst.get("position", [0, 0, 0])
-                r, pi_, y = rpy_from_xyz(inst.get("rotation", [0, 0, 0]))
+                t_child = frames[inst.get("id")][1]
+                parent = frames.get(inst.get("parent"))
+                if parent:
+                    parent_name, t_parent = parent
+                    t_rel = np.linalg.inv(t_parent) @ t_child
+                else:
+                    parent_name, t_rel = "base_link", t_child
+                p = t_rel[:3, 3]
+                r, pi_, y = _rpy(t_rel[:3, :3])
+                kind = "revolute" if inst.get("joint") == "revolute" and inst.get("axis") else "fixed"
+                axis_line = ""
+                if kind == "revolute":
+                    a = t_child[:3, :3].T @ np.asarray(inst["axis"], float)  # in the child (joint) frame
+                    a /= max(np.linalg.norm(a), 1e-9)
+                    axis_line = (f'    <axis xyz="{a[0]:.6f} {a[1]:.6f} {a[2]:.6f}"/>\n'
+                                 f'    <limit lower="-3.1416" upper="3.1416" effort="1" velocity="1"/>\n')
                 joints.append(
-                    f'  <joint name="{name}_joint" type="fixed">\n'
-                    f'    <parent link="base_link"/><child link="{name}"/>\n'
+                    f'  <joint name="{name}_joint" type="{kind}">\n'
+                    f'    <parent link="{parent_name}"/><child link="{name}"/>\n'
                     f'    <origin xyz="{p[0] / 1000:.6f} {p[1] / 1000:.6f} {p[2] / 1000:.6f}" '
                     f'rpy="{r:.6f} {pi_:.6f} {y:.6f}"/>\n'
+                    f'{axis_line}'
                     f'  </joint>'
                 )
             urdf = (
@@ -665,7 +699,12 @@ def run_check(job: dict) -> dict:
     near = float(job.get("near", 1.0))
     shapes = []
     for inst in job["instances"]:
-        shape = cq.importers.importStep(inst["step_path"]).val()
+        if inst.get("box"):  # a part not built yet: its planned envelope, in its own frame
+            lo, hi = inst["box"]
+            shape = cq.Solid.makeBox(max(hi[0] - lo[0], 0.01), max(hi[1] - lo[1], 0.01), max(hi[2] - lo[2], 0.01),
+                                     pnt=cq.Vector(*lo))
+        else:
+            shape = cq.importers.importStep(inst["step_path"]).val()
         shape = shape.moved(location(inst.get("position", [0, 0, 0]), inst.get("rotation", [0, 0, 0])))
         bb = shape.BoundingBox()
         shapes.append((inst["id"], shape, (bb.xmin, bb.ymin, bb.zmin), (bb.xmax, bb.ymax, bb.zmax)))
@@ -678,7 +717,7 @@ def run_check(job: dict) -> dict:
             close = all(min(ahi[k], bhi[k]) - max(alo[k], blo[k]) > -near for k in range(3))
             if not close and tuple(sorted((ida, idb))) not in wanted:
                 continue
-            overlap = 0.0
+            overlap, centre, box = 0.0, None, None
             if close:
                 try:
                     common = BRepAlgoAPI_Common(a.wrapped, b.wrapped)
@@ -687,6 +726,12 @@ def run_check(job: dict) -> dict:
                         props = GProp_GProps()
                         BRepGProp.VolumeProperties_s(common.Shape(), props)
                         overlap = max(props.Mass(), 0.0)
+                        if overlap > 0:  # where it is, so the fix can be aimed
+                            c = props.CentreOfMass()
+                            centre = [round(c.X(), 2), round(c.Y(), 2), round(c.Z(), 2)]
+                            cb = cq.Shape.cast(common.Shape()).BoundingBox()
+                            box = [[round(cb.xmin, 2), round(cb.ymin, 2), round(cb.zmin, 2)],
+                                   [round(cb.xmax, 2), round(cb.ymax, 2), round(cb.zmax, 2)]]
                 except Exception:
                     overlap = -1.0  # could not compute
             try:
@@ -694,12 +739,111 @@ def run_check(job: dict) -> dict:
                 distance = dist.Value() if dist.IsDone() else -1.0
             except Exception:
                 distance = -1.0
-            pairs.append({"a": ida, "b": idb, "overlap": round(overlap, 3), "distance": round(distance, 3)})
+            pairs.append({"a": ida, "b": idb, "overlap": round(overlap, 3), "distance": round(distance, 3),
+                          "centre": centre, "box": box})
     lowest = {iid: round(lo[2], 3) for iid, _, lo, _ in shapes}
     return {"pairs": pairs, "lowest": lowest}
 
 
-JOBS = {"build": run_build, "assemble": run_assemble, "render": run_render, "check": run_check}
+# ── Feature measurement (the part agent's ruler) ─────────────────────────
+
+
+def run_measure(job: dict) -> dict:
+    """Holes and bosses (coaxial cylindrical faces merged into one feature)
+    and the largest flat faces of a part, measured from the solid."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cylinder, GeomAbs_Plane
+
+    shape = cq.importers.importStep(job["step_path"]).val()
+    cyls: dict[tuple, dict] = {}
+    planes = []
+    for face in shape.Faces():
+        try:
+            ad = BRepAdaptor_Surface(face.wrapped)
+            kind = ad.GetType()
+        except Exception:
+            continue
+        if kind == GeomAbs_Cylinder:
+            cyl = ad.Cylinder()
+            loc, d = cyl.Axis().Location(), cyl.Axis().Direction()
+            axis = np.array([d.X(), d.Y(), d.Z()])
+            if axis[2] < 0 or (axis[2] == 0 and (axis[1] < 0 or (axis[1] == 0 and axis[0] < 0))):
+                axis = -axis  # one direction per line
+            point = np.array([loc.X(), loc.Y(), loc.Z()])
+            foot = point - np.dot(point, axis) * axis  # the axis line's closest point to the origin
+            bb = face.BoundingBox()
+            corners = np.array([[x, y, z] for x in (bb.xmin, bb.xmax) for y in (bb.ymin, bb.ymax)
+                                for z in (bb.zmin, bb.zmax)])
+            ts = corners @ axis
+            key = (tuple(np.round(axis, 3)), tuple(np.round(foot, 2)), round(cyl.Radius(), 2))
+            entry = cyls.setdefault(key, {"axis": axis, "foot": foot, "r": cyl.Radius(), "tmin": ts.min(),
+                                          "tmax": ts.max(), "area": 0.0})
+            entry["tmin"], entry["tmax"] = min(entry["tmin"], ts.min()), max(entry["tmax"], ts.max())
+            entry["area"] += face.Area()
+        elif kind == GeomAbs_Plane:
+            c = face.Center()
+            try:
+                n = face.normalAt(c)
+                planes.append({"center": [round(c.x, 2), round(c.y, 2), round(c.z, 2)],
+                               "normal": [round(n.x, 3), round(n.y, 3), round(n.z, 3)], "area": round(face.Area(), 1)})
+            except Exception:
+                pass
+    holes, bosses = [], []
+    for e in cyls.values():
+        mid = e["foot"] + e["axis"] * (e["tmin"] + e["tmax"]) / 2
+        perp = np.cross(e["axis"], [1.0, 0.0, 0.0])
+        if np.linalg.norm(perp) < 1e-6:
+            perp = np.cross(e["axis"], [0.0, 1.0, 0.0])
+        perp /= np.linalg.norm(perp)
+        inside = _classify(shape, tuple(mid + perp * max(e["r"] - 0.3, e["r"] * 0.5)))
+        feature = {"centre": [round(float(v), 2) for v in mid], "axis": [round(float(v), 3) for v in e["axis"]],
+                   "diameter": round(2 * e["r"], 2), "length": round(float(e["tmax"] - e["tmin"]), 2)}
+        (bosses if inside == "in" else holes).append(feature)
+    holes.sort(key=lambda h: (h["diameter"], h["centre"]))
+    bosses.sort(key=lambda h: (-h["diameter"], h["centre"]))
+    planes.sort(key=lambda p: -p["area"])
+    return {"holes": holes[:40], "bosses": bosses[:20], "flat_faces": planes[:12],
+            "note": "holes: material around the axis; bosses: material inside; lengths along the axis"}
+
+
+# ── Convex decomposition (collision shapes for the physics sandbox) ──────
+
+
+def run_decompose(job: dict) -> dict:
+    """Approximate convex pieces of a part's preview mesh (CoACD), so a
+    physics engine keeps its bores, pockets and gaps. Writes {"hulls":
+    [{"points": [x, y, z, ...]}, ...]} to out_path."""
+    try:
+        import coacd  # noqa: WPS433  (optional dependency of the worker)
+    except ImportError as e:
+        raise JobError("convex decomposition needs the coacd package in the geometry worker") from e
+    with open(job["mesh_path"]) as fh:
+        mesh = json.load(fh)
+    verts = np.asarray(mesh["positions"], float).reshape(-1, 3)
+    tris = np.asarray(mesh["indices"], np.int64).reshape(-1, 3)
+    if len(tris) == 0:
+        raise JobError("the mesh is empty")
+    coacd.set_log_level("error")
+    # Coarse but quick: a few seconds per part; the result is cached with the part's files.
+    pieces = coacd.run_coacd(
+        coacd.Mesh(verts, tris),
+        threshold=float(job.get("threshold", 0.08)),
+        max_convex_hull=int(job.get("max_hulls", 20)),
+        preprocess_mode="auto",
+        preprocess_resolution=30,
+        resolution=int(job.get("resolution", 600)),
+        mcts_nodes=6, mcts_iterations=30, mcts_max_depth=2,
+        merge=True, max_ch_vertex=64, seed=0,
+    )
+    hulls = [{"points": np.round(np.asarray(v, float), 3).ravel().tolist()} for v, _ in pieces if len(v) >= 4]
+    os.makedirs(os.path.dirname(job["out_path"]), exist_ok=True)
+    with open(job["out_path"], "w") as fh:
+        json.dump({"hulls": hulls}, fh, separators=(",", ":"))
+    return {"hulls": len(hulls), "path": job["out_path"]}
+
+
+JOBS = {"build": run_build, "assemble": run_assemble, "render": run_render, "check": run_check,
+        "measure": run_measure, "decompose": run_decompose}
 
 
 def main() -> None:
