@@ -12,8 +12,6 @@ is checked against is exactly what gets built.
 """
 from typing import Optional
 
-from services.cad import fasteners
-
 COLOR = {"servo": "#3b4a5a", "horn": "#d8d8d8", "motor": "#4a4a4a", "stepper": "#2f2f2f", "bearing": "#b8bcc0"}
 
 
