@@ -442,6 +442,20 @@ wheels = [
 ]
 
 [[package]]
+name = "coacd"
+version = "1.0.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/94/622a380a5c4cac78c1f19379b1d3fa193903f848311c200924309797abf8/coacd-1.0.14-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:4cd9e1f327af766f6364e79e384ebfe152780a3d8dbbd09ce0756ec14f9e1256", size = 3426003, upload-time = "2026-08-28T21:53:32.005Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/3e/e930a366ec69a966f1a55307b52d036d266314e2f6c58e72e212fdc09182/coacd-1.0.14-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1242941fc9d49ebcb0368c68f31c86e278b9a6f1a255d11da2f1668797e2626e", size = 2584591, upload-time = "2026-08-28T21:53:33.537Z" },
+    { url = "https://files.pythonhosted.org/packages/88/7c/ec7edfc77c48fe97434ae813eca7614103289105bb546952ed9a0a266ce8/coacd-1.0.14-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6c135b717af096523bbebf1fd8d326e8950c024237fe9806ad46dedd8b4c31f0", size = 2651838, upload-time = "2026-08-28T21:53:34.776Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/28/edbc4d6766fb3504bf15dabe7340e5686c72b9e3be030b3c8c40469e7af6/coacd-1.0.14-cp39-abi3-win_amd64.whl", hash = "sha256:6b548f44d9a4694cde594dc8cc8fefa678fb7c88153583be4e8b2c707de8fbbd", size = 1487726, upload-time = "2026-08-28T21:53:36.6Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -519,6 +533,7 @@ dependencies = [
     { name = "boto3" },
     { name = "cadquery" },
     { name = "cadquery-ocp" },
+    { name = "coacd" },
     { name = "ddtrace" },
     { name = "docker" },
     { name = "exa-py" },
@@ -549,6 +564,7 @@ requires-dist = [
     { name = "boto3", specifier = "==1.42.56" },
     { name = "cadquery", specifier = "==2.4.0" },
     { name = "cadquery-ocp", specifier = "==7.7.2" },
+    { name = "coacd", specifier = ">=1.0.14" },
     { name = "ddtrace", specifier = ">=2.0.0" },
     { name = "docker", specifier = "==7.0.0" },
     { name = "exa-py", specifier = "==2.1.1" },
