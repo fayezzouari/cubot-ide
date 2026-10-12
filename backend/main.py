@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from core.database import connect_to_mongo, close_mongo_connection
 from core.auth import get_current_user
+from services.cad import repository as cad_repository
+from services.cad.geometry import geometry
 from routes import (
     files_router,
     projects_router,
@@ -27,8 +29,11 @@ async def lifespan(app: FastAPI):
     """Manage application lifecycle - startup and shutdown"""
     # Startup
     await connect_to_mongo(settings.MONGODB_URI, settings.MONGODB_DB_NAME)
+    await cad_repository.ensure_indexes()
+    await geometry.start()
     yield
     # Shutdown
+    await geometry.close()
     await close_mongo_connection()
 
 

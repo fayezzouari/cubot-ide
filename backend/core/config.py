@@ -46,6 +46,26 @@ class Settings(BaseSettings):
     SANDBOX_MEMORY_LIMIT: str = "2Gi"
     SANDBOX_DISK_LIMIT: str = "5Gi"
 
+    # CAD Studio
+    CAD_STORAGE_DIR: str = "/tmp/cubot-cad"  # shared with the geometry worker
+    CAD_WORKER_URL: Optional[str] = None  # sandboxed worker service; unset = local pool
+    # Model for CAD planning and code; falls back to BEDROCK_MODEL_ID if the account can't use it.
+    CAD_MODEL_ID: str = "us.anthropic.claude-opus-4-6-v1"
+    # Faster model for planning and placing parts (falls back to CAD_MODEL_ID, then BEDROCK_MODEL_ID).
+    CAD_FAST_MODEL_ID: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    # Part agents make many calls with renders; a lighter model keeps daily token quotas in reach.
+    CAD_AGENT_MODEL_ID: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    CAD_PLAN_THINK: int = 6000  # extended-thinking budget for the architect (0 disables)
+    CAD_PARALLEL_PARTS: int = 3  # part agents working at once per request
+    CAD_AGENT_STEPS: int = 8  # model turns per part agent
+    CAD_MAX_FIX_ATTEMPTS: int = 3
+    # Review rounds after generation: they continue until the reviewer is satisfied, at most this many (0 disables).
+    CAD_REVIEW_MAX_ROUNDS: int = 5
+    # Automatic repair rounds before the reviewer: ports off the plan, contacts that don't close,
+    # screws through solid material are fixed from measurements alone (0 disables).
+    CAD_REPAIR_ROUNDS: int = 2
+    CAD_MAX_UPLOAD_MB: int = 50
+
     # Exa Web Search
     EXA_API_KEY: Optional[str] = None
 

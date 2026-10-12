@@ -9,6 +9,10 @@ services:
     image: ${ECR_REGISTRY}/cubot/backend:${IMAGE_TAG:-latest}
     build: !reset {}
 
+  cad-worker:
+    image: ${ECR_REGISTRY}/cubot/backend:${IMAGE_TAG:-latest}
+    build: !reset {}
+
   frontend:
     image: ${ECR_REGISTRY}/cubot/frontend:${IMAGE_TAG:-latest}
     build: !reset {}

@@ -17,7 +17,8 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY . .
 
 RUN useradd -m -u 1000 appuser && \
-    groupadd -f -g 984 docker && usermod -aG docker appuser
+    groupadd -f -g 984 docker && usermod -aG docker appuser && \
+    mkdir -p /data/cad && chown appuser:appuser /data/cad
 
 USER appuser
 EXPOSE 8000
