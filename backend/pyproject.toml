@@ -29,6 +29,7 @@ dependencies = [
     "websockets==15.0.1",
     "numpy<2.0",
     "kubernetes==35.0.0",
+    "coacd>=1.0.14",
 ]
 
 [tool.ruff]
