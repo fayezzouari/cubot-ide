@@ -102,6 +102,41 @@ def world_port(port: dict, position, rotation) -> dict:
     }
 
 
+def local_port(world: dict, position, rotation) -> dict:
+    """A world-frame port expressed in the frame of a part placed at
+    `position`/`rotation` (the inverse of `world_port`)."""
+    r = matrix(rotation)
+    origin = r.T @ (np.asarray(world["origin"], float) - np.asarray(position, float))
+    axis = _unit(r.T @ np.asarray(world["axis"], float))
+    ref = world.get("ref")
+    return {
+        "origin": [round(float(v), 3) + 0.0 for v in origin],
+        "axis": [round(float(v), 4) + 0.0 for v in axis],
+        "ref": [round(float(v), 4) + 0.0 for v in _unit(r.T @ np.asarray(ref, float))] if ref is not None else None,
+    }
+
+
+def _angle(a, b) -> float:
+    c = float(np.dot(_unit(a), _unit(b)))
+    return round(math.degrees(math.acos(max(-1.0, min(1.0, c)))), 2)
+
+
+def mate_residual(own_world: dict, target_world: dict, gap: float) -> tuple[float, float]:
+    """How far a mate is from closed: distance (mm) between the placed port's
+    origin and where the target puts it (after the gap), and the angle
+    (degrees) between the two axes and facing each other."""
+    want = np.asarray(target_world["origin"], float) + gap * np.asarray(target_world["axis"], float)
+    dist = float(np.linalg.norm(np.asarray(own_world["origin"], float) - want))
+    return round(dist, 3), _angle(own_world["axis"], -np.asarray(target_world["axis"], float))
+
+
+def port_deviation(declared: dict, required: dict) -> tuple[float, float]:
+    """Distance (mm) and axis angle (degrees) between a port a part declares
+    and the frame the plan requires for it, both in the part's frame."""
+    dist = float(np.linalg.norm(np.asarray(declared["origin"], float) - np.asarray(required["origin"], float)))
+    return round(dist, 3), _angle(declared["axis"], required["axis"])
+
+
 def mate_frame(own: dict, target_world: dict, gap: float, angle_deg: float) -> tuple[list[float], list[float]]:
     """Position and rotation that put port `own` (in the part's frame) against
     the world-frame target port."""
