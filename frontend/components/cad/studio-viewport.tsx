@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Edges, GizmoHelper, GizmoViewport, Grid, OrbitControls, TransformControls } from '@react-three/drei';
-import { cadApi, type CadInstance, type CadPart, type CaptureView, type FaceInfo, type PartMesh, type Vec3 } from '@/lib/api/cad';
+import { cadApi, type CadInstance, type CadPart, type CaptureView, type FaceInfo, type PartHulls, type PartMesh, type Vec3 } from '@/lib/api/cad';
+import { buildPhysics, type PhysicsWorld, type Pose } from '@/lib/physics';
 
 const DEG = Math.PI / 180;
 // The scene uses CAD axes directly: millimetres, Z up (the camera's up is +Z).
@@ -20,6 +21,14 @@ export interface ViewportHandle {
   captureViews: (views: CaptureView[]) => Promise<{ view: string; data: string }[]>;
   /** Height (mm) to add to the instance's z so its lowest point rests on the ground. */
   dropToGround: (instanceId: string) => number | null;
+  /** Where the physics sandbox has put every copy (null when physics is off). */
+  physicsPoses: () => Map<string, Pose> | null;
+}
+
+export interface PhysicsStatus {
+  status: 'loading' | 'ready' | 'error';
+  summary?: { bodies: number; hinges: number; fixed: number; overlapping: number };
+  error?: string;
 }
 
 interface Props {
@@ -31,6 +40,9 @@ interface Props {
   face: FaceInfo | null;
   mode: TransformMode;
   snap: boolean;
+  /** Physics sandbox: parts fall, hinge and collide, and can be dragged. */
+  physics?: boolean;
+  onPhysics?: (status: PhysicsStatus) => void;
   onSelect: (instanceId: string | null) => void;
   onFace: (face: FaceInfo | null) => void;
   onTransform: (instanceId: string, position: Vec3, rotation: Vec3) => void;
@@ -119,9 +131,10 @@ interface InstanceProps {
   face: FaceInfo | null;
   register: (id: string, object: THREE.Object3D | null) => void;
   onPick: (e: ThreeEvent<MouseEvent>, instance: CadInstance, mesh: PartMesh | null) => void;
+  onDown?: (e: ThreeEvent<PointerEvent>, instance: CadInstance) => void;
 }
 
-function InstanceObject({ instance, part, selected, face, register, onPick }: InstanceProps) {
+function InstanceObject({ instance, part, selected, face, register, onPick, onDown }: InstanceProps) {
   const loaded = useGeometry(part.version?.key);
   const color = instance.color || part.color;
   const highlight = useMemo(
@@ -141,6 +154,7 @@ function InstanceObject({ instance, part, selected, face, register, onPick }: In
         <mesh
           geometry={loaded.geometry}
           onClick={(e) => onPick(e, instance, loaded.mesh)}
+          onPointerDown={onDown ? (e) => onDown(e, instance) : undefined}
         >
           <meshStandardMaterial
             color={color}
@@ -166,8 +180,10 @@ function InstanceObject({ instance, part, selected, face, register, onPick }: In
 }
 
 function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
-  const { parts, instances, selectedId, face, mode, snap, onSelect, onFace, onTransform, handleRef } = props;
+  const { parts, instances, selectedId, face, mode, snap, physics, onPhysics, onSelect, onFace, onTransform, handleRef } = props;
   const objects = useRef(new Map<string, THREE.Object3D>());
+  const physicsRef = useRef<PhysicsWorld | null>(null);
+  const grabPlane = useRef<THREE.Plane | null>(null);
   const [target, setTarget] = useState<THREE.Object3D | null>(null);
   const { camera, controls, gl, scene } = useThree() as unknown as {
     camera: THREE.PerspectiveCamera;
@@ -192,6 +208,117 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
   useEffect(() => {
     setTarget(selectedId ? objects.current.get(selectedId) ?? null : null);
   }, [selectedId, instances]);
+
+  // ── Physics sandbox ────────────────────────────────────────────────────
+  const applyPose = useCallback((id: string, pose: Pose) => {
+    const o = objects.current.get(id);
+    if (!o) return;
+    o.position.set(pose.position[0], pose.position[1], pose.position[2]);
+    o.rotation.set(pose.rotation[0] * DEG, pose.rotation[1] * DEG, pose.rotation[2] * DEG);
+  }, []);
+
+  useEffect(() => {
+    if (!physics) {
+      physicsRef.current?.dispose();
+      physicsRef.current = null;
+      // Back to the stored placements (the page keeps the poses first if it wants them).
+      instancesRef.current.forEach((i) => applyPose(i.id, { position: i.position, rotation: i.rotation }));
+      return;
+    }
+    let cancelled = false;
+    onPhysics?.({ status: 'loading' });
+    (async () => {
+      const meshes = new Map<string, PartMesh>();
+      const hulls = new Map<string, PartHulls>();
+      const keys = [...new Set(parts.filter((p) => p.version).map((p) => p.version!.key))];
+      await Promise.all(
+        keys.map(async (key) => {
+          try {
+            meshes.set(key, await cadApi.mesh(key));
+          } catch {
+            /* a part without a mesh is left out */
+          }
+        }),
+      );
+      // Collision shapes are decomposed by the worker on first request (seconds per part), so
+      // only a few are asked for at a time; a part without them gets one convex hull.
+      const queue = [...keys];
+      await Promise.all(
+        Array.from({ length: 3 }, async () => {
+          for (let key = queue.shift(); key; key = queue.shift()) {
+            if (cancelled) return;
+            const pieces = await cadApi.hulls(key);
+            if (pieces?.hulls?.length) hulls.set(key, pieces);
+          }
+        }),
+      );
+      const world = await buildPhysics(parts, instancesRef.current, meshes, hulls);
+      if (cancelled) {
+        world.dispose();
+        return;
+      }
+      physicsRef.current = world;
+      onPhysics?.({ status: 'ready', summary: world.summary });
+    })().catch((e) => onPhysics?.({ status: 'error', error: String(e?.message || e) }));
+    return () => {
+      cancelled = true;
+      physicsRef.current?.dispose();
+      physicsRef.current = null;
+    };
+    // The world is built from the placements at the moment physics is switched on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [physics]);
+
+  useFrame((_, dt) => {
+    const world = physicsRef.current;
+    if (!world) return;
+    world.step(dt);
+    world.poses().forEach((pose, id) => applyPose(id, pose));
+  });
+
+  // Dragging: the grabbed body follows the pointer on a plane facing the camera.
+  const grab = useCallback(
+    (e: ThreeEvent<PointerEvent>, instance: CadInstance) => {
+      const world = physicsRef.current;
+      if (!world || e.button !== 0) return;
+      const point: Vec3 = [e.point.x, e.point.y, e.point.z];
+      if (!world.grab(instance.id, point)) return;
+      e.stopPropagation();
+      const normal = camera.getWorldDirection(new THREE.Vector3());
+      grabPlane.current = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, e.point);
+      if (controls) controls.enabled = false;
+      onSelect(instance.id);
+    },
+    [camera, controls, onSelect],
+  );
+
+  useEffect(() => {
+    if (!physics) return;
+    const el = gl.domElement;
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const hit = new THREE.Vector3();
+    const move = (ev: PointerEvent) => {
+      const world = physicsRef.current;
+      if (!world?.dragging || !grabPlane.current) return;
+      const rect = el.getBoundingClientRect();
+      ndc.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      if (raycaster.ray.intersectPlane(grabPlane.current, hit)) world.drag([hit.x, hit.y, hit.z]);
+    };
+    const up = () => {
+      physicsRef.current?.release();
+      grabPlane.current = null;
+      if (controls) controls.enabled = true;
+    };
+    el.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      el.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (controls) controls.enabled = true;
+    };
+  }, [physics, gl, camera, controls]);
 
   const fit = useCallback(() => {
     const box = new THREE.Box3();
@@ -308,6 +435,7 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
         object.updateWorldMatrix(true, true);
         return -new THREE.Box3().setFromObject(object).min.z;
       },
+      physicsPoses: () => physicsRef.current?.poses() ?? null,
     }),
     [fit, gl, scene, camera, controls],
   );
@@ -374,11 +502,12 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
               face={instance.id === selectedId ? face : null}
               register={register}
               onPick={pick}
+              onDown={physics ? grab : undefined}
             />
           ))}
       </group>
 
-      {target && (
+      {target && !physics && (
         <TransformControls
           object={target}
           mode={mode}
