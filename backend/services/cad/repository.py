@@ -261,6 +261,16 @@ async def mark_legacy_migrated(project_id: str) -> None:
     await get_collection("cad_sessions").update_one({"session_id": project_id}, {"$set": {"studio_migrated": True}})
 
 
+async def get_style(project_id: str) -> dict:
+    doc = await get_collection(ASSEMBLIES).find_one({"_id": project_id}, {"style": 1})
+    return (doc or {}).get("style") or {}
+
+
+async def set_style(project_id: str, style: dict) -> None:
+    if style:
+        await get_collection(ASSEMBLIES).update_one({"_id": project_id}, {"$set": {"style": style}}, upsert=True)
+
+
 async def get_interfaces(project_id: str) -> dict:
     doc = await get_collection(ASSEMBLIES).find_one({"_id": project_id}, {"interfaces": 1})
     return (doc or {}).get("interfaces") or {}
