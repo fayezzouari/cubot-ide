@@ -13,7 +13,7 @@ import os
 from typing import Awaitable, Callable, Optional
 
 from core.config import settings
-from services.cad import llm, prompts, storage
+from services.cad import assembly, llm, prompts, storage
 from services.cad.geometry import GeometryJobError, geometry
 
 logger = logging.getLogger(__name__)
@@ -21,12 +21,67 @@ logger = logging.getLogger(__name__)
 Notify = Callable[[str, str], Awaitable[None]]  # (action, detail)
 Build = Callable[[str], Awaitable[tuple[str, dict]]]  # code → (key, meta)
 
+PORT_ORIGIN_TOL = 0.2  # mm a declared port may be from where the plan puts it
+PORT_AXIS_TOL = 2.0  # degrees
+
 
 class AgentFailed(Exception):
     pass
 
 
-def _measurements(meta: dict, envelope: Optional[list], required_ports: Optional[list[str]] = None) -> str:
+def required_list(required) -> list[dict]:
+    """Required ports as dicts: {"name", "origin"?, "axis"?, "ref"?, "description"?}.
+    Plain names (no frame) only require the port to exist."""
+    out = []
+    for p in required or []:
+        if isinstance(p, str):
+            out.append({"name": p})
+        elif isinstance(p, dict) and p.get("name"):
+            out.append(p)
+    return out
+
+
+def port_problems(meta: dict, required) -> list[str]:
+    """Why a build can't be handed in: required ports that are missing or not
+    where the plan puts them, and the runner's surface checks."""
+    have = meta.get("ports") or {}
+    out = []
+    for p in required_list(required):
+        got = have.get(p["name"])
+        if got is None:
+            where = f"; the plan puts it at origin {p['origin']}, axis {p['axis']}" if p.get("origin") else ""
+            out.append(f"port {p['name']!r} is missing{where}")
+            continue
+        if p.get("origin") and p.get("axis"):
+            dist, angle = assembly.port_deviation(got, p)
+            if dist > PORT_ORIGIN_TOL or angle > PORT_AXIS_TOL:
+                out.append(f"port {p['name']!r} is at origin {got['origin']}, axis {got['axis']}, but the plan "
+                           f"needs origin {p['origin']}, axis {p['axis']} ({dist:.2f} mm, {angle:.1f}° off): "
+                           "put the feature and its port where the plan says")
+    out += [str(i) for i in (meta.get("port_issues") or [])]
+    return out
+
+
+ENVELOPE_TOL = 2.0  # mm a part may exceed its planned envelope, plus 5 %
+
+Interference = Callable[[str, dict], Awaitable[list[str]]]  # (key, meta) → overlaps with the neighbours
+
+
+def oversize(meta: dict, envelope: Optional[list]) -> Optional[str]:
+    """Why the build is too big for its planned envelope, or None."""
+    if not envelope or len(envelope) != 3:
+        return None
+    size = meta["bbox"]["size"]
+    tol = ENVELOPE_TOL + 0.05 * max(envelope)
+    over = [f"{'xyz'[i]} {size[i]:.1f} > {float(envelope[i]):.1f}" for i in range(3) if size[i] > float(envelope[i]) + tol]
+    if not over:
+        return None
+    return (f"the part is {size[0]:.1f} × {size[1]:.1f} × {size[2]:.1f} mm but the plan allows "
+            f"{envelope[0]} × {envelope[1]} × {envelope[2]} (+{tol:.0f}): {', '.join(over)}. "
+            "Other parts are placed around that envelope; shrink it")
+
+
+def _measurements(meta: dict, envelope: Optional[list], required_ports=None) -> str:
     report = {
         "bbox_min": meta["bbox"]["min"],
         "bbox_max": meta["bbox"]["max"],
@@ -39,13 +94,14 @@ def _measurements(meta: dict, envelope: Optional[list], required_ports: Optional
     }
     report["ports"] = meta.get("ports") or {}
     text = json.dumps(report)
-    lacking = [p for p in (required_ports or []) if p not in report["ports"]]
-    if lacking:
-        text += f"\nMissing required ports: {lacking}."
-    if meta.get("port_issues"):
-        text += "\nPort problems (fix before finishing):\n" + "\n".join(f"- {i}" for i in meta["port_issues"])
+    problems = port_problems(meta, required_ports)
+    if problems:
+        text += "\nPort problems (fix before finishing):\n" + "\n".join(f"- {i}" for i in problems)
     if envelope:
         text += f"\nExpected envelope: {envelope} mm."
+        big = oversize(meta, envelope)
+        if big:
+            text += f"\nToo big (fix before finishing): {big}"
     if meta["bbox"]["min"][2] < -0.01 or abs(meta["bbox"]["min"][2]) > 0.5:
         text += f"\nNote: the part's lowest point is at z = {meta['bbox']['min'][2]}; it should rest on z = 0."
     return text
@@ -69,11 +125,15 @@ async def render_part(key: str) -> Optional[bytes]:
 
 async def run_part_agent(brief: str, build: Build, notify: Notify, envelope: Optional[list] = None,
                          max_steps: Optional[int] = None,
-                         required_ports: Optional[list[str]] = None,
-                         images: Optional[list[tuple[bytes, str]]] = None) -> tuple[str, str, dict, str]:
-    """`images` are (image bytes, caption) pairs shown with the brief, e.g. the
-    user's viewport and a render of the part before the change."""
-    """Run one agent to completion. Returns (code, key, meta, notes)."""
+                         required_ports: Optional[list] = None,
+                         images: Optional[list[tuple[bytes, str]]] = None,
+                         interference: Optional[Interference] = None) -> tuple[str, str, dict, str]:
+    """Run one agent to completion. Returns (code, key, meta, notes).
+
+    `required_ports` are names or {"name", "origin", "axis"} frames the build
+    must declare (a frame within 0.2 mm and 2°); `images` are (bytes, caption)
+    pairs shown with the brief, e.g. the user's viewport and a render of the
+    part before the change."""
     steps = max_steps or settings.CAD_AGENT_STEPS
     first: object = brief
     if images:
@@ -83,8 +143,19 @@ async def run_part_agent(brief: str, build: Build, notify: Notify, envelope: Opt
         first.append({"type": "text", "text": brief})
     messages: list[dict] = [{"role": "user", "content": first}]
     best: Optional[tuple[str, str, dict]] = None
+    overlaps: list[str] = []  # the best build's interference with its neighbours
     builds = 0
     viewed = False
+
+    def blockers() -> list[str]:
+        """What stops the best build from being handed in."""
+        if not best:
+            return []
+        out = port_problems(best[2], required_ports)
+        big = oversize(best[2], envelope)
+        if big:
+            out.append(big)
+        return out + overlaps
     for step in range(steps):
         last = step == steps - 1
         if last and step > 0 and isinstance(messages[-1]["content"], list):
@@ -114,8 +185,18 @@ async def run_part_agent(brief: str, build: Build, notify: Notify, envelope: Opt
                                     "content": f"Build failed:\n{error[-2500:]}"})
                     continue
                 best = (code, key, meta)
-                results.append({"type": "tool_result", "tool_use_id": call["id"],
-                                "content": "Built.\n" + _measurements(meta, envelope, required_ports)})
+                text = "Built.\n" + _measurements(meta, envelope, required_ports)
+                overlaps = []
+                if interference:
+                    try:
+                        overlaps = await interference(key, meta)
+                    except GeometryJobError as e:
+                        logger.warning("[cad] interference check failed: %s", e)
+                    if overlaps:
+                        await notify("error", f"overlaps {len(overlaps)} neighbour{'s' if len(overlaps) != 1 else ''}")
+                        text += ("\nInterference with neighbours (placed as the plan places them; fix before "
+                                 "finishing):\n" + "\n".join(f"- {o}" for o in overlaps))
+                results.append({"type": "tool_result", "tool_use_id": call["id"], "content": text})
             elif name == "view_part":
                 if not best:
                     results.append({"type": "tool_result", "tool_use_id": call["id"], "is_error": True,
@@ -131,14 +212,26 @@ async def run_part_agent(brief: str, build: Build, notify: Notify, envelope: Opt
                 results.append({"type": "tool_result", "tool_use_id": call["id"],
                                 "content": [llm.png_block(image), {"type": "text", "text": "Render of your part."}]
                                 if image else "Render unavailable."})
+            elif name == "measure_part":
+                if not best:
+                    results.append({"type": "tool_result", "tool_use_id": call["id"], "is_error": True,
+                                    "content": "Nothing built yet."})
+                    continue
+                await notify("measure", "measuring features")
+                step = storage.object_path(best[1], "part.step")
+                try:
+                    measured = await geometry.run({"type": "measure", "step_path": step}) if step else None
+                except GeometryJobError as e:
+                    measured = None
+                    logger.warning("[cad] part measure failed: %s", e)
+                results.append({"type": "tool_result", "tool_use_id": call["id"],
+                                "content": json.dumps(measured) if measured else "Measurement unavailable."})
             elif name == "finish":
-                lacking = [p for p in (required_ports or []) if best and p not in (best[2].get("ports") or {})]
-                bad = (best[2].get("port_issues") or []) if best else []
-                if best and (lacking or bad) and not last:
-                    problems = ([f"missing ports {lacking}"] if lacking else []) + bad
+                problems = blockers()
+                if problems and not last:
                     results.append({"type": "tool_result", "tool_use_id": call["id"], "is_error": True,
                                     "content": "Can't finish yet:\n" + "\n".join(f"- {p}" for p in problems)
-                                               + "\nFix the PORT declarations and build again."})
+                                               + "\nFix the features, size and PORT declarations and build again."})
                     continue
                 if best:
                     if not viewed and not last:
