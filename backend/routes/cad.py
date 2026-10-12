@@ -27,7 +27,7 @@ from services.cad.studio import StudioError
 router = APIRouter(prefix="/cad", tags=["cad"])
 
 MEDIA = {"mesh.json": "application/json", "part.step": "application/step", "part.stl": "model/stl",
-         "meta.json": "application/json"}
+         "meta.json": "application/json", "hulls.json": "application/json"}
 
 
 async def _project(project_id: str, user: dict) -> str:
@@ -59,6 +59,8 @@ def _fail(e: StudioError, status: int = 400):
 async def get_file(key: str, name: str):
     """A built part's files. Keys are content hashes, so responses never change."""
     path = storage.object_path(key, name)
+    if not path and name == "hulls.json":
+        path = await studio.ensure_hulls(key)  # collision shapes are made on first request
     if not path:
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path, media_type=MEDIA[name], headers={"Cache-Control": "private, max-age=31536000, immutable"})
