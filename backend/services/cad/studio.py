@@ -9,13 +9,18 @@ content key and the browser fetches its files (mesh.json for the viewer).
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 from datetime import timezone
 from typing import AsyncGenerator, Awaitable, Callable, Optional
 
+import numpy as np
+
 from core.config import settings
-from services.cad import agents, assembly, fasteners, llm, prompts, repository as repo, storage
+from services.cad import agents, assembly, catalog, fasteners, llm, prompts, repository as repo, storage
+
+assembly_mod = assembly  # for functions whose local `assembly` is the stored document
 from services.cad.geometry import GeometryJobError, geometry
 
 logger = logging.getLogger(__name__)
@@ -93,6 +98,7 @@ def version_view(v: dict, with_code: bool = True) -> dict:
 def part_view(part: dict, version: Optional[dict]) -> dict:
     return {
         "id": part["_id"],
+        "slug": part.get("slug"),  # the plan id mates refer to ("slug#copy")
         "name": part["name"],
         "source": part["source"],
         "kind": part["kind"],
@@ -160,8 +166,9 @@ async def write_and_build(first_prompt: str, emit_retry: Callable[[int, str], Aw
 
 async def develop(brief: str, fallback_prompt: str, emit_retry: Callable[[int, str], Awaitable[None]],
                   notify: Callable[[str, str], Awaitable[None]], envelope: Optional[list] = None,
-                  assets: Optional[dict] = None, required_ports: Optional[list[str]] = None,
-                  images: Optional[list[tuple[bytes, str]]] = None) -> tuple[str, str, dict]:
+                  assets: Optional[dict] = None, required_ports: Optional[list] = None,
+                  images: Optional[list[tuple[bytes, str]]] = None,
+                  interference: Optional[agents.Interference] = None) -> tuple[str, str, dict]:
     """Have a part agent design and verify a part; without a tool-capable
     model, fall back to one-shot writing with error feedback."""
     async def build_code(code: str) -> tuple[str, dict]:
@@ -169,7 +176,8 @@ async def develop(brief: str, fallback_prompt: str, emit_retry: Callable[[int, s
 
     try:
         code, key, meta, _ = await agents.run_part_agent(brief, build_code, notify, envelope,
-                                                         required_ports=required_ports, images=images)
+                                                         required_ports=required_ports, images=images,
+                                                         interference=interference)
         return code, key, meta
     except llm.ToolsUnsupported:
         return await write_and_build(fallback_prompt, emit_retry, assets=assets)
@@ -181,8 +189,69 @@ async def develop(brief: str, fallback_prompt: str, emit_retry: Callable[[int, s
 
 
 SIDES = assembly.SIDES
-MAX_CUSTOM_PARTS = 8
-MAX_FASTENER_KINDS = 8
+MAX_CUSTOM_PARTS = 30
+MAX_BOUGHT_PARTS = 40  # catalog components plus fastener kinds
+
+
+def _bought(spec: dict) -> bool:
+    """Template parts (fasteners, catalog components) are placed, never redesigned."""
+    return bool(spec.get("fastener") or spec.get("component"))
+
+
+def _mate(raw) -> Optional[dict]:
+    if not isinstance(raw, dict):
+        return None
+    try:
+        gap = float(raw.get("gap") or 0)
+        angle = float(raw.get("angle") or 0)
+    except (TypeError, ValueError):
+        gap, angle = 0.0, 0.0
+    return {"port": str(raw.get("port") or ""), "to": str(raw.get("to") or "ground"),
+            "to_port": str(raw.get("to_port") or ""), "gap": gap, "angle": angle,
+            "joint": "revolute" if str(raw.get("joint") or "").lower() == "revolute" else "fixed"}
+
+
+def _port_spec(raw) -> Optional[dict]:
+    """A planned port: name, description and, when the planner gave them, the
+    frame (origin, unit axis, perpendicular ref) the part must declare."""
+    if not isinstance(raw, dict) or not raw.get("name"):
+        return None
+    port = {"name": re.sub(r"[^A-Za-z0-9_]", "_", str(raw["name"]))[:40],
+            "description": str(raw.get("description") or "")[:300]}
+    if raw.get("meets"):
+        port["meets"] = str(raw["meets"])[:80]
+    tapped = raw.get("tapped")
+    if isinstance(tapped, dict) and str(tapped.get("size") or "").upper() in fasteners.METRIC:
+        try:
+            port["tapped"] = {"size": str(tapped["size"]).upper(), "depth": float(tapped.get("depth") or 0) or None}
+        except (TypeError, ValueError):
+            pass
+    if raw.get("joint") == "revolute":
+        port["joint"] = "revolute"
+    origin, axis = raw.get("origin"), raw.get("axis")
+    if isinstance(origin, list) and len(origin) == 3 and isinstance(axis, list) and len(axis) == 3:
+        a = _vec(axis)
+        n = math.sqrt(sum(v * v for v in a))
+        if n > 1e-9:
+            port["origin"] = [round(v, 3) for v in _vec(origin)]
+            port["axis"] = [round(v / n, 6) for v in a]
+            ref = raw.get("ref")
+            port["ref"] = None
+            if isinstance(ref, list) and len(ref) == 3:
+                r = _vec(ref)
+                dot = sum(x * y for x, y in zip(r, port["axis"]))
+                r = [x - dot * y for x, y in zip(r, port["axis"])]
+                rn = math.sqrt(sum(v * v for v in r))
+                if rn > 1e-9:
+                    port["ref"] = [round(v / rn, 6) for v in r]
+    return port
+
+
+def _ports_from_meta(meta: dict, described: Optional[list[dict]] = None) -> list[dict]:
+    """Port specs taken from a build: the frames the part has now."""
+    notes = {p["name"]: p.get("description") or "" for p in (described or []) if p.get("name")}
+    return [{"name": n, "description": notes.get(n, ""), "origin": v["origin"], "axis": v["axis"],
+             "ref": v.get("ref")} for n, v in (meta.get("ports") or {}).items()]
 
 
 def _expand_plan(plan: dict) -> list[dict]:
@@ -205,15 +274,9 @@ def _expand_plan(plan: dict) -> list[dict]:
         for c in copies[:50]:
             if not isinstance(c, dict):
                 continue
-            mate = c.get("mate") if isinstance(c.get("mate"), dict) else None
-            if mate:
-                try:
-                    gap = float(mate.get("gap") or 0)
-                    angle = float(mate.get("angle") or 0)
-                except (TypeError, ValueError):
-                    gap, angle = 0.0, 0.0
-                mate = {"port": str(mate.get("port") or ""), "to": str(mate.get("to") or "ground"),
-                        "to_port": str(mate.get("to_port") or ""), "gap": gap, "angle": angle}
+            mate = _mate(c.get("mate"))
+            also = [m for m in (_mate(x) for x in (c.get("also") or []) if isinstance(c.get("also"), list))
+                    if m and m["port"]][:12]
             attach = c.get("attach") if isinstance(c.get("attach"), dict) else None
             if attach:
                 side = str(attach.get("side") or "top").lower()
@@ -232,37 +295,503 @@ def _expand_plan(plan: dict) -> list[dict]:
                 "position": _vec(c.get("position")),
                 "rotation": _vec(c.get("rotation")),
                 "mate": mate,
+                "also": also,
                 "attach": None if mate else attach,
             })
         color = raw.get("color")
         envelope = raw.get("envelope")
         fastener = fasteners.normalise(raw["fastener"]) if isinstance(raw.get("fastener"), dict) else None
-        ports = [
-            {"name": str(p.get("name")), "description": str(p.get("description") or "")[:300]}
-            for p in (raw.get("ports") or []) if isinstance(p, dict) and p.get("name")
-        ][:40]
-        if fastener and not color:
-            color = fasteners.COLORS[fastener["kind"]]
+        component = catalog.normalise(raw) if raw.get("component") else None
+        name = str(raw.get("name") or pid.replace("_", " ").title())[:120]
+        description = str(raw.get("description") or raw.get("name") or "")
+        if fastener:
+            ports = [{"name": n, "description": "", **f} for n, f in fasteners.ports(fastener).items()]
+            color = color or fasteners.COLORS[fastener["kind"]]
+            envelope = fasteners.envelope(fastener)
+        elif component:
+            ports = [{"name": n, "description": "", **f} for n, f in catalog.ports(component).items()]
+            color = color or catalog.color(component)
+            name = catalog.name(component)
+            description = catalog.COMPONENTS[component["id"]]["about"]
+            envelope = catalog.envelope(component)
+        else:
+            ports = [p for p in (_port_spec(p) for p in (raw.get("ports") or [])) if p][:40]
         parts.append({
             "fastener": fastener,
+            "component": component,
             "ports": ports,
             "id": pid,
-            "name": str(raw.get("name") or pid.replace("_", " ").title())[:120],
-            "description": str(raw.get("description") or raw.get("name") or ""),
+            "name": name,
+            "description": description,
+            "manufacturing": str(raw.get("manufacturing") or "")[:300],
             "role": str(raw.get("role") or "")[:300],
             "envelope": _vec(envelope) if isinstance(envelope, list) else None,
             "features": [str(f)[:400] for f in (raw.get("features") or []) if f][:20],
             "checks": [str(c)[:300] for c in (raw.get("checks") or []) if c][:12],
             "interfaces": [str(i) for i in (raw.get("interfaces") or [])][:20],
             "placements": placements or [{"position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0],
-                                          "mate": None, "attach": None}],
+                                          "mate": None, "also": [], "attach": None}],
             "color": color if isinstance(color, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", color)
             else PALETTE[i % len(PALETTE)],
         })
-    custom = [p for p in parts if not p["fastener"]][:MAX_CUSTOM_PARTS]
-    hardware = [p for p in parts if p["fastener"]][:MAX_FASTENER_KINDS]
-    keep = {id(p) for p in custom + hardware}
+    custom = [p for p in parts if not _bought(p)][:MAX_CUSTOM_PARTS]
+    bought = [p for p in parts if _bought(p)][:MAX_BOUGHT_PARTS]
+    keep = {id(p) for p in custom + bought}
     return [p for p in parts if id(p) in keep]
+
+
+def _tag_joints(parts: list[dict], built: dict[str, dict]) -> None:
+    """A mate onto a rotary port (servo shaft, motor shaft, bearing bore) is a
+    revolute joint whether or not the architect said so."""
+    rotary: dict[str, set] = {}
+    for pid, b in built.items():
+        rotary[pid] = {p["name"] for p in b["spec"].get("ports") or [] if p.get("joint") == "revolute"}
+    for spec in parts:
+        rotary[spec["id"]] = {p["name"] for p in spec["ports"] if p.get("joint") == "revolute"}
+    for spec in parts:
+        for pl in spec["placements"]:
+            m = pl.get("mate")
+            if m and m["to"] != "ground" and m["to_port"] in rotary.get(m["to"].partition("#")[0], set()):
+                m["joint"] = "revolute"
+
+
+def _architecture_to_plan(arch: dict) -> dict:
+    """The architect's answer as the flat plan `_expand_plan` reads: bought
+    parts first (components, hardware), then the custom parts."""
+    raw = []
+    for c in arch.get("components") or []:
+        if isinstance(c, dict):
+            raw.append({**c, "component": c.get("component")})
+    for h in arch.get("hardware") or []:
+        if isinstance(h, dict):
+            raw.append(h)
+    for p in arch.get("parts") or []:
+        if isinstance(p, dict):
+            raw.append(p)
+    return {k: arch.get(k) for k in ("name", "summary", "style", "interfaces", "screws", "update", "remove",
+                                     "placements")} | {"parts": raw}
+
+
+def _split_ref(ref: str) -> tuple[str, int, str]:
+    """"part#2.port" → (part, copy index, port)."""
+    head, _, port = str(ref or "").rpartition(".")
+    pid, _, idx = head.partition("#")
+    return pid, (int(idx) - 1 if idx.isdigit() else 0), port
+
+
+def _derive_screws(screws: list, built: dict[str, dict]) -> tuple[list[dict], list[str]]:
+    """The deterministic part of the assembler: screw kinds and copies from
+    the architect's joints ("head sits here, threads into there / nut there")
+    and the placed geometry. The clamped stack is measured along the shank
+    between the two ports, the thread engagement or nut is added, and the
+    stock length chosen. Returns (raw fastener parts for `_expand_plan`,
+    problems)."""
+    problems: list[str] = []
+    kinds: dict[tuple, dict] = {}
+    nuts: dict[str, dict] = {}
+
+    def resolve(ref) -> tuple[Optional[tuple], Optional[str]]:
+        pid, k, port = _split_ref(ref)
+        b = built.get(pid)
+        if not b or not 0 <= k < len(b["instances"]):
+            return None, f"unknown part or copy {ref!r}"
+        frame = (b["meta"].get("ports") or {}).get(port)
+        if not frame:
+            return None, f"{pid} has no port {port!r} (it has {sorted(b['meta'].get('ports') or {})})"
+        inst = b["instances"][k]
+        spec_port = next((p for p in b["spec"].get("ports") or [] if p["name"] == port), {})
+        return (assembly.world_port(frame, inst["position"], inst["rotation"]), spec_port, f"{pid}#{k + 1}", port), None
+
+    for s in screws or []:
+        if not isinstance(s, dict):
+            continue
+        size = str(s.get("size") or "").upper().replace(" ", "")
+        label = f"screw {size} on {s.get('head_on')}"
+        if size not in fasteners.METRIC:
+            problems.append(f"{label}: unknown size")
+            continue
+        head, err = resolve(s.get("head_on"))
+        if err:
+            problems.append(f"{label}: {err}")
+            continue
+        hw, _, hlabel, hport = head
+        shank = -hw["axis"]
+        if s.get("into"):
+            target, err = resolve(s["into"])
+            if err:
+                problems.append(f"{label}: {err}")
+                continue
+            tw, tspec, _, _ = target
+            depth = float(np.dot(tw["origin"] - hw["origin"], shank))
+            if depth < -0.01:
+                problems.append(f"{label}: {s['into']} is on the head's side of the face, not under it")
+                continue
+            if not tspec.get("tapped"):
+                problems.append(f"{label}: {s['into']} is not a tapped port; use nut_on or a tapped port")
+                continue
+            needed = depth + fasteners.engagement(size, (tspec.get("tapped") or {}).get("depth"))
+        elif s.get("nut_on"):
+            target, err = resolve(s["nut_on"])
+            if err:
+                problems.append(f"{label}: {err}")
+                continue
+            tw, _, tlabel, tport = target
+            depth = float(np.dot(tw["origin"] - hw["origin"], shank))
+            if depth < -0.01:
+                problems.append(f"{label}: {s['nut_on']} is on the head's side of the face, not under it")
+                continue
+            needed = depth + fasteners.nut_height(size) + 1.0
+            nut = nuts.setdefault(size, {"id": f"{size.lower().replace('.', '_')}_nut",
+                                         "fastener": {"kind": "nut", "size": size}, "copies": []})
+            nut["copies"].append({"mate": {"port": "seat", "to": tlabel, "to_port": tport}})
+        else:
+            problems.append(f"{label}: needs 'into' (a tapped port) or 'nut_on'")
+            continue
+        length = fasteners.screw_length(needed)
+        kind = kinds.setdefault((size, length), {
+            "id": f"{size.lower().replace('.', '_')}x{length:g}_screw",
+            "fastener": {"kind": "screw", "size": size, "length": length}, "copies": []})
+        kind["copies"].append({"mate": {"port": "seat", "to": hlabel, "to_port": hport}})
+    return list(kinds.values()) + list(nuts.values()), problems
+
+
+async def _plan(prompt: str, built: dict[str, dict], view_image: Optional[bytes],
+                emit: Emit) -> tuple[dict, list[dict], list[dict], list[str]]:
+    """Two-stage planning. Stage 1 (architect, with thinking): parts, catalog
+    components, hardware, mates, screws, interfaces and style. Stage 2 (one
+    call per custom part, in parallel): features, exact port frames and
+    checks. Then the plan is checked against its own numbers and the parts
+    named in the problems are detailed once more with the residuals.
+    Returns (plan, new parts, updates, remaining problems)."""
+    existing = [_describe_existing(slug, b) for slug, b in built.items()]
+    show = [view_image] if view_image and existing else None
+    arch = await llm.structured(
+        prompts.ARCHITECT_SYSTEM,
+        prompts.architect_user(prompt, existing[:40]) + (
+            "\n\nThe attached image is the user's current 3D viewport (Z up)." if show else ""),
+        "submit_architecture", prompts.ARCHITECTURE_SCHEMA, max_tokens=16000, think=settings.CAD_PLAN_THINK,
+        images=show)
+    plan = _architecture_to_plan(arch)
+    interfaces = {str(k): (v if isinstance(v, dict) else {"value": v}) for k, v in (plan.get("interfaces") or {}).items()}
+    for b in built.values():
+        for k, v in (b.get("interfaces") or {}).items():
+            interfaces.setdefault(k, v)
+    custom = [p for p in plan["parts"] if isinstance(p, dict) and not p.get("component") and not p.get("fastener")]
+    await emit({"type": "agent", "plan_id": "__plan", "action": "detail",
+                "detail": f"detailing {len(custom)} parts"})
+
+    def known_frames() -> dict[str, dict[str, dict]]:
+        """Port frames already fixed: catalog parts, hardware, existing parts."""
+        frames: dict[str, dict[str, dict]] = {pid: dict(b["meta"].get("ports") or {}) for pid, b in built.items()}
+        for p in plan["parts"]:
+            if p.get("component") and catalog.normalise(p):
+                frames[str(p.get("id"))] = catalog.ports(catalog.normalise(p))
+            elif isinstance(p.get("fastener"), dict) and fasteners.normalise(p["fastener"]):
+                frames[str(p.get("id"))] = fasteners.ports(fasteners.normalise(p["fastener"]))
+        return frames
+
+    def partners(part: dict, frames: dict) -> dict[str, dict]:
+        out = {}
+        for port in part.get("ports") or []:
+            if not isinstance(port, dict) or not port.get("meets"):
+                continue
+            pid, _, pname = _split_ref(port["meets"])
+            f = (frames.get(pid) or {}).get(pname)
+            if f:
+                out[port["meets"]] = {"origin": f["origin"], "axis": f["axis"]}
+        return out
+
+    async def detail(part: dict, problems: Optional[list[str]] = None) -> None:
+        frames = known_frames()
+        try:
+            d = await llm.structured(
+                prompts.DETAIL_SYSTEM,
+                prompts.detail_user(arch, part, interfaces, partners(part, frames), problems, part.get("_detail")),
+                "submit_part", prompts.PART_DETAIL_SCHEMA, max_tokens=6000, fast=True)
+        except Exception as e:
+            logger.warning("[cad] detailing %s failed: %s", part.get("id"), e)
+            return
+        part["_detail"] = d
+        named = {p["name"]: p for p in part.get("ports") or [] if isinstance(p, dict) and p.get("name")}
+        ports = []
+        for p in d.get("ports") or []:
+            if not isinstance(p, dict) or not p.get("name"):
+                continue
+            base = named.get(p["name"], {})
+            ports.append({**base, **p, "tapped": p.get("tapped") or base.get("tapped")})
+        for name, base in named.items():  # a port the detailer dropped keeps its name (no frame: flagged)
+            if name not in {p["name"] for p in ports}:
+                ports.append(base)
+        part["ports"] = ports
+        part["features"] = d.get("features") or []
+        part["checks"] = d.get("checks") or []
+        if isinstance(d.get("envelope"), list) and len(d["envelope"]) == 3:
+            part["envelope"] = d["envelope"]
+
+    await asyncio.gather(*(detail(p) for p in custom))
+    for u in plan.get("update") or []:  # changed parts with moved ports get frames the same way
+        if isinstance(u, dict) and u.get("ports") and u.get("part") in built:
+            b = built[u["part"]]
+            stub = {"id": u["part"], "name": b["spec"]["name"], "role": b["spec"].get("role"),
+                    "description": (b["spec"].get("description") or "") + "\nChange: " + str(u.get("instruction") or ""),
+                    "envelope": (b["meta"].get("bbox") or {}).get("size"), "ports": u["ports"], "copies": []}
+            await detail(stub)
+            u["ports"] = stub["ports"]
+
+    parts = [p for p in _expand_plan(plan) if p["id"] not in built]
+    updates = _updates(plan, built)
+    problems = _validate_plan(parts, built, updates) if (parts or updates) else []
+    if problems:
+        logger.info("[cad] plan check: %s", problems)
+        await emit({"type": "agent", "plan_id": "__plan", "action": "check",
+                    "detail": f"{len(problems)} plan problems; re-detailing"})
+        named = {pid for p in problems for pid in re.findall(r"\b([a-z0-9_]+)(?:#\d+)?(?::|\.| )", p)}
+        redo = [p for p in custom if str(p.get("id")) in named or
+                any(str(p.get("id")) + "." in q or str(p.get("id")) + "#" in q or q.startswith(str(p.get("id")) + ":")
+                    for q in problems)]
+        if redo:
+            await asyncio.gather(*(detail(p, problems) for p in redo))
+            parts2 = [p for p in _expand_plan(plan) if p["id"] not in built]
+            problems2 = _validate_plan(parts2, built, updates) if (parts2 or updates) else []
+            if len(problems2) <= len(problems):
+                parts, problems = parts2, problems2
+    _tag_joints(parts, built)
+    return plan, parts, updates, problems
+
+
+PLAN_CLOSE_MM = 0.5  # an "also" contact may be this far off with the plan's numbers
+PLAN_CLOSE_DEG = 2.0
+
+
+def _planned_frames(spec: dict) -> dict[str, dict]:
+    return {p["name"]: p for p in spec.get("ports") or [] if p.get("origin") and p.get("axis")}
+
+
+def _validate_plan(parts: list[dict], built: dict[str, dict], updates: Optional[list[dict]] = None) -> list[str]:
+    """Check a plan against its own numbers before any part is built: every
+    mate names ports that exist, every custom port has a frame, and every
+    "also" contact closes when the parts are placed by the plan's frames."""
+    names: dict[str, set] = {pid: set(b["meta"].get("ports") or {}) for pid, b in built.items()}
+    frames: dict[str, dict] = {pid: dict(b["meta"].get("ports") or {}) for pid, b in built.items()}
+    for u in updates or []:
+        for p in u.get("ports") or []:
+            if p.get("name") and u["part"] in names:
+                names[u["part"]].add(p["name"])
+                if p.get("origin"):
+                    frames[u["part"]][p["name"]] = p
+    problems: list[str] = []
+    for spec in parts:
+        names[spec["id"]] = {p["name"] for p in spec["ports"]}
+        frames[spec["id"]] = _planned_frames(spec)
+        for p in spec["ports"]:
+            if not spec["fastener"] and p["name"] not in frames[spec["id"]]:
+                problems.append(f"{spec['id']}: port {p['name']!r} has no origin/axis")
+    joined = bool(built) or len(parts) > 1
+    for spec in parts:
+        for k, pl in enumerate(spec["placements"]):
+            label = f"{spec['id']}#{k + 1}"
+            if joined and not pl["mate"] and not pl["attach"]:
+                problems.append(f"{label}: has no mate; every copy is joined to a part or to the ground")
+            for m in ([pl["mate"]] if pl["mate"] else []) + pl["also"]:
+                if m["port"] not in names[spec["id"]]:
+                    problems.append(f"{label}: mates with its port {m['port']!r}, which it doesn't declare "
+                                    f"(it has {sorted(names[spec['id']])})")
+                if m["to"] == "ground":
+                    continue
+                tid = m["to"].partition("#")[0]
+                if tid not in names:
+                    problems.append(f"{label}: mates to unknown part {m['to']!r}")
+                elif m["to_port"] not in names[tid]:
+                    problems.append(f"{label}: target {tid} has no port {m['to_port']!r} "
+                                    f"(it has {sorted(names[tid])})")
+    if problems:
+        return problems
+    # Place everything by the plan's frames and see whether the "also" contacts close.
+    fake, placed, solve_problems = _paper(parts, built)
+    problems += [p for p in solve_problems if "loop" in p]
+    for spec in parts:
+        for k, pl in enumerate(spec["placements"]):
+            inst = fake[spec["id"]]["instances"][k]
+            for m in pl["also"]:
+                own = frames[spec["id"]].get(m["port"])
+                tid, _, idx = m["to"].partition("#")
+                tk = min(max(int(idx) - 1 if idx.isdigit() else 0, 0), len(fake[tid]["instances"]) - 1)
+                tinst = fake[tid]["instances"][tk]
+                tport = frames[tid].get(m["to_port"])
+                if not own or not tport or inst["id"] not in placed or tinst["id"] not in placed:
+                    continue
+                dist, angle = assembly.mate_residual(
+                    assembly.world_port(own, *placed[inst["id"]]),
+                    assembly.world_port(tport, *placed[tinst["id"]]), m["gap"])
+                if dist > PLAN_CLOSE_MM or angle > PLAN_CLOSE_DEG:
+                    problems.append(
+                        f"{spec['id']}#{k + 1}: the contact {m['port']} → {m['to']}.{m['to_port']} doesn't close: "
+                        f"placed by the plan's port numbers the two ports are {dist} mm apart and the axes "
+                        f"{angle}° from facing each other; fix the port origins, axes or interface values")
+    problems += _paper_overlaps(fake, placed, {spec["id"] for spec in parts})
+    return problems
+
+
+def _paper(parts: list[dict], built: dict[str, dict]) -> tuple[dict[str, dict], dict, list[str]]:
+    """The assembly on paper: built parts as they are, planned parts as their
+    envelope box with the planned port frames, all placed by the solver.
+    Returns (working set, {instance id: (position, rotation)}, problems).
+    Planned copies get the ids "plan:<part>#<n>"."""
+    fake: dict[str, dict] = dict(built)
+    for spec in parts:
+        env = spec.get("envelope") or [10.0, 10.0, 10.0]
+        fake[spec["id"]] = {
+            "spec": spec,
+            "meta": {"ports": _planned_frames(spec),
+                     "bbox": {"min": [-env[0] / 2, -env[1] / 2, 0.0], "max": [env[0] / 2, env[1] / 2, env[2]]}},
+            "instances": [{"id": f"plan:{spec['id']}#{k + 1}", "position": pl["position"], "rotation": pl["rotation"]}
+                          for k, pl in enumerate(spec["placements"])],
+        }
+    placed, problems = assembly.solve(fake)
+    for b in fake.values():  # unplaced copies keep their stored placement
+        for inst in b["instances"]:
+            placed.setdefault(inst["id"], (list(inst["position"]), list(inst["rotation"])))
+    return fake, placed, problems
+
+
+def _adjacent(fake: dict[str, dict]) -> set[tuple[str, str]]:
+    """Pairs of copies joined by a mate or an "also" contact (either way),
+    as ("part#n", "part#n") with n from 1."""
+    pairs: set[tuple[str, str]] = set()
+    for pid, b in fake.items():
+        for k, pl in enumerate(b["spec"].get("placements") or []):
+            for m in ([pl.get("mate")] if pl.get("mate") else []) + list(pl.get("also") or []):
+                if m["to"] == "ground":
+                    continue
+                tpid, _, idx = m["to"].partition("#")
+                t = f"{tpid}#{int(idx) if idx.isdigit() else 1}"
+                pairs.add((f"{pid}#{k + 1}", t))
+                pairs.add((t, f"{pid}#{k + 1}"))
+    return pairs
+
+
+def _paper_overlaps(fake: dict[str, dict], placed: dict, planned: set) -> list[str]:
+    """Planned envelopes that sit inside each other on paper. Only pairs that
+    aren't mated to each other count (a bracket's envelope legitimately
+    wraps the servo it holds), and only when most of the smaller box is
+    inside the other."""
+    boxes = []
+    for pid, b in fake.items():
+        if b["spec"].get("fastener"):
+            continue
+        for k, inst in enumerate(b["instances"]):
+            pos, rot = placed.get(inst["id"], (inst["position"], inst["rotation"]))
+            lo, hi = assembly.world_box(b["meta"]["bbox"], pos, rot)
+            boxes.append((f"{pid}#{k + 1}", pid, lo, hi))
+    adjacent = _adjacent(fake)
+    problems = []
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            la, pa, alo, ahi = boxes[i]
+            lb, pb, blo, bhi = boxes[j]
+            if pa not in planned and pb not in planned or (la, lb) in adjacent:
+                continue
+            shared = 1.0
+            for ax in range(3):
+                shared *= max(0.0, min(ahi[ax], bhi[ax]) - max(alo[ax], blo[ax]))
+            va = (ahi[0] - alo[0]) * (ahi[1] - alo[1]) * (ahi[2] - alo[2])
+            vb = (bhi[0] - blo[0]) * (bhi[1] - blo[1]) * (bhi[2] - blo[2])
+            smaller = max(min(va, vb), 1e-6)
+            if shared > 50 and shared / smaller > 0.5:
+                problems.append(f"{la} and {lb} overlap on paper: placed by the plan their envelopes share "
+                                f"{shared:.0f} mm³ ({shared / smaller * 100:.0f}% of the smaller one) and they aren't "
+                                "mated to each other; fix the envelopes, port frames or mates")
+    return problems
+
+
+def _local_box(lo, hi, position, rotation) -> tuple[list[float], list[float]]:
+    """A world box as an axis-aligned box in the frame of a part placed at position/rotation."""
+    r = assembly.matrix(rotation)
+    p = np.asarray(position, float)
+    corners = np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
+    local = (corners - p) @ r  # r.T applied to each row
+    return [round(float(v), 1) for v in local.min(axis=0)], [round(float(v), 1) for v in local.max(axis=0)]
+
+
+def _neighbourhood(pid: str, k: int, fake: dict[str, dict], placed: dict,
+                   built: dict[str, dict]) -> tuple[list[str], list[dict], dict[str, dict], tuple]:
+    """What surrounds copy k of part `pid` once the assembly is put together:
+    keep-out lines in the part's own frame, the neighbours as instances for
+    the exact check (built parts by their solid, planned ones by their
+    envelope box), a label per instance id, and the copy's own placement."""
+    own_inst = fake[pid]["instances"][k]
+    own = placed.get(own_inst["id"], (own_inst["position"], own_inst["rotation"]))
+    olo, ohi = assembly.world_box(fake[pid]["meta"]["bbox"], *own)
+    centre = np.array([(olo[i] + ohi[i]) / 2 for i in range(3)])
+    reach = float(np.linalg.norm(np.array(ohi) - np.array(olo))) / 2 + 20.0
+    contacts: dict[str, list[str]] = {}
+    pl = fake[pid]["spec"]["placements"][k] if k < len(fake[pid]["spec"]["placements"]) else {}
+    for m in ([pl.get("mate")] if pl.get("mate") else []) + list(pl.get("also") or []):
+        if m["to"] != "ground":
+            tpid, _, idx = m["to"].partition("#")
+            contacts.setdefault(f"{tpid}#{int(idx) if idx.isdigit() else 1}", []).append(f"{m['port']} → {m['to_port']}")
+    adjacent = _adjacent(fake)
+    lines, jobs, labels = [], [], {}
+    for qid, b in fake.items():
+        for j, inst in enumerate(b["instances"]):
+            if qid == pid and j == k:
+                continue
+            pos, rot = placed.get(inst["id"], (inst["position"], inst["rotation"]))
+            exact = qid in built and built[qid].get("version")
+            meta = built[qid]["meta"] if exact else b["meta"]
+            lo, hi = assembly.world_box(meta["bbox"], pos, rot)
+            qc = np.array([(lo[i] + hi[i]) / 2 for i in range(3)])
+            qr = float(np.linalg.norm(np.array(hi) - np.array(lo))) / 2
+            if np.linalg.norm(qc - centre) > reach + qr:
+                continue
+            label = f"{qid}#{j + 1}"
+            llo, lhi = _local_box(lo, hi, *own)
+            touch = contacts.get(label)
+            lines.append(f"{label} ({b['spec']['name']}): x {llo[0]}..{lhi[0]}, y {llo[1]}..{lhi[1]}, "
+                         f"z {llo[2]}..{lhi[2]}" + (f"; you meet it at {', '.join(touch)}" if touch else ""))
+            labels[inst["id"]] = (label, b["spec"]["name"], bool(exact))
+            if exact:
+                step = storage.object_path(built[qid]["version"]["key"], "part.step")
+                if step:
+                    jobs.append({"id": inst["id"], "step_path": step, "position": pos, "rotation": rot})
+            elif (f"{pid}#{k + 1}", label) not in adjacent:
+                # An unbuilt neighbour's envelope: only when it isn't meant to touch this part.
+                jobs.append({"id": inst["id"], "box": [meta["bbox"]["min"], meta["bbox"]["max"]],
+                             "position": pos, "rotation": rot})
+    return lines[:14], jobs, labels, own
+
+
+def _interference(pid: str, k: int, fake: dict[str, dict], placed: dict,
+                  built: dict[str, dict]) -> agents.Interference:
+    """The part agent's interference check: its fresh build, placed as the
+    plan places it, intersected exactly with the neighbours (those built by
+    now by their solid). Overlaps come back in the part's own frame."""
+    async def check(key: str, meta: dict) -> list[str]:
+        _, jobs, labels, own = _neighbourhood(pid, k, fake, placed, built)
+        step = storage.object_path(key, "part.step")
+        if not step or not jobs:
+            return []
+        result = await geometry.run({"type": "check", "pairs": [], "near": 0.5,
+                                     "instances": [{"id": "self", "step_path": step, "position": own[0],
+                                                    "rotation": own[1]}] + jobs})
+        out = []
+        for p in result["pairs"]:
+            if "self" not in (p["a"], p["b"]) or p["overlap"] <= COLLISION_MM3 or not p.get("box"):
+                continue
+            other = p["b"] if p["a"] == "self" else p["a"]
+            label, name, exact = labels[other]
+            c = assembly.local_port({"origin": p["centre"], "axis": [0, 0, 1]}, *own)["origin"]
+            lo, hi = _local_box(p["box"][0], p["box"][1], *own)
+            out.append(f"overlaps {label} ({name}{'' if exact else ', planned envelope'}) by {p['overlap']:.0f} mm³: "
+                       f"in your frame around ({c[0]}, {c[1]}, {c[2]}), within x {lo[0]}..{hi[0]}, "
+                       f"y {lo[1]}..{hi[1]}, z {lo[2]}..{hi[2]}; remove your material there")
+        return out
+    return check
+
+
+def _live_placed(built: dict[str, dict]) -> dict:
+    return {inst["id"]: (list(inst["position"]), list(inst["rotation"]))
+            for b in built.values() for inst in b["instances"]}
 
 
 async def _rest_on_ground(project_id: str, owner: Optional[str]) -> None:
@@ -300,14 +829,14 @@ async def _place(project_id: str, owner: Optional[str], built: dict[str, dict]) 
     for b in built.values():
         for k, inst in enumerate(b["instances"]):
             pl = b["spec"]["placements"][k] if k < len(b["spec"]["placements"]) else {}
-            intent[inst["id"]] = (pl.get("mate"), pl.get("attach"))
+            intent[inst["id"]] = (pl.get("mate"), pl.get("attach"), pl.get("also") or [])
     stored = await repo.get_assembly(project_id)
     instances = stored.get("instances", [])
     for inst in instances:
         if inst["id"] in placements:
             inst["position"], inst["rotation"] = placements[inst["id"]]
         if inst["id"] in intent:
-            inst["mate"], inst["attach"] = intent[inst["id"]]
+            inst["mate"], inst["attach"], inst["also"] = intent[inst["id"]]
     await repo.save_assembly(project_id, owner, None, instances)
     return problems
 
@@ -330,6 +859,7 @@ async def _load_built(project_id: str, overall: str = "") -> dict[str, dict]:
     versions = await repo.get_versions([p["current_version"] for p in parts if p.get("current_version")])
     assembly_doc = await repo.get_assembly(project_id)
     interfaces = await repo.get_interfaces(project_id)
+    style = await repo.get_style(project_id)
     taken: set = set()
     built: dict[str, dict] = {}
     for part in parts:
@@ -350,13 +880,34 @@ async def _load_built(project_id: str, overall: str = "") -> dict[str, dict]:
         spec.setdefault("role", "")
         spec.setdefault("envelope", None)
         spec.setdefault("fastener", None)
-        spec.setdefault("ports", [{"name": n, "description": ""} for n in (meta.get("ports") or {})])
+        spec.setdefault("component", None)
+        if not any(p.get("origin") for p in spec.get("ports") or []):
+            # No planned frames (older part): the frames it has are the plan.
+            spec["ports"] = _ports_from_meta(meta, spec.get("ports") or [])
         spec.update({"id": slug, "name": part["name"], "color": part["color"],
                      "placements": [{"position": i["position"], "rotation": i["rotation"],
-                                     "mate": i.get("mate"), "attach": i.get("attach")} for i in copies]})
+                                     "mate": i.get("mate"), "also": i.get("also") or [], "attach": i.get("attach")}
+                                    for i in copies]})
         built[slug] = {"spec": spec, "meta": meta, "instances": copies, "part": part, "version": version,
-                       "brief": prompts.agent_brief(spec, interfaces, overall or assembly_doc.get("name", ""), [])}
+                       "interfaces": interfaces, "overall": overall or assembly_doc.get("name", ""), "style": style}
     return built
+
+
+def _brief(b: dict) -> str:
+    """The brief a part's agent gets for a redesign: its (current) spec, the
+    shared interface values, the style and the assembly's name."""
+    return prompts.agent_brief(b["spec"], b.get("interfaces") or {}, b.get("overall") or "", [], b.get("style"))
+
+
+async def _adopt_ports(part: dict, meta: dict) -> dict:
+    """After a change made outside the plan (the user's edit, parameters,
+    code, a revert) the build is the truth: the part's planned port frames
+    follow it, and neighbours are brought to it by the review."""
+    spec = dict(part.get("spec") or {})
+    spec["ports"] = _ports_from_meta(meta, spec.get("ports") or [])
+    await repo.update_part(part["_id"], {"spec": spec})
+    part["spec"] = spec
+    return spec
 
 
 def _describe_existing(slug: str, b: dict) -> dict:
@@ -368,6 +919,7 @@ def _describe_existing(slug: str, b: dict) -> dict:
         "role": b["spec"].get("role") or "",
         "description": (b["spec"].get("description") or "")[:300],
         "fastener": b["spec"].get("fastener"),
+        "component": b["spec"].get("component"),
         "size": (meta.get("bbox") or {}).get("size"),
         "params": {k: v["value"] for k, v in (meta.get("params") or {}).items()},
         "ports": {n: {"origin": v["origin"], "axis": v["axis"]} for n, v in (meta.get("ports") or {}).items()},
@@ -376,8 +928,22 @@ def _describe_existing(slug: str, b: dict) -> dict:
 
 
 def _spec_to_store(spec: dict) -> dict:
-    keys = ("role", "description", "features", "checks", "interfaces", "ports", "envelope", "fastener")
+    keys = ("role", "description", "features", "checks", "interfaces", "ports", "envelope", "fastener",
+            "component", "manufacturing")
     return {k: spec.get(k) for k in keys}
+
+
+def _updates(plan: dict, built: dict[str, dict]) -> list[dict]:
+    """The planner's changes to existing parts, with their port lists
+    normalised to frames (or None when the planner gave none)."""
+    out = []
+    for u in plan.get("update") or []:
+        if isinstance(u, dict) and u.get("part") in built:
+            u = dict(u)
+            u["ports"] = ([p for p in (_port_spec(p) for p in u["ports"]) if p]
+                          if isinstance(u.get("ports"), list) else None)
+            out.append(u)
+    return out[:8]
 
 
 # ── Review (reflection after generation) ─────────────────────────────────
@@ -413,11 +979,13 @@ def _severity(problems: list[str]) -> int:
     return sum(3 if "collide" in p else 2 if ("apart" in p or "touches nothing" in p) else 1 for p in problems)
 
 
-async def _check(built: dict[str, dict], mate_problems: list[str]) -> tuple[str, list[str]]:
+async def _check(built: dict[str, dict], mate_problems: list[str]) -> tuple[str, list[str], dict]:
     """Exact checks on the placed solids (geometry worker): every pair's
-    shared volume and distance. Returns (world-box listing, problems):
-    collisions, mates whose parts don't touch, parts touching nothing,
-    plus mates that couldn't be resolved."""
+    shared volume and distance. Returns (world-box listing, problems,
+    details): collisions (with where), mates and "also" contacts whose parts
+    don't touch, parts touching nothing, plus mates that couldn't be
+    resolved. `details` holds the measured collisions and open contacts for
+    the automatic repair."""
     labels, jobs, mates = {}, [], []
     lines = []
     for pid, b in built.items():
@@ -430,27 +998,37 @@ async def _check(built: dict[str, dict], mate_problems: list[str]) -> tuple[str,
                 jobs.append({"id": inst["id"], "step_path": step, "position": inst["position"],
                              "rotation": inst["rotation"]})
             placement = b["spec"]["placements"][k] if k < len(b["spec"]["placements"]) else {}
-            mate = placement.get("mate")
-            if mate and mate["to"] != "ground":
-                tpid, _, idx = mate["to"].partition("#")
-                if tpid in built:
-                    group = built[tpid]["instances"]
-                    tk = min(max(int(idx) - 1 if idx.isdigit() else 0, 0), len(group) - 1)
-                    mates.append((inst["id"], group[tk]["id"], mate))
+            contacts = [("mate", placement.get("mate"))] + [("also", m) for m in placement.get("also") or []]
+            for kind, mate in contacts:
+                if mate and mate["to"] != "ground":
+                    tpid, _, idx = mate["to"].partition("#")
+                    if tpid in built:
+                        group = built[tpid]["instances"]
+                        tk = min(max(int(idx) - 1 if idx.isdigit() else 0, 0), len(group) - 1)
+                        mates.append((inst["id"], group[tk]["id"], mate, kind))
     problems = list(mate_problems)
+    details: dict = {"collisions": [], "apart": []}
     if len(jobs) < 2:
-        return "\n".join(lines), problems
+        return "\n".join(lines), problems, details
     result = await geometry.run({"type": "check", "instances": jobs,
-                                 "pairs": [[a, b] for a, b, _ in mates], "near": 1.0})
+                                 "pairs": [[a, b] for a, b, _, _ in mates], "near": 1.0})
     by_pair = {tuple(sorted((p["a"], p["b"]))): p for p in result["pairs"]}
     for p in result["pairs"]:
         if p["overlap"] > COLLISION_MM3:
-            problems.append(f"{labels[p['a']]} and {labels[p['b']]} collide: {p['overlap']:.1f} mm³ of shared volume")
-    for a, b, mate in mates:
+            where = f" around {p['centre']}" if p.get("centre") else ""
+            problems.append(f"{labels[p['a']]} and {labels[p['b']]} collide: {p['overlap']:.1f} mm³ of shared "
+                            f"volume{where}")
+            details["collisions"].append(p)
+    for a, b, mate, kind in mates:
         p = by_pair.get(tuple(sorted((a, b))))
         if p and p["distance"] > CONTACT_MM + max(mate["gap"], 0):
-            problems.append(f"{labels[a]} is mated to {labels[b]} ({mate['port']} → {mate['to_port']}) but they're "
-                            f"{p['distance']:.1f} mm apart: a port isn't on the part's surface")
+            if kind == "mate":
+                problems.append(f"{labels[a]} is mated to {labels[b]} ({mate['port']} → {mate['to_port']}) but "
+                                f"they're {p['distance']:.1f} mm apart: a port isn't on the part's surface")
+            else:
+                problems.append(f"{labels[a]} should also touch {labels[b]} ({mate['port']} → {mate['to_port']}) "
+                                f"but they're {p['distance']:.1f} mm apart")
+            details["apart"].append({"a": a, "b": b, "mate": mate, "kind": kind, "distance": p["distance"]})
     lowest = min(result["lowest"].values())
     for iid, label in labels.items():
         touching = any(p["distance"] >= 0 and p["distance"] <= CONTACT_MM and iid in (p["a"], p["b"])
@@ -459,7 +1037,122 @@ async def _check(built: dict[str, dict], mate_problems: list[str]) -> tuple[str,
             problems.append(f"{label} touches nothing: it floats")
     grounded = [labels[i] for i, z in result["lowest"].items() if z - lowest <= CONTACT_MM]
     lines.append(f"Parts touching the ground (z = {lowest:.1f}): {', '.join(grounded)}")
-    return "\n".join(lines), problems
+    # With a copy mated to the ground, z = 0 is the floor: nothing may hang below it.
+    if any((pl.get("mate") or {}).get("to") == "ground"
+           for b in built.values() for pl in b["spec"]["placements"]):
+        for iid, z in result["lowest"].items():
+            if z < -CONTACT_MM:
+                problems.append(f"{labels[iid]} reaches {-z:.1f} mm below the ground (z = 0): it is mated on the "
+                                "wrong side or points the wrong way")
+    return "\n".join(lines), problems, details
+
+
+def _diagnose(built: dict[str, dict], details: dict) -> list[dict]:
+    """Fixes that follow from the measurements alone, as instructions for the
+    part agents (no reviewer involved): ports off their planned frame or off
+    the surface, "also" contacts that don't close (the planned port is moved
+    onto the other part's port), and screws through solid material (a
+    clearance hole where the shank is). Returns [{"part", "instruction"}]."""
+    lines: dict[str, list[str]] = {}
+    where = {inst["id"]: (pid, k) for pid, b in built.items() for k, inst in enumerate(b["instances"])}
+
+    def add(pid: str, text: str) -> None:
+        lines.setdefault(pid, []).append(text)
+
+    def label(iid: str) -> str:
+        pid, k = where[iid]
+        return f"{pid}#{k + 1}"
+
+    for pid, b in built.items():
+        if _bought(b["spec"]):
+            continue
+        for text in agents.port_problems(b["meta"], b["spec"].get("ports") or []):
+            add(pid, text)
+
+    for item in details["apart"]:
+        if item["kind"] != "also":
+            continue
+        (pid, k), (tpid, tk) = where[item["a"]], where[item["b"]]
+        if pid in lines or tpid in lines:
+            continue  # port fixes come first; they may close it
+        m = item["mate"]
+        # The custom part's port moves onto the other port (a bought part's can't move).
+        if _bought(built[pid]["spec"]):
+            if _bought(built[tpid]["spec"]):
+                continue
+            mover, mk, mport, other, ok, oport = tpid, tk, m["to_port"], pid, k, m["port"]
+        else:
+            mover, mk, mport, other, ok, oport = pid, k, m["port"], tpid, tk, m["to_port"]
+        o_port = (built[other]["meta"].get("ports") or {}).get(oport)
+        if not o_port:
+            continue
+        o_inst, m_inst = built[other]["instances"][ok], built[mover]["instances"][mk]
+        ow = assembly.world_port(o_port, o_inst["position"], o_inst["rotation"])
+        want = assembly.local_port({"origin": ow["origin"] + m["gap"] * ow["axis"], "axis": -ow["axis"]},
+                                   m_inst["position"], m_inst["rotation"])
+        ports = built[mover]["spec"].setdefault("ports", [])
+        entry = next((p for p in ports if p["name"] == mport), None)
+        if entry is None:
+            entry = {"name": mport, "description": ""}
+            ports.append(entry)
+        entry["origin"], entry["axis"] = want["origin"], want["axis"]
+        now = (built[mover]["meta"].get("ports") or {}).get(mport)
+        add(mover, f"port {mport!r} must be at origin {want['origin']}, axis {want['axis']} (that is where "
+                   f"{label(o_inst['id'])}'s port {oport!r} meets it); it is "
+                   f"{'at ' + str(now['origin']) if now else 'missing'}. Move the feature there.")
+
+    def excess(pid: str) -> float:
+        """How far a part exceeds its planned envelope (mm, largest axis)."""
+        env = built[pid]["spec"].get("envelope")
+        size = built[pid]["meta"]["bbox"]["size"]
+        return max((size[i] - float(env[i]) for i in range(3)), default=0.0) if env and len(env) == 3 else 0.0
+
+    for p in details["collisions"]:
+        (pa, ka), (pb, kb) = where[p["a"]], where[p["b"]]
+        sa, sb = built[pa]["spec"], built[pb]["spec"]
+        fa, fb = sa.get("fastener"), sb.get("fastener")
+        if not p.get("centre"):
+            continue
+        # A screw through a custom part: it needs a clearance hole where the shank is.
+        if bool(fa) != bool(fb) and (fa or fb)["kind"] == "screw" and not _bought(sb if fa else sa):
+            screw = fa or fb
+            s_iid, p_iid = (p["a"], p["b"]) if fa else (p["b"], p["a"])
+            (spid, sk), (ppid, pk) = where[s_iid], where[p_iid]
+            s_inst, p_inst = built[spid]["instances"][sk], built[ppid]["instances"][pk]
+            shank = assembly.world_port({"origin": [0, 0, 0], "axis": [0, 0, 1]}, s_inst["position"], s_inst["rotation"])
+            local = assembly.local_port({"origin": p["centre"], "axis": shank["axis"]},
+                                        p_inst["position"], p_inst["rotation"])
+            hole = fasteners.METRIC[screw["size"]][6]
+            add(ppid, f"the {fasteners.name(screw)} ({label(s_iid)}) passes through your material: {p['overlap']:.1f} mm³ "
+                      f"of it is inside you around {local['origin']} (your coordinates), along the axis {local['axis']}. "
+                      f"Give it a {hole} mm through clearance hole on that axis there (or move the existing hole onto "
+                      "it), with the hole's ports on both faces.")
+            continue
+        if _bought(sa) and _bought(sb) or not p.get("box"):
+            continue  # two bought parts: a template or placement matter for the reviewer
+        # Otherwise the custom part gives way; between two custom parts, the one further over
+        # its envelope, else the child in the mate tree.
+        if _bought(sa):
+            culprit, other = (pb, kb), (pa, ka)
+        elif _bought(sb):
+            culprit, other = (pa, ka), (pb, kb)
+        else:
+            ea, eb = excess(pa), excess(pb)
+            if abs(ea - eb) > 0.5:
+                culprit, other = ((pa, ka), (pb, kb)) if ea > eb else ((pb, kb), (pa, ka))
+            else:
+                mate = (built[pa]["spec"]["placements"][ka].get("mate") or {}) if ka < len(built[pa]["spec"]["placements"]) else {}
+                a_is_child = str(mate.get("to", "")).partition("#")[0] == pb
+                culprit, other = ((pa, ka), (pb, kb)) if a_is_child else ((pb, kb), (pa, ka))
+        cpid, ck = culprit
+        inst = built[cpid]["instances"][ck]
+        c = assembly.local_port({"origin": p["centre"], "axis": [0, 0, 1]}, inst["position"], inst["rotation"])["origin"]
+        lo, hi = _local_box(p["box"][0], p["box"][1], inst["position"], inst["rotation"])
+        oname = built[other[0]]["spec"]["name"]
+        add(cpid, f"you overlap {other[0]}#{other[1] + 1} ({oname}) by {p['overlap']:.0f} mm³: in your frame around "
+                  f"({c[0]}, {c[1]}, {c[2]}), within x {lo[0]}..{hi[0]}, y {lo[1]}..{hi[1]}, z {lo[2]}..{hi[2]}. "
+                  "Remove your material there (a pocket, a cutout, a shorter wall), keeping your ports where they are.")
+    return [{"part": pid, "instruction": "\n".join(f"- {t}" for t in texts)} for pid, texts in lines.items()]
 
 
 async def _sync_positions(project_id: str, built: dict[str, dict]) -> None:
@@ -474,12 +1167,18 @@ async def _sync_positions(project_id: str, built: dict[str, dict]) -> None:
 async def review(project_id: str, owner: Optional[str], request: str, built: dict[str, dict],
                  emit: Emit, max_rounds: int, ground: bool, plan_parts: list[dict],
                  mate_problems: Optional[list[str]] = None) -> None:
-    """Reflection loop: render the assembly, check it exactly (collisions,
-    mates in contact, floating parts), let the reviewer judge it against the
-    request and apply its fixes (re-mates and part redesigns by the part
-    agents), then review again. It ends when the reviewer is satisfied and
-    the exact checks pass, when it has no fix left, when two rounds in a row
-    change nothing, or after `max_rounds`."""
+    """Reflection loop, checks first.
+
+    1. Automatic repair (no reviewer, `CAD_REPAIR_ROUNDS` at most): the exact
+       checks and the planned port frames decide what's wrong, and the part
+       agents get numeric instructions: ports off the plan or off the
+       surface, contacts that don't close, screws through solid material.
+    2. Reviewer rounds: render the assembly, check it exactly, let the
+       reviewer judge it against the request and apply its fixes (part
+       redesigns first, then re-mates), then review again. They end when the
+       reviewer is satisfied and the exact checks pass, when it has no fix
+       left, when two rounds in a row change nothing, or after `max_rounds`.
+    """
     history: list[dict] = []  # what earlier rounds found and did, so fixes aren't undone
     fixed_total: list[str] = []
     idle_rounds = 0
@@ -487,12 +1186,102 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
     outcome, remaining = "limit", []
     missing = [p["name"] for p in plan_parts if p["id"] not in built]
     mate_problems = list(mate_problems or [])
+    round_no = 0
 
-    for round_no in range(1, max_rounds + 1):
+    async def snapshot() -> None:
+        nonlocal snapshotted
+        if not snapshotted:
+            await repo.create_snapshot(project_id, "Before review fixes", auto=True)
+            snapshotted = True
+
+    async def redesign(pid: str, instruction: str, ports: Optional[list[dict]] = None,
+                       enforce: bool = True) -> Optional[str]:
+        """Have a part's agent apply an instruction. `ports` replaces the
+        planned frames. With `enforce` the build must match the planned
+        frames; without it the instruction may legitimately move features,
+        so the frames follow the build instead."""
+        b = built[pid]
+        await emit({"type": "part_started", "plan_id": pid})
+
+        async def retry(attempt: int, error: str):
+            await emit({"type": "part_retry", "plan_id": pid, "attempt": attempt, "error": error})
+
+        async def notify(action: str, detail: str):
+            await emit({"type": "agent", "plan_id": pid, "action": action, "detail": detail})
+
+        if ports:
+            known = {p["name"]: p for p in b["spec"].get("ports") or []}
+            b["spec"]["ports"] = [{**known.get(p["name"], {}), **p} for p in ports]
+        try:
+            if _bought(b["spec"]):
+                raise StudioError("bought parts and fasteners are not redesigned; re-place them or change the plan")
+            try:
+                before_render = await agents.render_part(b["version"]["key"])
+            except GeometryJobError:
+                before_render = None
+            required = (b["spec"].get("ports") or []) if enforce else [p["name"] for p in b["spec"].get("ports") or []]
+            placed_now = _live_placed(built)
+            b["spec"]["keep_out"] = _neighbourhood(pid, 0, built, placed_now, built)[0]
+            code, key, meta = await develop(
+                _brief(b) + "\n\n" + prompts.agent_revise(b["version"]["code"], instruction, None),
+                prompts.edit_user(b["version"]["code"], instruction, b["meta"], None),
+                retry, notify, b["spec"].get("envelope"), required_ports=required,
+                images=[(before_render, PART_CAPTION)] if before_render else None,
+                interference=_interference(pid, 0, built, placed_now, built))
+        except Exception as err:
+            await emit({"type": "part_failed", "plan_id": pid, "error": str(err)[:500]})
+            return None
+        b["version"] = await repo.add_version(b["part"], code, {}, {}, f"Review: {instruction[:200]}", key, meta)
+        b["meta"] = meta
+        if not enforce:
+            b["spec"]["ports"] = _ports_from_meta(meta, b["spec"].get("ports") or [])
+        await repo.update_part(b["part"]["_id"], {"spec": _spec_to_store(b["spec"])})
+        await emit({"type": "part_done", "plan_id": pid, "part": part_view(b["part"], b["version"])})
+        return f"edited {pid}: {instruction[:200]}"
+
+    async def settle() -> None:
+        """Re-solve the mates after fixes and show the result."""
+        nonlocal mate_problems
+        mate_problems = await _place(project_id, owner, built)
+        if ground:
+            await _rest_on_ground(project_id, owner)
+        await _sync_positions(project_id, built)
+        await emit({"type": "state", "state": await state(project_id)})
+
+    # ── 1. Automatic repair from the measurements ─────────────────────────
+    for _ in range(settings.CAD_REPAIR_ROUNDS):
+        try:
+            _, _, details = await _check(built, mate_problems)
+        except GeometryJobError as e:
+            logger.warning("[cad] exact check failed: %s", e)
+            break
+        fixes = _diagnose(built, details)
+        if not fixes:
+            break
+        round_no += 1
+        await emit({"type": "reviewing", "round": round_no})
+        await snapshot()
+        results = await asyncio.gather(*(redesign(f["part"], f["instruction"]) for f in fixes))
+        applied = [r for r in results if r]
+        rejected = [f"auto-fix {f['part']}: failed to build" for f, r in zip(fixes, results) if not r]
+        await settle()
+        issues = [f"{f['part']}: {line[2:]}" for f in fixes for line in f["instruction"].splitlines()]
+        history.append({"round": round_no, "issues": issues, "applied": applied, "rejected": rejected})
+        if applied:
+            fixed_total += issues
+        await emit({"type": "review", "round": round_no, "ok": False, "issues": issues, "fixed": len(applied),
+                    "note": f"Auto-fix from measurements: {len(applied)} part{'s' if len(applied) != 1 else ''} "
+                            "corrected"})
+        if not applied:
+            break
+
+    # ── 2. Reviewer rounds ────────────────────────────────────────────────
+    for _ in range(max_rounds):
+        round_no += 1
         await emit({"type": "reviewing", "round": round_no})
         images = await review_images(project_id, emit, round_no)
         try:
-            facts, problems = await _check(built, mate_problems)
+            facts, problems, _ = await _check(built, mate_problems)
         except GeometryJobError as e:
             logger.warning("[cad] exact check failed: %s", e)
             facts, problems = "(exact check unavailable)", list(mate_problems)
@@ -503,14 +1292,16 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
                 "id": pid, "name": b["spec"]["name"], "description": b["spec"]["description"][:500],
                 "size": b["meta"]["bbox"]["size"], "params": params,
                 "ports": {n: {"origin": v["origin"], "axis": v["axis"]} for n, v in (b["meta"].get("ports") or {}).items()},
-                "copies": [{"mate": pl.get("mate"), "attach": pl.get("attach"), "rotation": inst["rotation"]}
+                "copies": [{"mate": pl.get("mate"), "also": pl.get("also") or None, "attach": pl.get("attach"),
+                            "rotation": inst["rotation"]}
                            for inst, pl in zip(b["instances"], b["spec"]["placements"])],
             })
         try:
-            verdict = llm.extract_json(await llm.complete(
+            # A forced tool call: the verdict is valid JSON by construction.
+            verdict = await llm.structured(
                 prompts.REVIEW_SYSTEM,
                 prompts.review_user(request, parts, facts, problems, bool(images), history),
-                max_tokens=4000, temperature=0.1, images=images or None))
+                "submit_review", prompts.REVIEW_SCHEMA, max_tokens=6000, images=images or None)
         except Exception as e:
             logger.warning("[cad] review failed: %s", e)
             await emit({"type": "review", "round": round_no, "ok": True, "issues": [], "fixed": 0,
@@ -545,87 +1336,62 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
             outcome, remaining = "stuck", issues + problems
             break
 
-        if not snapshotted:
-            await repo.create_snapshot(project_id, "Before review fixes", auto=True)
-            snapshotted = True
+        await snapshot()
         applied: list[str] = []
         rejected: list[str] = []
 
+        # Redesign parts first (in parallel, with their agents): a re-mate may need a port an edit adds.
+        if edits:
+            results = await asyncio.gather(*(
+                redesign(e["part"], str(e.get("instruction") or ""),
+                         ports=[p for p in (_port_spec(p) for p in (e.get("ports") or [])) if p] or None,
+                         enforce=bool(e.get("ports")))
+                for e in edits))
+            applied += [r for r in results if r]
+            rejected += [f"edit {e['part']} ({str(e.get('instruction') or '')[:120]}): failed to build"
+                         for e, r in zip(edits, results) if not r]
+            mate_problems = await _place(project_id, owner, built)
+
         # Re-mate copies, but keep the moves only if the exact checks don't get worse.
-        before = problems
-        saved = {pid: ([dict(p) for p in b["spec"]["placements"]], [list(i["rotation"]) for i in b["instances"]],
-                       [list(i["position"]) for i in b["instances"]]) for pid, b in built.items()}
-        described = []
-        for m in moves:
-            b = built[m["part"]]
-            k = int(m.get("copy") or 1) - 1
-            if not 0 <= k < len(b["instances"]):
-                continue
-            fixed = _expand_plan({"parts": [{"id": m["part"], "copies": [m]}]})[0]["placements"][0]
-            b["spec"]["placements"][k] = fixed
-            if fixed.get("attach"):
-                b["instances"][k]["rotation"] = fixed["rotation"]
-            how = fixed.get("mate") or fixed.get("attach") or {}
-            described.append(f"re-placed {m['part']}#{k + 1}: {json.dumps(how)}")
-        if described:
-            trial, trial_problems = assembly.solve(built)
-            _apply(built, trial)
+        if moves:
             try:
-                _, after = await _check(built, trial_problems)
+                _, before, _ = await _check(built, mate_problems)
             except GeometryJobError:
-                after = before
-            if _severity(after) > _severity(before):
-                logger.info("[cad] review moves rejected: %s → %s", before, after)
-                for pid, (placements, rotations, positions) in saved.items():
-                    built[pid]["spec"]["placements"] = placements
-                    for inst, rot, pos in zip(built[pid]["instances"], rotations, positions):
-                        inst["rotation"], inst["position"] = rot, pos
-                rejected += [f"{d}: rejected, it made the exact checks worse ({'; '.join(after[:3])})"
-                             for d in described]
-            else:
-                applied += described
-
-        # Redesign parts, in parallel, with their agents.
-        async def redesign(e: dict) -> Optional[str]:
-            b = built[e["part"]]
-            await emit({"type": "part_started", "plan_id": e["part"]})
-
-            async def retry(attempt: int, error: str):
-                await emit({"type": "part_retry", "plan_id": e["part"], "attempt": attempt, "error": error})
-
-            async def notify(action: str, detail: str):
-                await emit({"type": "agent", "plan_id": e["part"], "action": action, "detail": detail})
-
-            instruction = str(e.get("instruction") or "")
-            try:
-                if b["spec"].get("fastener"):
-                    raise StudioError("standard fasteners are not redesigned; re-place them or change the plan")
+                before = problems
+            saved = {pid: ([dict(p) for p in b["spec"]["placements"]], [list(i["rotation"]) for i in b["instances"]],
+                           [list(i["position"]) for i in b["instances"]]) for pid, b in built.items()}
+            described = []
+            for m in moves:
+                b = built[m["part"]]
+                k = int(m.get("copy") or 1) - 1
+                if not 0 <= k < len(b["instances"]):
+                    continue
+                fixed = _expand_plan({"parts": [{"id": m["part"], "copies": [m]}]})[0]["placements"][0]
+                fixed["also"] = b["spec"]["placements"][k].get("also") or []
+                b["spec"]["placements"][k] = fixed
+                if fixed.get("attach"):
+                    b["instances"][k]["rotation"] = fixed["rotation"]
+                how = fixed.get("mate") or fixed.get("attach") or {}
+                described.append(f"re-placed {m['part']}#{k + 1}: {json.dumps(how)}")
+            if described:
+                trial, trial_problems = assembly.solve(built)
+                _apply(built, trial)
                 try:
-                    before_render = await agents.render_part(b["version"]["key"])
+                    _, after, _ = await _check(built, trial_problems)
                 except GeometryJobError:
-                    before_render = None
-                code, key, meta = await develop(
-                    b["brief"] + "\n\n" + prompts.agent_revise(b["version"]["code"], instruction, None),
-                    prompts.edit_user(b["version"]["code"], instruction, b["meta"], None),
-                    retry, notify, b["spec"].get("envelope"),
-                    required_ports=[p["name"] for p in b["spec"].get("ports") or []],
-                    images=[(before_render, PART_CAPTION)] if before_render else None)
-            except Exception as err:
-                await emit({"type": "part_failed", "plan_id": e["part"], "error": str(err)[:500]})
-                rejected.append(f"edit {e['part']} ({instruction[:120]}): failed to build")
-                return None
-            b["version"] = await repo.add_version(b["part"], code, {}, {}, f"Review: {instruction}", key, meta)
-            b["meta"] = meta
-            await emit({"type": "part_done", "plan_id": e["part"], "part": part_view(b["part"], b["version"])})
-            return f"edited {e['part']}: {instruction[:200]}"
+                    after = before
+                if _severity(after) > _severity(before):
+                    logger.info("[cad] review moves rejected: %s → %s", before, after)
+                    for pid, (placements, rotations, positions) in saved.items():
+                        built[pid]["spec"]["placements"] = placements
+                        for inst, rot, pos in zip(built[pid]["instances"], rotations, positions):
+                            inst["rotation"], inst["position"] = rot, pos
+                    rejected += [f"{d}: rejected, it made the exact checks worse ({'; '.join(after[:3])})"
+                                 for d in described]
+                else:
+                    applied += described
 
-        applied += [r for r in await asyncio.gather(*(redesign(e) for e in edits)) if r]
-        mate_problems = await _place(project_id, owner, built)
-        if ground:
-            await _rest_on_ground(project_id, owner)
-        await _sync_positions(project_id, built)
-        await emit({"type": "state", "state": await state(project_id)})
-
+        await settle()
         history.append({"round": round_no, "issues": issues, "applied": applied, "rejected": rejected})
         fixed_total += issues if applied else []
         await emit({"type": "review", "round": round_no, "ok": False, "issues": issues, "fixed": len(applied)})
@@ -651,7 +1417,7 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
             text += f"\nOpen exact-check problems:\n{bullets(remaining)}"
     else:
         why = {"stuck": "it found no further fixes", "stalled": "two rounds in a row changed nothing",
-               "limit": f"it reached the limit of {max_rounds} rounds"}[outcome]
+               "limit": f"it reached the limit of {max_rounds} reviewer rounds"}[outcome]
         text = f"Review stopped after {rounds_done} round{'s' if rounds_done != 1 else ''}: {why}."
         if fixed_total:
             text += f"\nFixed:\n{bullets(fixed_total)}"
@@ -660,7 +1426,6 @@ async def review(project_id: str, owner: Optional[str], request: str, built: dic
     if missing:
         text += f"\nNot built: {', '.join(missing)}"
     await _say(emit, project_id, "assistant", text, {"kind": "review", "outcome": outcome, "rounds": rounds_done})
-
 
 async def generate(project_id: str, owner: Optional[str], prompt: str,
                    view_image: Optional[bytes] = None) -> AsyncGenerator[dict, None]:
@@ -675,26 +1440,25 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
             await repo.create_snapshot(project_id, f"Before: {prompt[:60]}", auto=True)
             await emit({"type": "planning"})
             built = await _load_built(project_id)
-            existing = [_describe_existing(slug, b) for slug, b in built.items()]
+            existing = bool(built)
+            # Two-stage plan (architecture, then per-part detail), checked against its own numbers.
+            # A plan that can't be made is an error, never a silently simplified build.
             try:
-                # With parts already in the assembly, the planner also sees what the user sees.
-                show = [view_image] if view_image and existing else None
-                plan = llm.extract_json(await llm.complete(
-                    prompts.PLANNER_SYSTEM,
-                    prompts.planner_user(prompt, existing[:40]) + (
-                        "\n\nThe attached image is the user's current 3D viewport (Z up)." if show else ""),
-                    max_tokens=8000, temperature=0.1, images=show))
-                parts = [p for p in _expand_plan(plan) if p["id"] not in built]
+                plan, parts, updates, plan_problems = await _plan(prompt, built, view_image, emit)
+            except llm.QuotaExceeded as e:
+                raise StudioError(str(e))
+            except llm.Truncated as e:
+                raise StudioError(f"The architect's answer was too long ({e}); ask for a smaller design or split it")
+            except StudioError:
+                raise
             except Exception as e:
-                logger.warning("[cad] planning failed (%s); building a single part", e)
-                plan, parts = {}, []
-            updates = [u for u in (plan.get("update") or []) if isinstance(u, dict) and u.get("part") in built][:8]
+                logger.exception("[cad] planning failed")
+                raise StudioError(f"Planning failed: {str(e)[:300]}")
             removals = [r for r in (plan.get("remove") or []) if r in built]
             remates = [m for m in (plan.get("placements") or []) if isinstance(m, dict) and m.get("part") in built]
             if not parts and not updates and not removals and not remates:
-                if existing:
-                    raise StudioError("The planner found nothing to change; try describing the change more precisely")
-                parts = _expand_plan({"parts": [{"id": "model", "name": "Model", "description": prompt}]})
+                raise StudioError("The architect found nothing to change; try describing the change more precisely"
+                                  if existing else "The architect produced no parts; try describing the object")
             overall = plan.get("name") or (await repo.get_assembly(project_id)).get("name") or prompt
             if plan.get("name"):
                 await repo.name_assembly_if_unnamed(project_id, owner, str(plan["name"]))
@@ -704,6 +1468,11 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
             } if isinstance(plan.get("interfaces"), dict) else {}
             await repo.merge_interfaces(project_id, new_interfaces)
             interfaces = await repo.get_interfaces(project_id)
+            if isinstance(plan.get("style"), dict) and plan["style"]:
+                await repo.set_style(project_id, plan["style"])
+            style = await repo.get_style(project_id)
+            for b in built.values():
+                b["style"] = style
             await emit({"type": "plan", "name": overall, "summary": plan.get("summary"),
                         "interfaces": {k: v.get("value") for k, v in interfaces.items()},
                         "parts": [{"id": u["part"], "name": f"Update {built[u['part']]['spec']['name']}",
@@ -717,6 +1486,8 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
                 await delete(project_id, built[slug]["part"]["_id"])
                 built.pop(slug)
 
+            # The assembly on paper: where every copy will be, so each agent can see its neighbours.
+            paper, paper_placed, _ = _paper(parts, built)
             gate = asyncio.Semaphore(settings.CAD_PARALLEL_PARTS)
 
             def hooks(plan_id: str):
@@ -739,57 +1510,66 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
                     for field in ("features", "checks"):
                         if isinstance(u.get(field), list):
                             spec[field] = [str(x)[:400] for x in u[field]][:20]
-                    if isinstance(u.get("ports"), list):
-                        known = {p["name"] for p in spec.get("ports") or []}
-                        spec["ports"] = (spec.get("ports") or []) + [
-                            {"name": str(p.get("name")), "description": str(p.get("description") or "")[:300]}
-                            for p in u["ports"] if isinstance(p, dict) and p.get("name") not in known]
+                    # With a port list the planner fixed the new frames and the build must meet them;
+                    # without one the instruction may move features, so the frames follow the build.
+                    planned = bool(u.get("ports"))
+                    if planned:
+                        known = {p["name"]: p for p in spec.get("ports") or []}
+                        spec["ports"] = [{**known.get(p["name"], {}), **p} for p in u["ports"]]
+                    required = spec.get("ports") if planned else [p["name"] for p in spec.get("ports") or []]
                     try:
-                        if spec.get("fastener"):
-                            raise StudioError("standard fasteners are replaced, not redesigned")
+                        if _bought(spec):
+                            raise StudioError("bought parts and fasteners are replaced, not redesigned")
                         try:
                             before = await agents.render_part(b["version"]["key"])
                         except GeometryJobError:
                             before = None
                         images = ([(view_image, VIEW_CAPTION)] if view_image else []) + (
                             [(before, PART_CAPTION)] if before else [])
-                        brief = (prompts.agent_brief(spec, interfaces, overall, [])
+                        spec["keep_out"] = _neighbourhood(slug, 0, paper, paper_placed, built)[0]
+                        brief = (prompts.agent_brief(spec, interfaces, overall, [], style)
                                  + "\n\n" + prompts.agent_revise(b["version"]["code"], instruction, None))
                         code, key, meta = await develop(
                             brief, prompts.edit_user(b["version"]["code"], instruction, b["meta"], None),
-                            retry, notify, spec.get("envelope"), images=images or None,
-                            required_ports=[p["name"] for p in spec.get("ports") or []])
+                            retry, notify, spec.get("envelope"), images=images or None, required_ports=required,
+                            interference=_interference(slug, 0, paper, paper_placed, built))
                     except Exception as e:
                         await emit({"type": "part_failed", "plan_id": slug, "error": str(e)[:2000]})
                         return
                     b["version"] = await repo.add_version(b["part"], code, b["version"].get("params") or {}, {},
                                                           instruction, key, meta)
                     b["meta"] = meta
-                    b["brief"] = prompts.agent_brief(spec, interfaces, overall, [])
+                    if not planned:
+                        spec["ports"] = _ports_from_meta(meta, spec.get("ports") or [])
+                    b["interfaces"], b["overall"], b["style"] = interfaces, overall, style
                     await repo.update_part(b["part"]["_id"], {"spec": _spec_to_store(spec)})
                     updated.append(slug)
                     await emit({"type": "part_done", "plan_id": slug, "part": part_view(b["part"], b["version"])})
 
-            # Build new parts (agents, or templates for fasteners).
+            # Build new parts (agents, or templates for fasteners and catalog components).
             async def make(spec: dict):
                 async with gate:
                     await emit({"type": "part_started", "plan_id": spec["id"]})
                     retry, notify = hooks(spec["id"])
                     siblings = [{"name": o["name"], "description": o["description"]} for o in parts
-                                if o is not spec and not o["fastener"]] + [
+                                if o is not spec and not _bought(o)] + [
                         {"name": b["spec"]["name"], "description": b["spec"]["description"]}
-                        for b in built.values() if not b["spec"].get("fastener")]
+                        for b in built.values() if not _bought(b["spec"])]
                     try:
-                        if spec["fastener"]:
-                            # Standard hardware: fixed template, no agent needed.
-                            code = fasteners.code(spec["fastener"])
+                        if spec["fastener"] or spec["component"]:
+                            # Bought: fixed template with exact ports, no agent needed.
+                            code = fasteners.code(spec["fastener"]) if spec["fastener"] else catalog.code(spec["component"])
                             key, meta = await build(code, {}, {}, check_ports=False)
                         else:
+                            # The agent knows its neighbours (in its own frame) and every build is
+                            # placed among them and checked for interference.
+                            spec["keep_out"] = _neighbourhood(spec["id"], 0, paper, paper_placed, built)[0]
                             code, key, meta = await develop(
-                                prompts.agent_brief(spec, interfaces, overall, siblings),
+                                prompts.agent_brief(spec, interfaces, overall, siblings, style),
                                 prompts.part_user(spec["name"],
                                                   spec["description"] + "\n" + "\n".join(spec["features"]), overall),
-                                retry, notify, spec.get("envelope"), required_ports=[p["name"] for p in spec["ports"]])
+                                retry, notify, spec.get("envelope"), required_ports=spec["ports"],
+                                interference=_interference(spec["id"], 0, paper, paper_placed, built))
                     except Exception as e:
                         await emit({"type": "part_failed", "plan_id": spec["id"], "error": str(e)[:2000]})
                         return
@@ -802,13 +1582,13 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
                         {"id": repo.new_id(), "part_id": part["_id"],
                          "name": spec["name"] if len(spec["placements"]) == 1 else f"{spec['name']} {k + 1}",
                          "position": pl["position"], "rotation": pl["rotation"], "color": None, "visible": True,
-                         "mate": pl.get("mate"), "attach": pl.get("attach")}
+                         "mate": pl.get("mate"), "also": pl.get("also") or [], "attach": pl.get("attach")}
                         for k, pl in enumerate(spec["placements"])
                     ]
                     await repo.add_instances(project_id, owner, instances)
                     built[spec["id"]] = {"spec": spec, "meta": meta, "instances": instances,
                                          "part": part, "version": version,
-                                         "brief": prompts.agent_brief(spec, interfaces, overall, siblings)}
+                                         "interfaces": interfaces, "overall": overall, "style": style}
                     added.append(spec["id"])
                     await emit({"type": "part_done", "plan_id": spec["id"], "part": part_view(part, version),
                                 "instances": instances})
@@ -826,10 +1606,26 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
                 b = built[m["part"]]
                 k = int(m.get("copy") or 1) - 1
                 if 0 <= k < len(b["instances"]):
-                    b["spec"]["placements"][k] = _expand_plan(
-                        {"parts": [{"id": m["part"], "copies": [m]}]})[0]["placements"][0]
+                    placement = _expand_plan({"parts": [{"id": m["part"], "copies": [m]}]})[0]["placements"][0]
+                    if not placement["also"]:
+                        placement["also"] = b["spec"]["placements"][k].get("also") or []
+                    b["spec"]["placements"][k] = placement
 
             mate_problems = await _place(project_id, owner, built) if built else []
+
+            # The deterministic assembler: screws (and their nuts) are derived from the
+            # architect's joints and the placed geometry, then placed like any other part.
+            screw_specs, screw_problems = _derive_screws(plan.get("screws") or [], built)
+            derived = [s for s in _expand_plan({"parts": screw_specs}) if s["id"] not in built]
+            if derived:
+                await emit({"type": "plan", "name": overall, "summary": None, "interfaces": {},
+                            "parts": [{"id": s["id"], "name": s["name"], "description": "derived from the joints",
+                                       "features": [], "count": len(s["placements"])} for s in derived],
+                            "append": True})
+                await asyncio.gather(*(make(s) for s in derived))
+                parts = parts + derived
+                mate_problems = await _place(project_id, owner, built)
+            plan_problems = plan_problems + screw_problems
             await _rest_on_ground(project_id, owner)
 
             changed = []
@@ -846,6 +1642,9 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
             summary = (f"{overall}: " + "; ".join(changed) + ".") if changed else "Nothing was changed."
             if failed:
                 summary += f" Couldn't build: {', '.join(failed)}."
+            if plan_problems:
+                summary += "\nThe plan didn't pass its own checks; the review has to sort out:\n" + "\n".join(
+                    f"• {p}" for p in plan_problems[:6])
             await _say(emit, project_id, "assistant", summary,
                        {"kind": "generate", "added": added, "updated": updated, "removed": removals})
             if built and settings.CAD_REVIEW_MAX_ROUNDS > 0:
@@ -874,6 +1673,28 @@ async def generate(project_id: str, owner: Optional[str], prompt: str,
     finally:
         if not task.done():
             task.cancel()
+
+
+# ── Collision shapes for the physics sandbox ──────────────────────────────
+
+
+async def ensure_hulls(key: str) -> Optional[str]:
+    """Path of the part's convex pieces (hulls.json), made on first request
+    by the geometry worker from the preview mesh. None if the part has no
+    mesh or the worker can't decompose."""
+    done = storage.object_path(key, "hulls.json")
+    if done:
+        return done
+    mesh = storage.object_path(key, "mesh.json")
+    if not mesh:
+        return None
+    out = os.path.join(storage.object_dir(key), "hulls.json")
+    try:
+        await geometry.run({"type": "decompose", "mesh_path": mesh, "out_path": out})
+    except GeometryJobError as e:
+        logger.warning("[cad] decomposition of %s failed: %s", key, e)
+        return None
+    return storage.object_path(key, "hulls.json")
 
 
 # ── Edit an existing part ─────────────────────────────────────────────────
@@ -996,6 +1817,7 @@ async def edit(project_id: str, part_id: str, instruction: str, face: Optional[d
             if params:
                 key, meta = await build(code, params, version.get("assets") or {})
             new = await repo.add_version(part, code, params, version.get("assets") or {}, instruction, key, meta)
+            await _adopt_ports(part, meta)  # the user's change is the new truth; neighbours follow
             await _say(emit, project_id, "assistant", f"Updated {part['name']} (v{new['number']}).",
                        {"kind": "edit", "part": part_id})
             await queue.put({"type": "part_done", "part_id": part_id, "part": part_view(part, new)})
@@ -1067,6 +1889,7 @@ async def set_params(project_id: str, part_id: str, params: dict) -> dict:
                                  "Parameters: " + ", ".join(f"{k}={v:g}" if isinstance(v, float) else f"{k}={v}"
                                                             for k, v in clean.items()),
                                  key, meta)
+    await _adopt_ports(part, meta)
     return part_view(part, new)
 
 
@@ -1077,6 +1900,7 @@ async def set_code(project_id: str, part_id: str, code: str) -> dict:
     except GeometryJobError as e:
         raise StudioError(str(e))
     new = await repo.add_version(part, code, {}, version.get("assets") or {}, "Code edited by hand", key, meta)
+    await _adopt_ports(part, meta)
     return part_view(part, new)
 
 
@@ -1087,6 +1911,7 @@ async def revert(project_id: str, part_id: str, version_id: str) -> dict:
         raise StudioError("Version not found")
     await repo.update_part(part_id, {"current_version": version_id})
     part["current_version"] = version_id
+    await _adopt_ports(part, old.get("meta") or {})
     return part_view(part, old)
 
 
@@ -1244,6 +2069,12 @@ async def export(project_id: str, fmt: str, instance_ids: Optional[list[str]] = 
     if not chosen:
         raise StudioError("Nothing to export: the assembly has no visible parts")
     versions_by_id = await repo.get_versions([parts[i["part_id"]]["current_version"] for i in chosen])
+    # The mate tree, for the URDF export: which copy each copy hangs off, and the joint axis.
+    by_slug: dict[str, list[dict]] = {}
+    for inst in assembly.get("instances", []):
+        slug = (parts.get(inst["part_id"]) or {}).get("slug")
+        if slug:
+            by_slug.setdefault(slug, []).append(inst)
     jobs = []
     for inst in chosen:
         part = parts[inst["part_id"]]
@@ -1255,12 +2086,29 @@ async def export(project_id: str, fmt: str, instance_ids: Optional[list[str]] = 
             except GeometryJobError as e:
                 raise StudioError(f"Could not rebuild {part['name']}: {str(e).splitlines()[0]}")
             step = storage.object_path(key, "part.step")
+        parent, axis, joint = None, None, "fixed"
+        mate = inst.get("mate")
+        if mate and mate.get("to") != "ground":
+            tpid, _, idx = str(mate["to"]).partition("#")
+            group = by_slug.get(tpid) or []
+            if group:
+                target = group[min(max(int(idx) - 1 if idx.isdigit() else 0, 0), len(group) - 1)]
+                tversion = versions_by_id.get(parts[target["part_id"]]["current_version"]) if target["part_id"] in parts else None
+                tport = ((tversion or {}).get("meta") or {}).get("ports", {}).get(mate.get("to_port"))
+                parent = target["id"]
+                joint = mate.get("joint") or "fixed"
+                if tport:
+                    axis = [float(v) for v in assembly_mod.world_port(tport, target["position"], target["rotation"])["axis"]]
         jobs.append({
+            "id": inst["id"],
             "name": inst["name"],
             "step_path": step,
             "position": inst["position"],
             "rotation": inst["rotation"],
             "color": _hex_to_rgb(inst.get("color") or part["color"]),
+            "parent": parent,
+            "joint": joint,
+            "axis": axis,
         })
     filename, media = EXPORT_FILES[fmt]
     out_path = storage.new_export_path(filename)
