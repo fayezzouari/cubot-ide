@@ -38,6 +38,8 @@ export interface CadVersion {
 
 export interface CadPart {
   id: string;
+  /** The plan id; mates refer to copies as `slug#n`. */
+  slug?: string | null;
   name: string;
   source: 'generated' | 'imported';
   kind: 'brep' | 'mesh';
@@ -54,7 +56,9 @@ export interface CadInstance {
   color: string | null;
   visible: boolean;
   /** How the copy is placed: mated port to port, attached to a face, or neither (placed by hand). */
-  mate?: { port: string; to: string; to_port: string; gap: number; angle: number } | null;
+  mate?: { port: string; to: string; to_port: string; gap: number; angle: number; joint?: 'fixed' | 'revolute' } | null;
+  /** Other port contacts this copy has; checked, not used to place it. */
+  also?: { port: string; to: string; to_port: string; gap: number; angle: number }[];
   attach?: Record<string, unknown> | null;
 }
 
@@ -85,6 +89,11 @@ export interface PartMesh {
   faces: FaceInfo[];
 }
 
+/** Convex pieces of a part (for collision), each a flat list of vertex coordinates. */
+export interface PartHulls {
+  hulls: { points: number[] }[];
+}
+
 export type CadEvent =
   | { type: 'planning' }
   | {
@@ -93,8 +102,16 @@ export type CadEvent =
       summary?: string;
       interfaces?: Record<string, number | string>;
       parts: { id: string; name: string; description: string; features?: string[]; count: number }[];
+      /** Parts derived after the first build (screws, nuts): added to the list, not replacing it. */
+      append?: boolean;
     }
-  | { type: 'agent'; plan_id?: string; part_id?: string; action: 'build' | 'error' | 'view' | 'finish'; detail: string }
+  | {
+      type: 'agent';
+      plan_id?: string;
+      part_id?: string;
+      action: 'build' | 'error' | 'view' | 'measure' | 'finish' | 'detail' | 'check';
+      detail: string;
+    }
   | { type: 'part_started'; plan_id?: string; part_id?: string }
   | { type: 'part_retry'; plan_id?: string; part_id?: string; attempt: number; error: string }
   | { type: 'part_failed'; plan_id: string; error: string }
@@ -190,6 +207,7 @@ async function stream(endpoint: string, body: unknown, onEvent: (e: CadEvent) =>
 
 // Built files never change for a given key, so meshes are cached for the session.
 const meshCache = new Map<string, Promise<PartMesh>>();
+const hullCache = new Map<string, Promise<PartHulls | null>>();
 
 export const cadApi = {
   state: (projectId: string) => apiClient.get<CadState>(`/cad/${projectId}`),
@@ -282,6 +300,18 @@ export const cadApi = {
       cached = request('GET', `/cad/files/${key}/mesh.json`).then((r) => r.json());
       cached.catch(() => meshCache.delete(key));
       meshCache.set(key, cached);
+    }
+    return cached;
+  },
+
+  /** Convex pieces for collision; null when the server can't decompose this part. */
+  hulls: (key: string): Promise<PartHulls | null> => {
+    let cached = hullCache.get(key);
+    if (!cached) {
+      cached = request('GET', `/cad/files/${key}/hulls.json`)
+        .then((r) => r.json() as Promise<PartHulls>)
+        .catch(() => null);
+      hullCache.set(key, cached);
     }
     return cached;
   },
