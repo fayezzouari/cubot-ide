@@ -24,7 +24,7 @@ def _bedrock():
         _client = boto3.client(
             "bedrock-runtime",
             config=BotoConfig(region_name=settings.AWS_REGION, retries={"max_attempts": 2, "mode": "standard"},
-                              read_timeout=120),
+                              read_timeout=900),  # the architect thinks and writes a long plan
         )
     return _client
 
@@ -88,6 +88,12 @@ async def complete(system: str, user: str, max_tokens: int = 4096, temperature: 
             anthropic = "anthropic" in model
             return await _invoke(model, system, user, max_tokens, temperature, think if anthropic else 0,
                                  images if anthropic else None)
+        except QuotaExceeded:
+            # Out of tokens for the day on this model: the next one in the chain takes over.
+            if k == len(models) - 1:
+                raise
+            logger.warning("[cad] daily quota used up on %s; using %s", model, models[k + 1])
+            _unavailable.add(model)
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
             last = k == len(models) - 1
@@ -95,6 +101,79 @@ async def complete(system: str, user: str, max_tokens: int = 4096, temperature: 
                 raise
             logger.warning("[cad] model %s unavailable (%s); trying %s", model, code, models[k + 1])
             _unavailable.add(model)
+    raise RuntimeError("No model available")
+
+
+class Truncated(Exception):
+    """The model hit max_tokens before finishing its answer."""
+
+
+async def structured(system: str, user: str, name: str, schema: dict, max_tokens: int = 16000,
+                     think: int = 0, fast: bool = False,
+                     images: Optional[list] = None) -> dict:
+    """One call whose answer is the input of a forced tool call, so it is
+    valid JSON matching `schema` by construction (no fences, no stray
+    quotes). Anthropic models only; the same fallback chain as `complete`."""
+    content: object = user
+    if images:
+        content = []
+        for item in images:
+            if isinstance(item, tuple):
+                content += [{"type": "text", "text": item[1]}, png_block(item[0])]
+            else:
+                content.append(png_block(item))
+        content.append({"type": "text", "text": user})
+    models = [m for m in _candidates(fast) if "anthropic" in m]
+    if not models:
+        raise ToolsUnsupported("No Anthropic model available for structured answers")
+    for k, model in enumerate(models):
+        body: dict = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "system": system,
+            "messages": [{"role": "user", "content": content}],
+            "tools": [{"name": name, "description": f"Submit the {name.replace('_', ' ')}.", "input_schema": schema}],
+            "max_tokens": max_tokens,
+            "temperature": 0,
+        }
+        if think:
+            # Extended thinking can't force a tool call: ask for it, and force it (without
+            # thinking) if the model answers in prose anyway.
+            body["tool_choice"] = {"type": "auto"}
+            body["thinking"] = {"type": "enabled", "budget_tokens": think}
+            body["max_tokens"] = max_tokens + think
+            body["temperature"] = 1
+            body["system"] = system + f"\n\nAnswer only by calling the {name} tool."
+        else:
+            body["tool_choice"] = {"type": "tool", "name": name}
+        try:
+            data = await _call(model, body)
+            if think and not any(b.get("type") == "tool_use" for b in data.get("content") or []) \
+                    and data.get("stop_reason") != "max_tokens":
+                logger.info("[cad] %s answered in prose with thinking on; forcing the tool call", model)
+                body = {**body, "tool_choice": {"type": "tool", "name": name}, "max_tokens": max_tokens,
+                        "temperature": 0, "system": system}
+                body.pop("thinking")
+                data = await _call(model, body)
+        except QuotaExceeded:
+            if k == len(models) - 1:
+                raise
+            logger.warning("[cad] daily quota used up on %s; using %s", model, models[k + 1])
+            _unavailable.add(model)
+            continue
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            if k == len(models) - 1 or code not in ("AccessDeniedException", "ValidationException",
+                                                    "ResourceNotFoundException"):
+                raise
+            logger.warning("[cad] model %s unavailable (%s); trying %s", model, code, models[k + 1])
+            _unavailable.add(model)
+            continue
+        for block in data.get("content") or []:
+            if block.get("type") == "tool_use" and isinstance(block.get("input"), dict):
+                return block["input"]
+        if data.get("stop_reason") == "max_tokens":
+            raise Truncated(f"The answer was longer than {body['max_tokens']} tokens")
+        raise ValueError("The model answered without the expected structured result")
     raise RuntimeError("No model available")
 
 
@@ -174,6 +253,7 @@ async def agent_turn(system: str, messages: list[dict], tools: list[dict], max_t
     on CAD_AGENT_MODEL_ID first. Returns the raw response:
     {"content": [...blocks], "stop_reason": ...}."""
     chain = [settings.CAD_AGENT_MODEL_ID] if settings.CAD_AGENT_MODEL_ID not in _unavailable else []
+    last_quota = False
     for model in chain + [m for m in _candidates(fast=False) if m != settings.CAD_AGENT_MODEL_ID]:
         if "anthropic" not in model:
             continue
@@ -187,6 +267,11 @@ async def agent_turn(system: str, messages: list[dict], tools: list[dict], max_t
         }
         try:
             return await _call(model, body)
+        except QuotaExceeded:
+            logger.warning("[cad] daily quota used up on %s for agents; trying the next model", model)
+            _unavailable.add(model)
+            last_quota = True
+            continue
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
             if code in ("AccessDeniedException", "ResourceNotFoundException"):
@@ -194,6 +279,9 @@ async def agent_turn(system: str, messages: list[dict], tools: list[dict], max_t
                 _unavailable.add(model)
                 continue
             raise
+    if last_quota:
+        raise QuotaExceeded("The AWS account's daily Bedrock token quota is used up on every configured model; "
+                            "try again tomorrow or ask AWS for a higher quota.")
     raise ToolsUnsupported("No Anthropic model available for tool use")
 
 
