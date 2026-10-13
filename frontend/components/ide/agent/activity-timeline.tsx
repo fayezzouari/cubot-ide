@@ -1,26 +1,28 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  Check, ChevronDown, ChevronUp, FileSearch, FilePlus2, FilePen, FileCode2,
+  Hammer, Loader2, Terminal, Globe, FolderTree, X,
+} from 'lucide-react';
 import type { ActivityItem, ExecutionLog } from '@/lib/mock-data';
-import { PixelArrow, PixelCheck, PixelCross, PixelSpinner } from './agent-mark';
 
-// One-glyph tool icons in the pixel font; the label carries the meaning.
-const TOOL_GLYPH: Record<string, string> = {
-  list_files: '≡',
-  read_file: '»',
-  create_file: '+',
-  edit_file: '✎',
-  update_file: '↻',
-  compile_project: '⚒',
-  execute_in_sandbox: '>_',
-  search_web: '◎',
+const TOOL_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  list_files: FolderTree,
+  read_file: FileSearch,
+  create_file: FilePlus2,
+  edit_file: FilePen,
+  update_file: FileCode2,
+  compile_project: Hammer,
+  execute_in_sandbox: Terminal,
+  search_web: Globe,
 };
 
 function LogOutput({ log }: { log: ExecutionLog }) {
   const text = [log.stdout?.trim(), log.stderr?.trim()].filter(Boolean).join('\n');
   if (!text) return null;
   return (
-    <pre className="pixel-border mt-2 ml-5 max-h-40 overflow-y-auto bg-black px-2 py-1.5 font-pixel-body text-[14px] leading-[1.15] text-forge-dim whitespace-pre-wrap break-words">
+    <pre className="mt-1 ml-5 max-h-32 overflow-y-auto rounded-lg bg-black/40 border border-white/[0.05] p-2 text-[9px] text-white/30 font-mono whitespace-pre-wrap leading-relaxed">
       {text}
     </pre>
   );
@@ -28,35 +30,29 @@ function LogOutput({ log }: { log: ExecutionLog }) {
 
 function ActivityRow({ item }: { item: ActivityItem }) {
   const [open, setOpen] = useState(false);
+  const Icon = TOOL_ICONS[item.tool] ?? Terminal;
   const hasLog = !!item.log && (!!item.log.stdout?.trim() || !!item.log.stderr?.trim());
-  const tone =
-    item.status === 'running' ? 'text-forge-amber' : item.status === 'failed' ? 'text-forge-red' : 'text-forge-ink/80';
+  const tone = item.status === 'running' ? 'text-blue-300/80' : item.status === 'failed' ? 'text-red-300/70' : 'text-white/40';
 
   return (
     <li>
       <button
         type="button"
         onClick={() => hasLog && setOpen(v => !v)}
-        className={`flex w-full items-center gap-2 px-1.5 py-[3px] text-left font-pixel-body text-[15px] leading-none ${
-          hasLog ? 'hover:bg-white/[0.04] cursor-pointer' : 'cursor-default'
-        }`}
+        className={`flex w-full items-center gap-1.5 py-0.5 text-left text-[10px] ${hasLog ? 'cursor-pointer hover:text-white/60' : 'cursor-default'}`}
       >
-        <span className={`flex h-3 w-3 flex-shrink-0 items-center justify-center ${tone}`}>
-          {item.status === 'running' ? <PixelSpinner /> : item.status === 'failed' ? <PixelCross /> : <PixelCheck />}
+        <span className={`w-3 flex-shrink-0 ${tone}`}>
+          {item.status === 'running' ? <Loader2 size={9} className="animate-spin" /> : item.status === 'failed' ? <X size={9} /> : <Check size={9} />}
         </span>
-        <span className={`w-4 flex-shrink-0 text-center font-pixel text-[9px] ${item.status === 'running' ? 'text-forge-amber' : 'text-forge-dim'}`}>
-          {TOOL_GLYPH[item.tool] ?? '•'}
-        </span>
+        <Icon size={9} className="flex-shrink-0 text-white/25" />
         <span className={`truncate ${tone}`}>
           {item.label}
-          {item.detail && <span className="ml-1.5 text-forge-dim">{item.detail}</span>}
+          {item.detail && <span className="ml-1 font-mono text-white/30">{item.detail}</span>}
         </span>
         {item.status !== 'running' && item.summary && item.tool !== 'read_file' && item.tool !== 'list_files' && (
-          <span className={`ml-auto truncate pl-2 text-[13px] ${item.status === 'failed' ? 'text-forge-red/80' : 'text-forge-dim'}`}>
-            {item.summary}
-          </span>
+          <span className={`ml-auto truncate pl-2 ${item.status === 'failed' ? 'text-red-300/60' : 'text-white/20'}`}>{item.summary}</span>
         )}
-        {hasLog && <PixelArrow dir={open ? 'down' : 'right'} className="ml-1 flex-shrink-0 text-forge-dim" />}
+        {hasLog && (open ? <ChevronUp size={9} className="ml-1 text-white/25" /> : <ChevronDown size={9} className="ml-1 text-white/25" />)}
       </button>
       {open && item.log && <LogOutput log={item.log} />}
     </li>
@@ -70,7 +66,7 @@ interface ActivityTimelineProps {
   statusText?: string;
 }
 
-/** The agent's tool calls for one turn, as a compact timeline. */
+/** The agent's tool calls for one turn, as a compact list. */
 export default function ActivityTimeline({ items, live, statusText }: ActivityTimelineProps) {
   const [expanded, setExpanded] = useState(false);
   const show = live || expanded;
@@ -80,24 +76,25 @@ export default function ActivityTimeline({ items, live, statusText }: ActivityTi
   if (items.length === 0 && !live) return null;
 
   return (
-    <div className="pixel-border bg-forge-raised" style={{ ['--pb' as string]: live ? '#ffb000' : '#2e261c' }}>
+    <div className="mb-1.5">
       <button
         type="button"
         onClick={() => !live && setExpanded(v => !v)}
-        className={`flex w-full items-center gap-2 px-2 py-1.5 font-pixel text-[9px] uppercase tracking-wide ${
-          live ? 'cursor-default text-forge-amber' : 'cursor-pointer text-forge-dim hover:text-forge-ink'
-        }`}
+        className={`flex items-center gap-1.5 text-[10px] ${live ? 'cursor-default text-white/40' : 'cursor-pointer text-white/25 hover:text-white/40'}`}
       >
-        {live ? <PixelSpinner /> : <PixelArrow dir={expanded ? 'down' : 'right'} />}
-        <span className="truncate">
-          {live
-            ? statusText || 'Working'
-            : `${items.length} step${items.length === 1 ? '' : 's'}${edits ? ` / ${edits} edit${edits === 1 ? '' : 's'}` : ''}${failed ? ` / ${failed} failed` : ''}`}
-        </span>
-        {live && <span className="ml-auto animate-pixel-blink text-forge-ember">●REC</span>}
+        {live ? (
+          <Loader2 size={9} className="animate-spin" />
+        ) : expanded ? (
+          <ChevronUp size={9} />
+        ) : (
+          <ChevronDown size={9} />
+        )}
+        {live
+          ? statusText || 'Working…'
+          : `${items.length} step${items.length === 1 ? '' : 's'}${edits ? ` · ${edits} edit${edits === 1 ? '' : 's'}` : ''}${failed ? ` · ${failed} failed` : ''}`}
       </button>
       {show && items.length > 0 && (
-        <ul className="border-t-2 border-forge-line px-0.5 py-1">
+        <ul className="mt-1 space-y-0.5 border-l border-white/[0.06] pl-2">
           {items.map(item => (
             <ActivityRow key={item.id} item={item} />
           ))}
