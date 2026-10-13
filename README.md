@@ -105,6 +105,17 @@ flowchart TD
 
 ---
 
+## Running locally
+
+```bash
+docker compose up -d mongodb                                  # or any MongoDB on localhost:27017
+docker compose --profile build-compilers build                # Arduino and ARM compiler images (linux/amd64)
+cd backend && uv sync && MONGODB_URI=mongodb://localhost:27017 BEDROCK_MODEL_ID=<model> COMPILE_WORKDIR=/tmp/cubot-compile uv run uvicorn main:app --reload
+cd frontend && npm install && npm run dev
+```
+
+The compiler images are built for `linux/amd64`: the AVR toolchain only ships x86-64 binaries, and Docker Desktop runs them under Rosetta on Apple Silicon. `COMPILE_WORKDIR` must be a writable directory (the default `/compile_tmp` is a container path).
+
 ## Features
 
 ### Code Editor (IDE)
