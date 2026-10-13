@@ -212,6 +212,14 @@ jobs:
           # ── Remove any standalone dd-agent container (replaced by compose service) ──
           docker rm -f dd-agent 2>/dev/null || true
 
+          # ── Make room before pulling ──────────────────────────
+          # The backend image is about 2 GB and the disk is 19 GB. Images no container
+          # uses go first (the running ones stay), so the pull never fills the disk and
+          # takes the SSM agent down with it. The journal is capped the same way.
+          docker image prune -a -f --filter "until=1h" --filter "label!=cubot.keep=true"
+          journalctl --vacuum-size=200M >/dev/null 2>&1 || true
+          echo "Disk before pull: \$(df -h / | awk 'NR==2 {print \$4 " free"}')"
+
           # ── Deploy ────────────────────────────────────────────
           docker compose -f docker-compose.yml -f docker-compose.prod.yml pull --parallel backend frontend
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
@@ -221,6 +229,16 @@ jobs:
 
           # ── Cleanup old images (including old tagged ECR images) ─
           docker image prune -a -f --filter "until=1h" --filter "label!=cubot.keep=true"
+
+          # ── Compiler images are built on the host, not pulled: build any that are missing ─
+          for svc in compiler-arduino compiler-arm; do
+            img=\$(docker compose --profile build-compilers config --format json 2>/dev/null \
+              | python3 -c "import json,sys; print(json.load(sys.stdin)['services']['\$svc']['image'])")
+            if ! docker image inspect "\$img" >/dev/null 2>&1; then
+              echo "Building missing \$img"
+              docker compose --profile build-compilers build "\$svc"
+            fi
+          done
 
           echo "Deploy complete: \$(date) — image $IMAGE_TAG"
           RUNNER_EOF
