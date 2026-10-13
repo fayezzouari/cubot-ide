@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { AlertTriangle, Bug, FileSearch, ListChecks, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import MarkdownRenderer from '@/components/ui/markdown-renderer';
 import { AGENT, AGENT_MODES } from '@/lib/branding';
 import type { ChatMessage, ChatMode, FileChange } from '@/lib/mock-data';
@@ -45,7 +44,7 @@ export interface AgentPanelProps {
   quickPrompts?: Array<{ label: string; prompt: string; icon?: 'fix' | 'explain' | 'improve' }>;
 }
 
-const QUICK_ICONS = { fix: Bug, explain: FileSearch, improve: Wand2 } as const;
+const QUICK_GLYPH = { fix: '☠', explain: '?', improve: '⚒' } as const;
 
 export default function AgentPanel(props: AgentPanelProps) {
   const {
@@ -75,21 +74,23 @@ export default function AgentPanel(props: AgentPanelProps) {
   }, [messages]);
 
   const empty = messages.length === 0;
+  const modeColor = mode === 'plan' ? '#5ab4ff' : '#ffb000';
 
   return (
-    <aside className="flex h-full w-full flex-col border-l border-white/[0.06] bg-[#0b0b0b]">
+    <aside className="scanlines relative flex h-full w-full flex-col border-l-2 border-forge-line bg-forge-panel">
       {/* Header */}
-      <div className="flex h-11 flex-shrink-0 items-center gap-2.5 border-b border-white/[0.06] px-3">
-        <AgentMark size={22} active={busy} />
-        <div className="flex min-w-0 items-baseline gap-1.5">
-          <span className="text-[13px] font-semibold tracking-tight text-white/90">{AGENT.name}</span>
-          <span className="truncate text-[10.5px] text-white/30">{busy ? 'working' : AGENT.tagline}</span>
+      <div className="flex h-11 flex-shrink-0 items-center gap-3 border-b-2 border-forge-line bg-black px-3">
+        <AgentMark size={24} active={busy} />
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="font-pixel text-[11px] font-bold uppercase tracking-wide text-forge-ink">{AGENT.name}</span>
+          <span className="truncate font-pixel text-[7px] uppercase text-forge-dim">
+            {busy ? <span className="animate-pixel-blink text-forge-amber">working</span> : AGENT.tagline}
+          </span>
         </div>
-        <div className="ml-auto flex items-center gap-0.5">
+        <div className="ml-auto flex items-center gap-2">
           <span
-            className={`mr-1 rounded-full border px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wider ${
-              mode === 'plan' ? 'border-sky-400/30 text-sky-300/80' : 'border-amber-400/30 text-amber-300/80'
-            }`}
+            className="pixel-border px-1.5 py-0.5 font-pixel text-[7px] uppercase text-black"
+            style={{ ['--pb' as string]: modeColor, backgroundColor: modeColor }}
           >
             {AGENT_MODES[mode].label}
           </span>
@@ -98,42 +99,39 @@ export default function AgentPanel(props: AgentPanelProps) {
             onClick={onClear}
             disabled={busy || empty}
             title="Clear conversation"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
+            className="pixel-border pixel-btn bg-black px-1.5 py-0.5 font-pixel text-[7px] uppercase text-forge-dim hover:text-forge-red disabled:opacity-30 disabled:hover:text-forge-dim cursor-pointer disabled:cursor-default"
           >
-            <Trash2 size={12} />
+            clr
           </button>
         </div>
       </div>
 
       {/* Conversation */}
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-3 py-3">
+      <div ref={scrollRef} className="relative flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {empty && (
           <div className="flex h-full flex-col items-center justify-center px-2 text-center">
-            <AgentMark size={40} className="mb-4 rounded-xl" />
-            <p className="text-[13px] font-semibold text-white/85">
-              {AGENT.name}
-              <span className="ml-1.5 font-normal text-white/35">{AGENT.tagline}</span>
-            </p>
-            <p className="mt-1 max-w-[240px] text-[11.5px] leading-relaxed text-white/40">
+            <AgentMark size={64} className="mb-5" />
+            <p className="font-pixel text-[13px] font-bold uppercase tracking-wide text-forge-ink">{AGENT.name}</p>
+            <p className="mt-1 font-pixel text-[7px] uppercase text-forge-dim">{AGENT.tagline}</p>
+            <p className="mt-3 max-w-[260px] font-pixel-body text-[16px] leading-tight text-forge-dim">
               {mode === 'plan' ? AGENT_MODES.plan.hint : AGENT.intro}
             </p>
             {quickPrompts.length > 0 && (
-              <div className="mt-5 flex w-full max-w-[260px] flex-col gap-1.5">
-                {quickPrompts.map(q => {
-                  const Icon = q.icon ? QUICK_ICONS[q.icon] : Sparkles;
-                  return (
-                    <button
-                      key={q.label}
-                      type="button"
-                      onClick={() => onSend(q.prompt)}
-                      disabled={busy}
-                      className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-left text-[11.5px] text-white/60 transition-colors hover:border-amber-400/30 hover:bg-amber-400/[0.05] hover:text-white/85 disabled:opacity-40 cursor-pointer"
-                    >
-                      <Icon size={12} className="flex-shrink-0 text-amber-300/80" />
-                      {q.label}
-                    </button>
-                  );
-                })}
+              <div className="mt-6 flex w-full max-w-[280px] flex-col gap-3">
+                <p className="font-pixel text-[7px] uppercase text-forge-dim/70">— select —</p>
+                {quickPrompts.map(q => (
+                  <button
+                    key={q.label}
+                    type="button"
+                    onClick={() => onSend(q.prompt)}
+                    disabled={busy}
+                    className="pixel-border pixel-btn group flex items-center gap-3 bg-black px-3 py-2 text-left font-pixel-body text-[16px] leading-none text-forge-ink hover:bg-forge-raised disabled:opacity-40 cursor-pointer"
+                  >
+                    <span className="w-3 font-pixel text-[9px] text-forge-amber opacity-0 group-hover:opacity-100">▶</span>
+                    <span className="w-4 font-pixel text-[9px] text-forge-dim">{q.icon ? QUICK_GLYPH[q.icon] : '•'}</span>
+                    {q.label}
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -188,16 +186,17 @@ function MessageRow({
 }) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[88%] rounded-xl rounded-br-sm bg-white/[0.07] px-3 py-2 text-[12px] leading-relaxed text-white/85">
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="mb-1 flex flex-wrap gap-1">
-              {message.attachments.map(a => (
-                <span key={a} className="rounded border border-white/[0.1] px-1 font-mono text-[10px] text-white/45">{a}</span>
-              ))}
-            </div>
-          )}
-          <p className="whitespace-pre-wrap break-words" style={{ wordBreak: 'break-word' }}>{message.content}</p>
+      <div className="flex justify-end pr-1">
+        <div className="pixel-border max-w-[88%] bg-forge-raised px-3 py-2" style={{ ['--pb' as string]: '#3a2f22' }}>
+          <div className="mb-1 flex flex-wrap items-center gap-2 font-pixel text-[7px] uppercase text-forge-dim">
+            <span>you</span>
+            {message.attachments?.map(a => (
+              <span key={a} className="font-pixel-body text-[13px] normal-case text-forge-dim/80">[{a}]</span>
+            ))}
+          </div>
+          <p className="whitespace-pre-wrap break-words font-pixel-body text-[16px] leading-tight text-forge-ink" style={{ wordBreak: 'break-word' }}>
+            {message.content}
+          </p>
         </div>
       </div>
     );
@@ -211,23 +210,23 @@ function MessageRow({
   const changes = message.fileOps ?? [];
 
   return (
-    <div className="flex items-start gap-2.5">
-      <AgentMark size={20} active={streaming} className="mt-0.5" />
-      <div className="min-w-0 flex-1 space-y-2">
+    <div className="flex items-start gap-3">
+      <AgentMark size={22} active={streaming} className="mt-0.5" />
+      <div className="min-w-0 flex-1 space-y-3">
         {(activity.length > 0 || streaming) && (
           <ActivityTimeline items={activity} live={streaming} statusText={message.statusText} />
         )}
 
         {errored && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/[0.05] px-2.5 py-2 text-[11.5px] text-red-200/85">
-            <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
-            <span>{message.content || 'Something went wrong.'}</span>
+          <div className="pixel-border bg-black px-3 py-2 font-pixel-body text-[15px] leading-tight text-forge-red" style={{ ['--pb' as string]: '#ff4d4d' }}>
+            <span className="mr-2 font-pixel text-[8px] uppercase">error</span>
+            {message.content || 'Something went wrong.'}
           </div>
         )}
 
         {!errored && message.content && !hasSteps && (
-          <div className="prose prose-sm max-w-none text-[12px] leading-relaxed text-white/75 [&_pre]:whitespace-pre-wrap [&_code]:break-words">
-            <MarkdownRenderer content={message.content} />
+          <div className="font-pixel-body text-[16px] leading-tight text-forge-ink/90">
+            <MarkdownRenderer content={message.content} variant="pixel" />
           </div>
         )}
 
@@ -238,7 +237,7 @@ function MessageRow({
         )}
 
         {message.mode && message.mode !== mode && (
-          <p className="text-[10px] uppercase tracking-wider text-white/20">{AGENT_MODES[message.mode].label} mode</p>
+          <p className="font-pixel text-[7px] uppercase text-forge-dim/60">{AGENT_MODES[message.mode].label} mode</p>
         )}
       </div>
     </div>
@@ -262,33 +261,31 @@ function PlanSteps({
   const pending = steps.filter(s => s.status === 'pending').length;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {message.content && (
-        <div className="text-[11.5px] leading-relaxed text-white/50">
-          <MarkdownRenderer content={message.content} />
+        <div className="font-pixel-body text-[15px] leading-tight text-forge-dim">
+          <MarkdownRenderer content={message.content} variant="pixel" />
         </div>
       )}
-      <div className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-sky-300/70">
-        <ListChecks size={11} />
-        Plan · {steps.length} step{steps.length === 1 ? '' : 's'}
+      <div className="font-pixel text-[8px] uppercase tracking-wide text-forge-blue">
+        ≡ quest log · {steps.length} step{steps.length === 1 ? '' : 's'}
       </div>
       {visible.map(step => (
         <PlanStepCard key={step.id} step={step} messageId={message.id} onRun={onRunStep} onDiscard={onDiscardStep} />
       ))}
       {hidden > 0 && (
-        <div className="flex items-center gap-2 px-1 py-1">
-          <div className="h-px flex-1 bg-white/[0.06]" />
-          <span className="whitespace-nowrap text-[10.5px] text-white/25">{hidden} more to review</span>
-          <div className="h-px flex-1 bg-white/[0.06]" />
-        </div>
+        <p className="text-center font-pixel text-[7px] uppercase text-forge-dim/70">
+          ▼ {hidden} more locked ▼
+        </p>
       )}
       {pending > 1 && !anyRunning && (
         <button
           type="button"
           onClick={() => onRunAllSteps(message.id)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-sky-400/25 bg-sky-400/[0.06] py-1.5 text-[11px] font-semibold text-sky-200 transition-colors hover:bg-sky-400/[0.12] cursor-pointer"
+          className="pixel-border pixel-btn w-full bg-black py-1.5 font-pixel text-[8px] uppercase text-forge-blue hover:bg-forge-raised cursor-pointer"
+          style={{ ['--pb' as string]: '#5ab4ff' }}
         >
-          Run all {pending} steps
+          ▶▶ run all {pending} steps
         </button>
       )}
     </div>
