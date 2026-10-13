@@ -5,6 +5,7 @@ import json
 import logging
 import random
 import re
+import time
 from typing import Optional
 
 import boto3
@@ -29,7 +30,48 @@ def _bedrock():
     return _client
 
 
-_unavailable: set[str] = set()  # models this account turned out not to have access to
+_denied: set[str] = set()  # models this account turned out not to have access to (for good)
+_quota_until: dict[str, float] = {}  # models out of daily tokens, and when (monotonic) to try them again
+QUOTA_RETRY = 3600.0  # the daily quota resets at some point; probe an exhausted model again every hour
+
+
+def _usable(model: str) -> bool:
+    """False for a model this account can't use, or one still marked as out
+    of daily tokens. An expired quota mark is cleared so the model is tried
+    again, since the process may well outlive the quota window."""
+    if model in _denied:
+        return False
+    until = _quota_until.get(model)
+    if until is None:
+        return True
+    if time.monotonic() < until:
+        return False
+    del _quota_until[model]
+    return True
+
+
+def _out_of_quota(model: str) -> None:
+    _quota_until[model] = time.monotonic() + QUOTA_RETRY
+
+
+def _quota_blocked() -> list[str]:
+    """Models currently skipped because their daily quota is used up."""
+    now = time.monotonic()
+    return [m for m, until in _quota_until.items() if now < until]
+
+
+def _no_model_error(what: str) -> Exception:
+    """Why no model could answer: the quota, if that is what blocks every
+    model, with the time until the next probe; otherwise the configuration."""
+    blocked = _quota_blocked()
+    if blocked:
+        wait = max(_quota_until[m] for m in blocked) - time.monotonic()
+        return QuotaExceeded(
+            f"The AWS account's daily Bedrock token quota is used up on {', '.join(blocked)}. "
+            f"They are tried again in about {max(1, round(wait / 60))} min; the quota itself resets daily. "
+            "Ask AWS for a higher quota, or configure another Anthropic model."
+        )
+    return ToolsUnsupported(f"No Anthropic model available for {what}")
 
 
 RETRYABLE = {"ThrottlingException", "ServiceUnavailableException", "ModelNotReadyException",
@@ -69,7 +111,7 @@ def _candidates(fast: bool) -> list[str]:
     chain += [settings.CAD_MODEL_ID, settings.BEDROCK_MODEL_ID]
     seen, out = set(), []
     for m in chain:
-        if m and m not in seen and m not in _unavailable:
+        if m and m not in seen and _usable(m):
             seen.add(m)
             out.append(m)
     return out or [settings.BEDROCK_MODEL_ID]
@@ -93,15 +135,15 @@ async def complete(system: str, user: str, max_tokens: int = 4096, temperature: 
             if k == len(models) - 1:
                 raise
             logger.warning("[cad] daily quota used up on %s; using %s", model, models[k + 1])
-            _unavailable.add(model)
+            _out_of_quota(model)
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
             last = k == len(models) - 1
             if last or code not in ("AccessDeniedException", "ValidationException", "ResourceNotFoundException"):
                 raise
             logger.warning("[cad] model %s unavailable (%s); trying %s", model, code, models[k + 1])
-            _unavailable.add(model)
-    raise RuntimeError("No model available")
+            _denied.add(model)
+    raise _no_model_error("completions")
 
 
 class Truncated(Exception):
@@ -125,7 +167,7 @@ async def structured(system: str, user: str, name: str, schema: dict, max_tokens
         content.append({"type": "text", "text": user})
     models = [m for m in _candidates(fast) if "anthropic" in m]
     if not models:
-        raise ToolsUnsupported("No Anthropic model available for structured answers")
+        raise _no_model_error("structured answers")
     for k, model in enumerate(models):
         body: dict = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -158,7 +200,7 @@ async def structured(system: str, user: str, name: str, schema: dict, max_tokens
             if k == len(models) - 1:
                 raise
             logger.warning("[cad] daily quota used up on %s; using %s", model, models[k + 1])
-            _unavailable.add(model)
+            _out_of_quota(model)
             continue
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
@@ -166,7 +208,7 @@ async def structured(system: str, user: str, name: str, schema: dict, max_tokens
                                                     "ResourceNotFoundException"):
                 raise
             logger.warning("[cad] model %s unavailable (%s); trying %s", model, code, models[k + 1])
-            _unavailable.add(model)
+            _denied.add(model)
             continue
         for block in data.get("content") or []:
             if block.get("type") == "tool_use" and isinstance(block.get("input"), dict):
@@ -174,7 +216,7 @@ async def structured(system: str, user: str, name: str, schema: dict, max_tokens
         if data.get("stop_reason") == "max_tokens":
             raise Truncated(f"The answer was longer than {body['max_tokens']} tokens")
         raise ValueError("The model answered without the expected structured result")
-    raise RuntimeError("No model available")
+    raise _no_model_error("structured answers")
 
 
 async def _invoke(model: str, system: str, user: str, max_tokens: int, temperature: float, think: int,
@@ -252,8 +294,7 @@ async def agent_turn(system: str, messages: list[dict], tools: list[dict], max_t
     """One turn of a tool-using agent (Anthropic Messages API on Bedrock),
     on CAD_AGENT_MODEL_ID first. Returns the raw response:
     {"content": [...blocks], "stop_reason": ...}."""
-    chain = [settings.CAD_AGENT_MODEL_ID] if settings.CAD_AGENT_MODEL_ID not in _unavailable else []
-    last_quota = False
+    chain = [settings.CAD_AGENT_MODEL_ID] if _usable(settings.CAD_AGENT_MODEL_ID) else []
     for model in chain + [m for m in _candidates(fast=False) if m != settings.CAD_AGENT_MODEL_ID]:
         if "anthropic" not in model:
             continue
@@ -269,20 +310,16 @@ async def agent_turn(system: str, messages: list[dict], tools: list[dict], max_t
             return await _call(model, body)
         except QuotaExceeded:
             logger.warning("[cad] daily quota used up on %s for agents; trying the next model", model)
-            _unavailable.add(model)
-            last_quota = True
+            _out_of_quota(model)
             continue
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
             if code in ("AccessDeniedException", "ResourceNotFoundException"):
                 logger.warning("[cad] model %s unavailable for agents (%s)", model, code)
-                _unavailable.add(model)
+                _denied.add(model)
                 continue
             raise
-    if last_quota:
-        raise QuotaExceeded("The AWS account's daily Bedrock token quota is used up on every configured model; "
-                            "try again tomorrow or ask AWS for a higher quota.")
-    raise ToolsUnsupported("No Anthropic model available for tool use")
+    raise _no_model_error("tool use")
 
 
 def extract_code(text: str) -> Optional[str]:
