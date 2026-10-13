@@ -1,5 +1,5 @@
 """
-Forge: the coding agent behind the IDE chat.
+The coding agent behind the IDE chat.
 
 One turn is an agentic loop over Bedrock `invoke_model`: the model calls tools
 (read, edit, create, compile, sandbox, web) until it answers in text. The loop
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 EventSink = Optional[Callable[[Dict[str, Any]], Awaitable[None]]]
 
-AGENT_NAME = "Forge"
+AGENT_NAME = "CuBot"
 AGENT_TEMPERATURE = 0.2
 MAX_HISTORY_MESSAGES = 12
 MAX_HISTORY_CHARS = 6000
@@ -71,7 +71,7 @@ def _tool_label(name: str, tool_input: Dict[str, Any]) -> tuple[str, str]:
 
 
 class AIService:
-    """Forge coding agent on AWS Bedrock (Claude and OpenAI-compatible models)."""
+    """Coding agent on AWS Bedrock (Claude and OpenAI-compatible models)."""
 
     COLLECTION_NAME = "chat_messages"
 
@@ -487,7 +487,7 @@ class AIService:
         web = "- search_web is available for information newer than your training data (library APIs, datasheets).\n" if has_websearch else ""
         open_file = f"The user has `{active_path}` open in the editor; its content is in the context when relevant.\n" if active_path else ""
 
-        return f"""You are {AGENT_NAME}, the coding agent inside CuBot IDE. You work on embedded and robotics projects: Arduino, ESP32, TI ARM and ROS 2.
+        return f"""You are {AGENT_NAME}, the AI coding agent inside CuBot IDE. You work on embedded and robotics projects: Arduino, ESP32, TI ARM and ROS 2.
 {self._platform_line(compiler)}{open_file}
 ## Project files (snapshot at the start of this turn)
 {snapshot}
@@ -515,7 +515,7 @@ class AIService:
 """
 
     def _build_plan_system_prompt(self, compiler: Optional[str], snapshot: str) -> str:
-        return f"""You are {AGENT_NAME}, the coding agent inside CuBot IDE, in planning mode.
+        return f"""You are {AGENT_NAME}, the AI coding agent inside CuBot IDE, in planning mode.
 {self._platform_line(compiler)}
 ## Project files
 {snapshot}
@@ -546,7 +546,7 @@ What to do in this step: files to touch (full paths), functions, key code fragme
         elif has_sandbox:
             verify = "4. If a build or test applies, run it with execute_in_sandbox and fix what fails.\n"
         web = "Use search_web when you need current documentation.\n" if has_websearch else ""
-        return f"""You are {AGENT_NAME}, the coding agent inside CuBot IDE, executing one step of an approved plan.
+        return f"""You are {AGENT_NAME}, the AI coding agent inside CuBot IDE, executing one step of an approved plan.
 {self._platform_line(compiler)}
 ## Project files
 {snapshot}
