@@ -389,9 +389,13 @@ All routes are under `/api/cad` and require the project owner's token.
 | `CAD_JOB_TIMEOUT` | 60 s | Per job |
 | `CAD_MAX_UPLOAD_MB` | 50 | Import size limit; nginx allows 50 MB |
 
-If the account can't use a model (`AccessDenied` and similar), or its daily token quota is used
-up, the next one in the chain is used from then on: `CAD_FAST_MODEL_ID` → `CAD_MODEL_ID` →
-`BEDROCK_MODEL_ID`. Part agents and the review's render need an Anthropic model. Newer models can be switched on by setting these once the
+If the account can't use a model (`AccessDenied` and similar), the next one in the chain is used
+from then on: `CAD_FAST_MODEL_ID` → `CAD_MODEL_ID` → `BEDROCK_MODEL_ID`. A model whose daily token
+quota is used up is skipped the same way, but only for an hour: the quota resets daily, so the
+backend probes the model again rather than ignoring it until it is restarted. Part agents, the
+planners and the review's render need an Anthropic model; when every one of them is out of quota,
+the run fails with a message naming the models and the time until the next probe, instead of
+reporting that no model is configured. Newer models can be switched on by setting these once the
 account has access to them.
 
 ## Not done yet
