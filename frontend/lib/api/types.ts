@@ -132,30 +132,26 @@ export interface FileContext {
 export interface ChatRequest {
   message: string;
   file_context?: FileContext[];
+  /** Full path of the file open in the editor, so the agent knows what the user is looking at. */
+  active_file_path?: string;
   compiler?: string;
   conversation_history?: Array<{ role: string; content: string }>;
   plan_mode?: boolean;
   enable_websearch?: boolean;
-}
-
-export interface ChatResponse {
-  message: string;
-  file_operations: Array<{
-    operation: string;
-    path: string;
-    file_id?: string;
-    success?: boolean;
-    content?: string;
-  }>;
-}
-
-export interface StepExecutionRequest {
-  step_title: string;
-  step_body: string;
+  /** Sandbox workspace (ROS projects) the agent may run commands in. */
   workspace_id?: string;
-  file_context?: FileContext[];
-  compiler?: string;
-  enable_websearch?: boolean;
+}
+
+/** One file the agent created or changed during a turn. `previous_content` is null for created files. */
+export interface FileOperation {
+  operation: 'create_file' | 'edit_file' | 'update_file' | string;
+  path: string;
+  file_id?: string;
+  summary?: string;
+  added?: number;
+  removed?: number;
+  previous_content?: string | null;
+  success?: boolean;
 }
 
 export interface ExecutionLogEntry {
@@ -166,14 +162,43 @@ export interface ExecutionLogEntry {
   success: boolean;
 }
 
+export interface ChatResponse {
+  message: string;
+  file_operations: FileOperation[];
+  execution_logs?: ExecutionLogEntry[];
+}
+
+/** Server-sent events emitted by `POST /chat/{project}/stream`. */
+export type AgentEvent =
+  | { type: 'status'; text: string }
+  | { type: 'tool_start'; id: string; tool: string; label: string; detail: string }
+  | {
+      type: 'tool_end';
+      id: string;
+      tool: string;
+      label: string;
+      detail: string;
+      ok: boolean;
+      summary: string;
+      file_op: FileOperation | null;
+      log: ExecutionLogEntry | null;
+    }
+  | { type: 'done'; message: string; file_operations: FileOperation[]; execution_logs: ExecutionLogEntry[] }
+  | { type: 'error'; message: string };
+
+export interface StepExecutionRequest {
+  step_title: string;
+  step_body: string;
+  workspace_id?: string;
+  file_context?: FileContext[];
+  active_file_path?: string;
+  compiler?: string;
+  enable_websearch?: boolean;
+}
+
 export interface StepExecutionResponse {
   message: string;
-  file_operations: Array<{
-    operation: string;
-    path: string;
-    file_id?: string;
-    success?: boolean;
-  }>;
+  file_operations: FileOperation[];
   execution_logs: ExecutionLogEntry[];
   success: boolean;
 }
@@ -185,7 +210,8 @@ export interface ChatMessageInDB {
   content: string;
   timestamp: string;
   file_context: FileContext[];
-  file_operations: any[];
+  file_operations: FileOperation[];
+  mode?: 'build' | 'plan' | null;
 }
 
 // Wiring
