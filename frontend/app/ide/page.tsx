@@ -6,7 +6,7 @@ import { compileService, chatService, projectService, fileService } from '@/lib/
 import type { CompilerType, ProjectWithFiles } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
 import { parsePlanSteps, type ChatMessage, type ChatMode, type FileChange, type ActivityItem } from '@/lib/mock-data';
-import type { AgentEvent, FileOperation, FileResponse } from '@/lib/api/types';
+import type { AgentEvent, FileOperation, FileResponse, ThreadSummary } from '@/lib/api/types';
 import TopBar from '@/components/ide/top-bar';
 import VscodeFileExplorer from '@/components/ide/vscode-file-explorer';
 import EditorPanel, { type EditorSelection } from '@/components/ide/editor-panel';
@@ -27,13 +27,11 @@ export default function IDEPage() {
   const [enableWebsearch, setEnableWebsearch] = useState(false);
   const [chatMode, setChatMode] = useState<ChatMode>('build');
 
-  // Separate message history for each mode
-  const [buildMessages, setBuildMessages] = useState<ChatMessage[]>([]);
-  const [planMessages, setPlanMessages] = useState<ChatMessage[]>([]);
-
-  // Current messages (switches based on mode)
-  const messages = chatMode === 'build' ? buildMessages : planMessages;
-  const setMessages = chatMode === 'build' ? setBuildMessages : setPlanMessages;
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const activeThreadRef = useRef<string | null>(null);
+  activeThreadRef.current = activeThreadId;
 
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [reverting, setReverting] = useState<{ messageId: string; index: number } | null>(null);
@@ -321,21 +319,57 @@ export default function IDEPage() {
     );
   };
 
-  const handleClearChat = async () => {
-    abortRef.current?.abort();
-    if (chatMode === 'build') {
-      setBuildMessages([]);
-    } else {
-      setPlanMessages([]);
+  const threadStorageKey = (projectId: string) => `cubot-ide-thread-${projectId}`;
+
+  const refreshThreads = async (projectId: string) => {
+    try {
+      const list = await chatService.listThreads(projectId);
+      setThreads(list);
+      return list;
+    } catch (err) {
+      console.error('Failed to list threads:', err);
+      return [];
     }
+  };
+
+  /** Start an empty conversation; the thread is created on the server with the first message. */
+  const handleNewThread = () => {
+    abortRef.current?.abort();
+    setActiveThreadId(null);
+    setMessages([]);
     setChatInput('');
     setCodeContexts([]);
-    if (currentProject) {
-      try {
-        await chatService.clearHistory(currentProject.id);
-      } catch (err) {
-        console.error('Failed to clear chat history on server:', err);
-      }
+    if (currentProject) localStorage.removeItem(threadStorageKey(currentProject.id));
+  };
+
+  const handleSelectThread = async (threadId: string) => {
+    if (!currentProject || threadId === activeThreadId) return;
+    abortRef.current?.abort();
+    setActiveThreadId(threadId);
+    localStorage.setItem(threadStorageKey(currentProject.id), threadId);
+    await loadChatHistory(currentProject.id, threadId);
+  };
+
+  const handleDeleteThread = async (threadId: string) => {
+    if (!currentProject) return;
+    try {
+      await chatService.deleteThread(currentProject.id, threadId);
+    } catch (err) {
+      console.error('Failed to delete thread:', err);
+      return;
+    }
+    const remaining = threads.filter(t => t.id !== threadId);
+    setThreads(remaining);
+    if (threadId === activeThreadId) handleNewThread();
+  };
+
+  const handleRenameThread = async (threadId: string, title: string) => {
+    if (!currentProject || !title.trim()) return;
+    try {
+      await chatService.renameThread(currentProject.id, threadId, title.trim());
+      setThreads(prev => prev.map(t => (t.id === threadId ? { ...t, title: title.trim() } : t)));
+    } catch (err) {
+      console.error('Failed to rename thread:', err);
     }
   };
 
@@ -440,9 +474,16 @@ export default function IDEPage() {
     const controller = new AbortController();
     abortRef.current = controller;
     let finished = false;
+    const threadAtSend = activeThreadId;
 
     const onEvent = (event: AgentEvent) => {
       switch (event.type) {
+        case 'thread':
+          if (event.thread_id !== threadAtSend) {
+            setActiveThreadId(event.thread_id);
+            localStorage.setItem(threadStorageKey(currentProject.id), event.thread_id);
+          }
+          break;
         case 'status':
           patchAssistant(m => ({ ...m, statusText: event.text }));
           break;
@@ -510,10 +551,12 @@ export default function IDEPage() {
           plan_mode: isPlanMode,
           enable_websearch: enableWebsearch,
           workspace_id: activeWorkspaceId ?? undefined,
+          thread_id: threadAtSend ?? undefined,
         },
         onEvent,
         controller.signal,
       );
+      void refreshThreads(currentProject.id);
       if (!finished) {
         patchAssistant(m => ({ ...m, status: 'error', statusText: undefined, content: 'The connection closed before the agent finished.' }));
       }
@@ -868,8 +911,13 @@ export default function IDEPage() {
           setEditedContent(contents[fileToSelect] || '');
         }
 
-        // Load chat history
-        loadChatHistory(currentProject.id);
+        void (async () => {
+          const list = await refreshThreads(currentProject.id);
+          const saved = localStorage.getItem(threadStorageKey(currentProject.id));
+          const initial = list.find(t => t.id === saved)?.id ?? list[0]?.id ?? null;
+          setActiveThreadId(initial);
+          if (initial) await loadChatHistory(currentProject.id, initial);
+        })();
 
         setIsInitialized(true);
         console.log('Loaded project files from MongoDB:', currentProject.files.length, 'files');
@@ -881,11 +929,11 @@ export default function IDEPage() {
     }
   }, [currentProject?.id, currentProject?.files]);
   
-  const loadChatHistory = async (projectId: string) => {
+  const loadChatHistory = async (projectId: string, threadId: string) => {
     try {
-      const history = await chatService.getHistory(projectId, 50);
-      const build: ChatMessage[] = [];
-      const plan: ChatMessage[] = [];
+      const history = await chatService.getHistory(projectId, 200, threadId);
+      if (activeThreadRef.current !== threadId) return;
+      const loaded: ChatMessage[] = [];
       history.forEach(msg => {
         const isPlan = msg.mode === 'plan';
         const planSteps = isPlan && msg.role === 'assistant' ? parsePlanSteps(msg.content) : undefined;
@@ -900,10 +948,9 @@ export default function IDEPage() {
           ...(msg.file_operations?.length ? { fileOps: msg.file_operations as FileChange[] } : {}),
           ...(msg.role === 'user' && msg.file_context?.length ? { attachments: msg.file_context.map(fc => fc.path) } : {}),
         };
-        (isPlan ? plan : build).push(formatted);
+        loaded.push(formatted);
       });
-      setBuildMessages(build);
-      setPlanMessages(plan);
+      setMessages(loaded);
     } catch (error) {
       console.error('Failed to load chat history:', error);
     }
@@ -1086,7 +1133,12 @@ export default function IDEPage() {
               onInputChange={setChatInput}
               onSend={text => void handleSendMessage(text)}
               onStop={handleStopAgent}
-              onClear={handleClearChat}
+              threads={threads}
+              activeThreadId={activeThreadId}
+              onNewThread={handleNewThread}
+              onSelectThread={threadId => void handleSelectThread(threadId)}
+              onDeleteThread={threadId => void handleDeleteThread(threadId)}
+              onRenameThread={(threadId, title) => void handleRenameThread(threadId, title)}
               webSearch={enableWebsearch}
               onWebSearchChange={setEnableWebsearch}
               activeFileName={activeFile?.name ?? null}
