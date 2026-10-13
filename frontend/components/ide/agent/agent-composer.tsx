@@ -23,8 +23,6 @@ interface AgentComposerProps {
   webSearch: boolean;
   onWebSearchChange: (enabled: boolean) => void;
   activeFileName: string | null;
-  includeActiveFile: boolean;
-  onIncludeActiveFileChange: (include: boolean) => void;
   codeContexts: CodeContext[];
   onRemoveContext: (id: string) => void;
 }
@@ -33,7 +31,7 @@ interface AgentComposerProps {
 export default function AgentComposer({
   value, onChange, onSend, onStop, busy, mode,
   webSearch, onWebSearchChange,
-  activeFileName, includeActiveFile, onIncludeActiveFileChange,
+  activeFileName,
   codeContexts, onRemoveContext,
 }: AgentComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -55,23 +53,16 @@ export default function AgentComposer({
 
   return (
     <div className="p-3 border-t border-white/[0.06] flex-shrink-0 space-y-2">
-      {/* Context chips: the open file (toggle) and pinned selections */}
       {(activeFileName || codeContexts.length > 0) && (
         <div className="flex flex-wrap gap-1.5">
           {activeFileName && (
-            <button
-              type="button"
-              onClick={() => onIncludeActiveFileChange(!includeActiveFile)}
-              title={includeActiveFile ? 'Open file is sent as context. Click to exclude.' : 'Open file is not sent. Click to include.'}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-mono transition-colors cursor-pointer ${
-                includeActiveFile
-                  ? 'bg-white/[0.04] border-white/[0.1] text-white/60'
-                  : 'border-dashed border-white/[0.1] text-white/25 line-through'
-              }`}
+            <span
+              title="The open file is sent with every message"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md border bg-white/[0.04] border-white/[0.1] text-[10px] font-mono text-white/60"
             >
               <FileText size={10} />
               {activeFileName}
-            </button>
+            </span>
           )}
           {codeContexts.map(ctx => (
             <div
