@@ -12,7 +12,7 @@ import json
 import logging
 import re
 from datetime import datetime
-from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List, Optional
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Iterable, List, Optional
 
 import boto3
 from botocore.config import Config as BotoConfig
@@ -36,6 +36,123 @@ from services.tools_functions import handle_tool_use, project_snapshot, result_f
 logger = logging.getLogger(__name__)
 
 EventSink = Optional[Callable[[Dict[str, Any]], Awaitable[None]]]
+TextSink = Optional[Callable[[str], Awaitable[None]]]
+
+REASONING_TAGS = ("reasoning", "thinking", "analysis", "reflection")
+_OPENERS = tuple(f"<{t}>" for t in REASONING_TAGS)
+
+
+class _ReasoningFilter:
+    """
+    Drops <reasoning>…</reasoning> spans from a token stream. Some models emit their
+    chain of thought as plain text; the final message strips it, so the live stream must too.
+    Text that could be the start of a tag is held back until it resolves.
+    """
+
+    def __init__(self) -> None:
+        self.buffer = ""
+        self.closing: Optional[str] = None
+
+    def feed(self, text: str) -> str:
+        self.buffer += text
+        out = ""
+        while self.buffer:
+            if self.closing:
+                end = self.buffer.lower().find(self.closing)
+                if end == -1:
+                    if len(self.buffer) > len(self.closing) * 8:
+                        self.buffer = self.buffer[-len(self.closing):]
+                    return out
+                self.buffer = self.buffer[end + len(self.closing):]
+                self.closing = None
+                continue
+            lower = self.buffer.lower()
+            starts = [(lower.find(o), o) for o in _OPENERS if lower.find(o) != -1]
+            if starts:
+                start, opener = min(starts)
+                out += self.buffer[:start]
+                self.buffer = self.buffer[start + len(opener):]
+                self.closing = opener.replace("<", "</", 1)
+                continue
+            lt = self.buffer.rfind("<")
+            if lt != -1 and any(o.startswith(lower[lt:]) for o in _OPENERS):
+                out += self.buffer[:lt]
+                self.buffer = self.buffer[lt:]
+                return out
+            out += self.buffer
+            self.buffer = ""
+        return out
+
+
+def _assemble_claude_stream(chunks: Iterable[Dict[str, Any]], emit: Callable[[str], None]) -> Dict[str, Any]:
+    """Rebuild a Messages-API response from its stream events, emitting text deltas on the way."""
+    content: List[Dict[str, Any]] = []
+    partial_json: Dict[int, str] = {}
+    stop_reason = None
+    for chunk in chunks:
+        kind = chunk.get("type")
+        if kind == "content_block_start":
+            block = dict(chunk.get("content_block", {}))
+            index = chunk.get("index", len(content))
+            if block.get("type") == "tool_use":
+                partial_json[index] = ""
+                block["input"] = {}
+            elif block.get("type") == "text":
+                block["text"] = block.get("text", "")
+            while len(content) <= index:
+                content.append({})
+            content[index] = block
+        elif kind == "content_block_delta":
+            index = chunk.get("index", 0)
+            delta = chunk.get("delta", {})
+            if delta.get("type") == "text_delta":
+                text = delta.get("text", "")
+                content[index]["text"] = content[index].get("text", "") + text
+                emit(text)
+            elif delta.get("type") == "input_json_delta":
+                partial_json[index] = partial_json.get(index, "") + delta.get("partial_json", "")
+        elif kind == "content_block_stop":
+            index = chunk.get("index", 0)
+            if index in partial_json:
+                raw = partial_json.pop(index)
+                try:
+                    content[index]["input"] = json.loads(raw) if raw.strip() else {}
+                except json.JSONDecodeError:
+                    logger.warning("tool input was not valid JSON: %s", raw[:200])
+                    content[index]["input"] = {}
+        elif kind == "message_delta":
+            stop_reason = chunk.get("delta", {}).get("stop_reason", stop_reason)
+    return {"content": [b for b in content if b], "stop_reason": stop_reason}
+
+
+def _assemble_openai_stream(chunks: Iterable[Dict[str, Any]], emit: Callable[[str], None]) -> Dict[str, Any]:
+    """Rebuild a chat-completion response from its stream chunks, emitting text deltas on the way."""
+    text = ""
+    tool_calls: Dict[int, Dict[str, Any]] = {}
+    finish_reason = None
+    for chunk in chunks:
+        for choice in chunk.get("choices", []):
+            delta = choice.get("delta", {})
+            piece = delta.get("content")
+            if piece:
+                text += piece
+                emit(piece)
+            for call in delta.get("tool_calls") or []:
+                index = call.get("index", 0)
+                slot = tool_calls.setdefault(index, {"id": None, "type": "function", "function": {"name": "", "arguments": ""}})
+                if call.get("id"):
+                    slot["id"] = call["id"]
+                function = call.get("function", {})
+                if function.get("name"):
+                    slot["function"]["name"] += function["name"]
+                if function.get("arguments"):
+                    slot["function"]["arguments"] += function["arguments"]
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+    message: Dict[str, Any] = {"role": "assistant", "content": text or None}
+    if tool_calls:
+        message["tool_calls"] = [tool_calls[i] for i in sorted(tool_calls)]
+    return {"choices": [{"message": message, "finish_reason": finish_reason}]}
 
 AGENT_NAME = "CuBot"
 AGENT_TEMPERATURE = 0.2
@@ -91,11 +208,23 @@ class AIService:
         model_id = settings.BEDROCK_MODEL_ID.lower()
         return "claude" in model_id or "anthropic" in model_id
 
-    async def _invoke(self, request_body: Dict[str, Any]) -> Dict[str, Any]:
-        """Call invoke_model off the event loop so streamed events keep flowing while the model thinks."""
-        client = self._get_bedrock_runtime()
+    async def _invoke(self, request_body: Dict[str, Any], on_text: TextSink = None) -> Dict[str, Any]:
+        """
+        Call the model off the event loop so streamed events keep flowing while it thinks.
 
-        def call():
+        With `on_text`, the call uses the response stream: every text delta is handed to
+        `on_text` as it arrives, and the assembled response is returned in the same shape
+        as a non-streaming call, so the tool loops don't care which path ran.
+        """
+        client = self._get_bedrock_runtime()
+        loop = asyncio.get_running_loop()
+        is_claude = self._is_claude()
+
+        def emit(text: str) -> None:
+            if on_text and text:
+                asyncio.run_coroutine_threadsafe(on_text(text), loop)
+
+        def call_plain() -> Dict[str, Any]:
             response = client.invoke_model(
                 modelId=settings.BEDROCK_MODEL_ID,
                 body=json.dumps(request_body),
@@ -104,12 +233,41 @@ class AIService:
             )
             return json.loads(response["body"].read())
 
+        def call_stream() -> Dict[str, Any]:
+            body = dict(request_body)
+            if not is_claude:
+                body["stream"] = True
+            response = client.invoke_model_with_response_stream(
+                modelId=settings.BEDROCK_MODEL_ID,
+                body=json.dumps(body),
+                contentType="application/json",
+                accept="application/json",
+            )
+            chunks = (json.loads(ev["chunk"]["bytes"]) for ev in response["body"] if "chunk" in ev)
+            return _assemble_claude_stream(chunks, emit) if is_claude else _assemble_openai_stream(chunks, emit)
+
         try:
-            return await asyncio.to_thread(call)
+            if on_text is None:
+                return await asyncio.to_thread(call_plain)
+            try:
+                return await asyncio.to_thread(call_stream)
+            except ClientError as e:
+                # Some models reject the streaming API; fall back to one shot and emit the text at once.
+                logger.warning("streaming invoke failed, falling back: %s", e)
+                body = await asyncio.to_thread(call_plain)
+                emit(self._text_of(body))
+                return body
         except ClientError as e:
             message = e.response.get("Error", {}).get("Message", str(e))
             logger.error("Bedrock API error: %s", message)
             raise RuntimeError(f"Bedrock API error: {message}") from e
+
+    def _text_of(self, body: Dict[str, Any]) -> str:
+        """Text content of a response body, either model family."""
+        if self._is_claude():
+            return "".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text")
+        choices = body.get("choices", [])
+        return (choices[0].get("message", {}).get("content") or "") if choices else ""
 
     # --------------------------------------------------------------- public API
 
@@ -204,6 +362,7 @@ class AIService:
                 user_prompt=user_content,
                 history=[{"role": m["role"], "content": m["content"][0]["text"]} for m in history],
                 max_tokens=4096,
+                on_text=self._text_sink(on_event),
             )
             file_operations: List[Dict[str, Any]] = []
             logs: List[Dict[str, Any]] = []
@@ -346,6 +505,13 @@ class AIService:
         file_operations: List[Dict[str, Any]] = []
         execution_logs: List[Dict[str, Any]] = []
         messages = list(messages)
+        on_text = self._text_sink(on_event)
+        transcript: List[str] = []
+        anthropic_tools = [{
+            "name": t["toolSpec"]["name"],
+            "description": t["toolSpec"]["description"],
+            "input_schema": t["toolSpec"]["inputSchema"]["json"],
+        } for t in tool_config.get("tools", [])]
 
         for _ in range(max_iterations):
             if on_event:
@@ -356,15 +522,17 @@ class AIService:
                 "system": system_prompt,
                 "messages": messages,
                 "temperature": AGENT_TEMPERATURE,
-                "tools": tool_config["tools"],
-            })
+                "tools": anthropic_tools,
+            }, on_text=on_text)
             content = body.get("content", [])
             stop_reason = body.get("stop_reason")
             messages.append({"role": "assistant", "content": content})
 
+            text = "".join(b.get("text", "") for b in content if b.get("type") == "text").strip()
+            if text:
+                transcript.append(text)
             if stop_reason != "tool_use":
-                text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
-                return self._strip_reasoning_tags(text), file_operations, execution_logs
+                return self._strip_reasoning_tags("\n\n".join(transcript)), file_operations, execution_logs
 
             tool_results = []
             for block in content:
@@ -382,7 +550,7 @@ class AIService:
                 })
             messages.append({"role": "user", "content": tool_results})
 
-        return self._iteration_cap_message(file_operations), file_operations, execution_logs
+        return self._iteration_cap_message(file_operations, transcript), file_operations, execution_logs
 
     async def _converse_openai(self, messages, system_prompt, tool_config, project_id, max_iterations, workspace_id, on_event):
         file_operations: List[Dict[str, Any]] = []
@@ -406,6 +574,9 @@ class AIService:
             },
         } for t in tool_config.get("tools", [])]
 
+        on_text = self._text_sink(on_event)
+        transcript: List[str] = []
+
         for _ in range(max_iterations):
             if on_event:
                 await on_event({"type": "status", "text": "Thinking"})
@@ -416,7 +587,7 @@ class AIService:
                 "tool_choice": "auto",
                 "temperature": AGENT_TEMPERATURE,
                 "max_tokens": 8192,
-            })
+            }, on_text=on_text)
             choices = body.get("choices", [])
             if not choices:
                 return "The model returned no response.", file_operations, execution_logs
@@ -425,8 +596,11 @@ class AIService:
             tool_calls = message.get("tool_calls") or []
             openai_messages.append(message)
 
+            text = (message.get("content") or "").strip()
+            if text:
+                transcript.append(text)
             if not tool_calls:
-                return self._strip_reasoning_tags(message.get("content") or ""), file_operations, execution_logs
+                return self._strip_reasoning_tags("\n\n".join(transcript)), file_operations, execution_logs
 
             for call in tool_calls:
                 function = call.get("function", {})
@@ -444,21 +618,37 @@ class AIService:
                     "content": json.dumps(result_for_model(result)),
                 })
 
-        return self._iteration_cap_message(file_operations), file_operations, execution_logs
+        return self._iteration_cap_message(file_operations, transcript), file_operations, execution_logs
 
     @staticmethod
-    def _iteration_cap_message(file_operations: List[Dict[str, Any]]) -> str:
+    def _text_sink(on_event: EventSink) -> TextSink:
+        """Turn the event sink into a text-delta sink for the model stream, minus reasoning tags."""
+        if on_event is None:
+            return None
+        strip = _ReasoningFilter()
+
+        async def sink(text: str) -> None:
+            visible = strip.feed(text)
+            if visible:
+                await on_event({"type": "text_delta", "text": visible})
+
+        return sink
+
+    @staticmethod
+    def _iteration_cap_message(file_operations: List[Dict[str, Any]], transcript: List[str]) -> str:
         changed = sorted({op["path"] for op in file_operations if op.get("path")})
         if changed:
             files = ", ".join(f"`{p}`" for p in changed)
-            return f"I stopped after reaching the step limit for one turn. Files changed so far: {files}. Ask me to continue if the task is not finished."
-        return "I stopped after reaching the step limit for one turn without finishing. Ask me to continue."
+            note = f"I stopped after reaching the step limit for one turn. Files changed so far: {files}. Ask me to continue if the task is not finished."
+        else:
+            note = "I stopped after reaching the step limit for one turn without finishing. Ask me to continue."
+        return "\n\n".join(transcript + [note])
 
     @staticmethod
     def _strip_reasoning_tags(text: str) -> str:
-        for tag in ("reasoning", "thinking", "analysis", "reflection"):
+        for tag in REASONING_TAGS:
             text = re.sub(rf"<{tag}>.*?</{tag}>", "", text, flags=re.DOTALL | re.IGNORECASE)
-        return text.strip()
+        return re.sub(r"\n{3,}", "\n\n", text).strip()
 
     # ----------------------------------------------------------------- prompts
 
@@ -485,7 +675,10 @@ class AIService:
                 "Fix what fails and re-run.\n"
             )
         web = "- search_web is available for information newer than your training data (library APIs, datasheets).\n" if has_websearch else ""
-        open_file = f"The user has `{active_path}` open in the editor; its content is in the context when relevant.\n" if active_path else ""
+        open_file = (
+            f"The user has `{active_path}` open in the editor; its content is in the context. "
+            "Requests that name no file refer to this one.\n"
+        ) if active_path else ""
 
         return f"""You are {AGENT_NAME}, the AI coding agent inside CuBot IDE. You work on embedded and robotics projects: Arduino, ESP32, TI ARM and ROS 2.
 {self._platform_line(compiler)}{open_file}
@@ -494,6 +687,8 @@ class AIService:
 
 ## How you work
 1. Understand the request. If the open file or a selection is already in the context, do not read it again.
+   Go through the whole file line by line and list every problem you find before touching anything:
+   a request like "fix the error" means fix all of them, not the first one.
 2. Read any other file before changing it (read_file). Use the full paths listed above.
 3. Make changes with tools, never by pasting code into your reply:
    - edit_file for targeted changes (preferred: replace one exact span),
@@ -509,9 +704,12 @@ class AIService:
 
 ## Rules
 - Keep the user's style and the existing structure; make the smallest change that solves the request.
+- Fix every occurrence of a problem, not only the first one you see; re-read the file after editing when in doubt.
+- Do not add comments to code unless the user asks for them.
 - Include every needed #include / import. Respect memory and timing limits of the target.
 - ROS packages: register new nodes in package.xml, CMakeLists.txt or setup.py.
-- Never claim that code builds or runs unless a tool result showed it.
+- Never claim that code builds or runs unless a tool result showed it. If compile_project fails for a
+  reason unrelated to the code (tool error, missing toolchain), say the build was not verified.
 """
 
     def _build_plan_system_prompt(self, compiler: Optional[str], snapshot: str) -> str:
@@ -558,7 +756,7 @@ What to do in this step: files to touch (full paths), functions, key code fragme
 ## How you work
 1. Execute only this step; do not start later steps.
 2. Read files before changing them. Use full paths as listed.
-3. Prefer edit_file; use update_file for rewrites and create_file for new files.
+3. Prefer edit_file; use update_file for rewrites and create_file for new files. Do not add comments to code.
 {verify}5. Finish with 1 to 3 bullet points describing what you did. No full file dumps.
 {web}"""
 
@@ -628,6 +826,7 @@ What to do in this step: files to touch (full paths), functions, key code fragme
     async def generate_text(
         self, system_prompt: str, user_prompt: str,
         history: Optional[List[Dict[str, str]]] = None, max_tokens: int = 4096,
+        on_text: TextSink = None,
     ) -> str:
         """Single completion without tools. Used by plan mode and by other services."""
         is_claude = self._is_claude()
@@ -645,7 +844,7 @@ What to do in this step: files to touch (full paths), functions, key code fragme
                 "system": system_prompt,
                 "messages": messages,
                 "temperature": AGENT_TEMPERATURE,
-            })
+            }, on_text=on_text)
             text = "".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text")
             return self._strip_reasoning_tags(text)
 
@@ -654,7 +853,7 @@ What to do in this step: files to touch (full paths), functions, key code fragme
             "messages": [{"role": "system", "content": system_prompt}] + messages,
             "temperature": AGENT_TEMPERATURE,
             "max_tokens": max_tokens,
-        })
+        }, on_text=on_text)
         choices = body.get("choices", [])
         if not choices:
             return ""
