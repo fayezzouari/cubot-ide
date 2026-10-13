@@ -34,9 +34,28 @@ class ChatMessageInDB(ChatMessageBase):
     # (null for created files) so the client can show a change card and revert it.
     file_operations: List[dict] = Field(default=[], description="Files created/edited by this message")
     mode: Optional[str] = Field(default=None, description="'build' or 'plan'")
+    thread_id: Optional[str] = None
 
     class Config:
         populate_by_name = True
+
+
+class ThreadSummary(BaseModel):
+    """One conversation inside a project"""
+    id: str
+    project_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+
+class ThreadCreate(BaseModel):
+    title: Optional[str] = None
+
+
+class ThreadUpdate(BaseModel):
+    title: str
 
 
 class ChatRequest(BaseModel):
@@ -49,6 +68,7 @@ class ChatRequest(BaseModel):
     plan_mode: bool = False
     enable_websearch: bool = False
     workspace_id: Optional[str] = Field(default=None, description="Sandbox workspace for ROS projects")
+    thread_id: Optional[str] = Field(default=None, description="Conversation to append to; omitted = new thread")
 
 
 class ChatResponse(BaseModel):
@@ -56,6 +76,7 @@ class ChatResponse(BaseModel):
     message: str
     file_operations: List[dict] = []
     execution_logs: List["ExecutionLogEntry"] = []
+    thread_id: Optional[str] = None
 
 
 class StepExecutionRequest(BaseModel):
