@@ -285,7 +285,19 @@ async def tool_edit_file(project_id: str, tool_input: Dict[str, Any]) -> Dict[st
         **stats,
         "previous_content": current,
         "message": f"Edited {path} (+{stats['added']} −{stats['removed']})",
+        **_after_edit(updated),
     }
+
+
+MAX_ECHO_LINES = 300
+
+
+def _after_edit(content: str) -> Dict[str, Any]:
+    """Echo the file after an edit so the model re-reads it and catches what it missed."""
+    lines = content.splitlines()
+    if len(lines) > MAX_ECHO_LINES:
+        return {"note": f"File now has {len(lines)} lines; call read_file to review it."}
+    return {"content_after_edit": content, "note": "Review the whole file above for remaining problems."}
 
 
 def _relaxed_find(haystack: str, needle: str) -> Optional[tuple[int, int]]:
