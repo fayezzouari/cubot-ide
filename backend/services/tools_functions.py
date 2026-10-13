@@ -1,5 +1,5 @@
 """
-Tool implementations for the Forge coding agent.
+Tool implementations for the IDE coding agent.
 
 Each tool returns a plain dict. File-changing tools also return `previous_content`
 (so the client can revert) and line-level diff counts (so the client can show
