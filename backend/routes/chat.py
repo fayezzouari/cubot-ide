@@ -46,7 +46,7 @@ async def chat_stream(project_id: str, request: ChatRequest):
     return _sse(ai_service.chat_stream(project_id, request))
 
 
-@router.get("/{project_id}/history", response_model=List[ChatMessageInDB])
+@router.get("/{project_id}/history", response_model=List[ChatMessageInDB], response_model_by_alias=False)
 async def get_chat_history(project_id: str, limit: int = 200, thread_id: Optional[str] = None):
     """Messages of one thread (or of the whole project when no thread is given)."""
     return await ai_service.get_chat_history(project_id, limit, thread_id)
