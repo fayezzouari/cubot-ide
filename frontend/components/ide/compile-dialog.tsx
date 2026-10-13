@@ -1,7 +1,7 @@
 'use client';
 
 import ReactMarkdown from 'react-markdown';
-import { Loader2, Play, Sparkles, CheckCircle2, XCircle, AlertCircle, Flame } from 'lucide-react';
+import { Loader2, Play, Sparkles, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { AGENT } from '@/lib/branding';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -127,10 +127,10 @@ export default function CompileDialog({
                 {onFixWithAgent && !isCompiling && (
                   <button
                     onClick={onFixWithAgent}
-                    className="ml-auto inline-flex items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-200 transition-colors hover:bg-amber-400/20 cursor-pointer"
+                    className="pixel-border pixel-btn ml-auto inline-flex items-center gap-1.5 bg-[#ffb000] px-2 py-1 font-pixel text-[8px] uppercase text-black cursor-pointer"
+                    style={{ ['--pb' as string]: '#ffb000' }}
                   >
-                    <Flame size={10} />
-                    Fix with {AGENT.name}
+                    ⚒ Fix with {AGENT.name}
                   </button>
                 )}
               </div>
