@@ -171,6 +171,8 @@ export interface ChatResponse {
 /** Server-sent events emitted by `POST /chat/{project}/stream`. */
 export type AgentEvent =
   | { type: 'status'; text: string }
+  /** A piece of the assistant's answer, in order; concatenate to build the message. */
+  | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; id: string; tool: string; label: string; detail: string }
   | {
       type: 'tool_end';
