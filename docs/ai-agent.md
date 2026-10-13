@@ -1,18 +1,18 @@
-# Forge — the coding agent in the IDE
+# The AI assistant: the coding agent in the IDE
 
-Forge is the agent in the right-hand panel of the code editor. It is the same
-backend that used to answer as "AI Assistant", rebuilt around three ideas:
+The assistant in the right-hand panel of the code editor is an agent built
+around three ideas:
 
 1. **Show the work.** Every tool call streams to the panel as it happens, so a
    30-second turn reads as *Reading → Editing → Compiling → Build passed* instead
    of a spinner.
-2. **Verify before claiming.** Forge compiles after it edits and fixes its own
+2. **Verify before claiming.** The agent compiles after it edits and fixes its own
    errors. The system prompt forbids reporting success without a passing build.
 3. **Stay reversible.** Every file change carries the previous content, so the
    user can revert one change without touching the rest.
 
-The agent's display name lives in `frontend/lib/branding.ts` and the persona
-name in `backend/services/ai_service.py` (`AGENT_NAME`). Change both to rename it.
+The display name and mode labels live in `frontend/lib/branding.ts`, the
+persona name in `backend/services/ai_service.py` (`AGENT_NAME`).
 
 ## One turn
 
@@ -69,31 +69,26 @@ characters so one noisy build cannot flood the context.
 
 ## Modes
 
-* **Build** (`plan_mode=false`): the full loop above, up to 30 model turns.
+* **Vibe** (`plan_mode=false`, `build` in code): the full loop above, up to 30 model turns.
 * **Plan** (`plan_mode=true`): one completion with the plan prompt and the
   conversation history, no tools. The client parses `**Step N: Title**` blocks
-  into cards; *Run step* calls `/execute-step`, which runs the Build loop scoped
-  to that step (20 turns). Plan and Build keep separate histories; messages are
+  into cards; *Run step* calls `/execute-step`, which runs the Vibe loop scoped
+  to that step (20 turns). Plan and Vibe keep separate histories; messages are
   stored with their `mode`, so reloading the IDE restores both.
 
 ## Frontend
 
 `frontend/components/ide/agent/`
 
-The panel is drawn in a pixel-art theme: Silkscreen for labels, VT323 for
-running text, hard 2px notched borders (`.pixel-border`, a box-shadow trick),
-stepped animations and faint scanlines. Tokens (`--color-forge-*`, the two
-font faces) and the utilities live in `app/globals.css` under the Tailwind v4
-`@theme`; the faces are loaded in `app/layout.tsx`.
 
 * `agent-panel.tsx` — header, conversation, empty state with quick prompts.
 * `agent-composer.tsx` — input, context chips (open file toggle + pinned
-  selections), Build/Plan switch, web search, send/stop (Esc stops).
+  selections), web search, send/stop (Esc stops).
 * `activity-timeline.tsx` — the per-turn tool timeline; collapses to one line
   when the turn is over.
 * `file-change-card.tsx` — changed files with +/− counts, open and revert.
 * `plan-step-card.tsx` — a plan step with run/skip and its execution result.
 
 The IDE page (`app/ide/page.tsx`) owns the state: it streams the turn,
-refreshes the editor as each `file_op` lands, and exposes *Fix with Forge* from
-the compile dialog, which sends the compiler errors as a Build-mode message.
+refreshes the editor as each `file_op` lands, and exposes *Fix with AI* from
+the compile dialog, which sends the compiler errors as a Vibe-mode message.
