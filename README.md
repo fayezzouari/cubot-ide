@@ -148,12 +148,12 @@ The assistant in the IDE side panel is a coding agent: it reads the project, edi
 - **Plan** — The AI writes a numbered plan. You run the steps one at a time (or all at once); each step runs with the same tools as Vibe mode.
 
 **What you see while it works**
-- A live activity list: *Reading main.cpp*, *Editing main.cpp (+4 −3)*, *Compiling project · Build passed*. Command and compiler output expands inline.
+- The answer streams token by token as rendered markdown, with a live activity list above it: *Reading main.cpp*, *Editing main.cpp (+4 −3)*, *Compiling project · Build passed*. Command and compiler output expands inline.
 - A changed-files card per turn. Open any file in the editor, or **Revert** it (the previous content is kept on the message).
 - **Fix with AI** on the compile dialog hands the errors straight to the agent.
 
 **Context**
-- The open file is attached automatically (toggle it off on the chip). Select code in the editor and click *Add to chat* to pin a range.
+- The open file is always attached; requests that name no file refer to it. Select code in the editor and click *Add to chat* to pin a range.
 - Optional web search (Exa) for current library docs and datasheets.
 
 **Agent tools**
