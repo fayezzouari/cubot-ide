@@ -27,8 +27,6 @@ export interface AgentPanelProps {
   webSearch: boolean;
   onWebSearchChange: (enabled: boolean) => void;
   activeFileName: string | null;
-  includeActiveFile: boolean;
-  onIncludeActiveFileChange: (include: boolean) => void;
   codeContexts: CodeContext[];
   onRemoveContext: (id: string) => void;
 
@@ -47,7 +45,7 @@ export interface AgentPanelProps {
 export default function AgentPanel(props: AgentPanelProps) {
   const {
     messages, mode, onModeChange, busy, input, onInputChange, onSend, onStop, onClear,
-    webSearch, onWebSearchChange, activeFileName, includeActiveFile, onIncludeActiveFileChange,
+    webSearch, onWebSearchChange, activeFileName,
     codeContexts, onRemoveContext, onOpenFile, onRevertChange, reverting,
     onRunStep, onRunAllSteps, onDiscardStep, quickPrompts = [],
   } = props;
@@ -171,8 +169,6 @@ export default function AgentPanel(props: AgentPanelProps) {
         webSearch={webSearch}
         onWebSearchChange={onWebSearchChange}
         activeFileName={activeFileName}
-        includeActiveFile={includeActiveFile}
-        onIncludeActiveFileChange={onIncludeActiveFileChange}
         codeContexts={codeContexts}
         onRemoveContext={onRemoveContext}
       />
@@ -226,7 +222,7 @@ function MessageRow({
               <ActivityTimeline items={activity} live={streaming} statusText={message.statusText} />
             )}
 
-            {streaming && activity.length === 0 && (
+            {streaming && activity.length === 0 && !message.content && (
               <div className="flex items-center gap-2 text-white/30 py-1">
                 <Sparkles size={11} className="animate-pulse" />
                 <span>{message.statusText || 'Thinking…'}</span>
@@ -241,8 +237,9 @@ function MessageRow({
             )}
 
             {!errored && message.content && !hasSteps && (
-              <div className="prose prose-sm max-w-none break-words [&>*]:break-words [&_pre]:whitespace-pre-wrap [&_code]:break-words [&_p]:break-words">
+              <div className="min-w-0 break-words">
                 <MarkdownRenderer content={message.content} />
+                {streaming && <span className="inline-block w-[2px] h-3 ml-0.5 align-middle bg-white/50 animate-pulse" aria-hidden />}
               </div>
             )}
 
