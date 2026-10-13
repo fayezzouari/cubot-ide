@@ -14,6 +14,7 @@ import type {
   ChatRequest,
   ChatResponse,
   ChatMessageInDB,
+  AgentEvent,
   CompilerType,
   WiringRequest,
   WiringResponse,
@@ -116,6 +117,10 @@ export const compileService = {
 export const chatService = {
   sendMessage: (projectId: string, data: ChatRequest) => 
     apiClient.post<ChatResponse>(`/chat/${projectId}`, data),
+
+  /** One agent turn as a live event stream. Abort the signal to stop the agent. */
+  stream: (projectId: string, data: ChatRequest, onEvent: (event: AgentEvent) => void, signal?: AbortSignal) =>
+    apiClient.stream<AgentEvent>(`/chat/${projectId}/stream`, data, onEvent, signal),
 
   getHistory: (projectId: string, limit: number = 50) => 
     apiClient.get<ChatMessageInDB[]>(`/chat/${projectId}/history?limit=${limit}`),
