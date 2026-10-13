@@ -23,6 +23,12 @@ import {
   Link2,
   Unlink,
   FlaskConical,
+  Send,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Check,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -35,18 +41,109 @@ import WiringDiagram from '@/components/wiring-diagram';
 const WS_BASE_URL =
   process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
 
-const SENSOR_OPTIONS = [
-  { type: 'Temperature', unit: '°C', min: -20, max: 80, defaultValue: 25, defaultPin: 'A0', icon: 'thermometer' },
-  { type: 'Humidity', unit: '%', min: 0, max: 100, defaultValue: 45, defaultPin: 'A1', icon: 'droplets' },
-  { type: 'Light (LDR)', unit: '%', min: 0, max: 100, defaultValue: 60, defaultPin: 'A2', icon: 'sun' },
-  { type: 'Distance (Ultrasonic)', unit: 'cm', min: 2, max: 400, defaultValue: 50, defaultPin: 'A3', icon: 'wind' },
-  { type: 'Sound', unit: '%', min: 0, max: 100, defaultValue: 30, defaultPin: 'A4', icon: 'wind' },
-  { type: 'Gas', unit: '%', min: 0, max: 100, defaultValue: 10, defaultPin: 'A5', icon: 'flask' },
-  { type: 'Pressure', unit: 'kPa', min: 80, max: 120, defaultValue: 101, defaultPin: 'A0', icon: 'wind' },
-  { type: 'Soil Moisture', unit: '%', min: 0, max: 100, defaultValue: 40, defaultPin: 'A1', icon: 'droplets' },
-  { type: 'Potentiometer', unit: '%', min: 0, max: 100, defaultValue: 50, defaultPin: 'A2', icon: 'sun' },
-  { type: 'Motion (PIR)', unit: 'state', min: 0, max: 1, defaultValue: 0, defaultPin: 'D2', icon: 'wind' },
+const VREF = 5.0;
+const ADC_MAX = 1023;
+
+type SensorOption = {
+  type: string;
+  unit: string;
+  min: number;
+  max: number;
+  defaultValue: number;
+  defaultPin: string;
+  icon: string;
+  /** Voltage the part puts on the pin for a given physical value (analog sensors). */
+  toVolts?: (value: number) => number;
+  /** What the part is and how its output maps to the reading. */
+  howItWorks: string;
+  /** Sketch lines that turn analogRead/digitalRead back into the physical value. */
+  snippet: (pin: string) => string;
+};
+
+const linear = (min: number, max: number) => (value: number) => ((value - min) / (max - min)) * VREF;
+
+const SENSOR_OPTIONS: SensorOption[] = [
+  {
+    type: 'Temperature', unit: '°C', min: -20, max: 80, defaultValue: 25, defaultPin: 'A0', icon: 'thermometer',
+    toVolts: t => 0.5 + t * 0.01,
+    howItWorks: 'TMP36: 500 mV at 0 °C, then 10 mV per °C. Read the voltage, subtract the offset, scale.',
+    snippet: pin => `float v = analogRead(${pin}) * ${VREF} / ${ADC_MAX}.0;\nfloat tempC = (v - 0.5) * 100.0;`,
+  },
+  {
+    type: 'Humidity', unit: '%', min: 0, max: 100, defaultValue: 45, defaultPin: 'A1', icon: 'droplets',
+    toVolts: linear(0, 100),
+    howItWorks: 'Analog humidity module: 0 V at 0 % RH up to 5 V at 100 % RH, so map() the raw reading.',
+    snippet: pin => `int humidity = map(analogRead(${pin}), 0, ${ADC_MAX}, 0, 100);`,
+  },
+  {
+    type: 'Light (LDR)', unit: '%', min: 0, max: 100, defaultValue: 60, defaultPin: 'A2', icon: 'sun',
+    toVolts: linear(0, 100),
+    howItWorks: 'Photoresistor in a voltage divider: more light lowers its resistance and raises the voltage on the pin.',
+    snippet: pin => `int light = map(analogRead(${pin}), 0, ${ADC_MAX}, 0, 100);`,
+  },
+  {
+    type: 'Distance (Ultrasonic)', unit: 'cm', min: 2, max: 400, defaultValue: 50, defaultPin: 'A3', icon: 'wind',
+    toVolts: linear(0, 400),
+    howItWorks: 'Analog-output rangefinder (MaxBotix style): the voltage grows linearly with distance, 5 V at 400 cm.',
+    snippet: pin => `float cm = analogRead(${pin}) * 400.0 / ${ADC_MAX};`,
+  },
+  {
+    type: 'Sound', unit: '%', min: 0, max: 100, defaultValue: 30, defaultPin: 'A4', icon: 'wind',
+    toVolts: linear(0, 100),
+    howItWorks: 'Microphone module with an envelope output: louder sound gives a higher steady voltage.',
+    snippet: pin => `int level = map(analogRead(${pin}), 0, ${ADC_MAX}, 0, 100);`,
+  },
+  {
+    type: 'Gas', unit: '%', min: 0, max: 100, defaultValue: 10, defaultPin: 'A5', icon: 'flask',
+    toVolts: linear(0, 100),
+    howItWorks: 'MQ-series gas sensor: the heater element changes resistance with gas concentration, read as a voltage.',
+    snippet: pin => `int gas = map(analogRead(${pin}), 0, ${ADC_MAX}, 0, 100);\nif (gas > 60) digitalWrite(LED_BUILTIN, HIGH);`,
+  },
+  {
+    type: 'Pressure', unit: 'kPa', min: 80, max: 120, defaultValue: 101, defaultPin: 'A0', icon: 'wind',
+    toVolts: kpa => VREF * (0.009 * kpa - 0.095),
+    howItWorks: 'MPX4115 barometer: Vout = 5 V × (0.009 × kPa − 0.095), the formula from its datasheet.',
+    snippet: pin => `float v = analogRead(${pin}) * ${VREF} / ${ADC_MAX}.0;\nfloat kPa = (v / ${VREF} + 0.095) / 0.009;`,
+  },
+  {
+    type: 'Soil Moisture', unit: '%', min: 0, max: 100, defaultValue: 40, defaultPin: 'A1', icon: 'droplets',
+    toVolts: linear(0, 100),
+    howItWorks: 'Capacitive soil probe: wetter soil changes the capacitance and the module outputs a higher voltage.',
+    snippet: pin => `int moisture = map(analogRead(${pin}), 0, ${ADC_MAX}, 0, 100);`,
+  },
+  {
+    type: 'Potentiometer', unit: '%', min: 0, max: 100, defaultValue: 50, defaultPin: 'A2', icon: 'sun',
+    toVolts: linear(0, 100),
+    howItWorks: 'A potentiometer is a voltage divider you turn by hand: the wiper sits between 0 V and 5 V.',
+    snippet: pin => `int raw = analogRead(${pin});   // 0..1023\nint percent = map(raw, 0, ${ADC_MAX}, 0, 100);`,
+  },
+  {
+    type: 'Motion (PIR)', unit: 'state', min: 0, max: 1, defaultValue: 0, defaultPin: 'D2', icon: 'wind',
+    howItWorks: 'PIR module: a digital output that goes HIGH while it sees infrared movement. Read it with digitalRead.',
+    snippet: pin => `pinMode(${pin}, INPUT);\nif (digitalRead(${pin}) == HIGH) { /* motion */ }`,
+  },
 ];
+
+/** Parses "A0".."A5" into an ADC channel, "D2"/"2" into a digital pin. */
+function parsePin(pin: string): { kind: 'analog'; channel: number } | { kind: 'digital'; pin: number } | null {
+  const trimmed = pin.trim().toUpperCase();
+  const analog = /^A([0-5])$/.exec(trimmed);
+  if (analog) return { kind: 'analog', channel: Number(analog[1]) };
+  const digital = /^D?(\d{1,2})$/.exec(trimmed);
+  if (digital && Number(digital[1]) <= 13) return { kind: 'digital', pin: Number(digital[1]) };
+  return null;
+}
+
+function clampVolts(v: number): number {
+  return Math.max(0, Math.min(VREF, v));
+}
+
+/** What the sketch sees for a sensor value: the pin voltage and the analogRead result. */
+function readingFor(option: SensorOption, value: number): { volts: number; raw: number } | null {
+  if (!option.toVolts) return null;
+  const volts = clampVolts(option.toVolts(value));
+  return { volts, raw: Math.round((volts / VREF) * ADC_MAX) };
+}
 
 type EnvironmentPreset = {
   id: string;
@@ -139,8 +236,13 @@ export default function SimulatorPageContent() {
   const [wiringGuide, setWiringGuide] = useState<WiringGuideDTO | null>(null);
   const [isGeneratingWiring, setIsGeneratingWiring] = useState(false);
   const [wiringError, setWiringError] = useState('');
+  const [serialInput, setSerialInput] = useState('');
+  const [openHelp, setOpenHelp] = useState<Record<string, boolean>>({});
+  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const sensorsRef = useRef<SensorConfig[]>([]);
+  sensorsRef.current = sensors;
 
   // Load project
   useEffect(() => {
@@ -157,6 +259,51 @@ export default function SimulatorPageContent() {
         wsRef.current = null;
       }
     };
+  }, []);
+
+  const sendToSimulator = useCallback((payload: Record<string, unknown>) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+  }, []);
+
+  /** Push one sensor's current value to the running simulation as a voltage or a logic level. */
+  const pushSensor = useCallback((sensor: SensorConfig) => {
+    const option = SENSOR_OPTIONS.find(o => o.type === sensor.type);
+    const target = parsePin(sensor.pin);
+    if (!option || !target) return;
+    if (target.kind === 'analog') {
+      const reading = readingFor(option, sensor.value);
+      if (reading) sendToSimulator({ type: 'analog_input', channel: target.channel, millivolts: Math.round(reading.volts * 1000) });
+    } else {
+      sendToSimulator({ type: 'digital_input', pin: target.pin, value: sensor.value >= 1 });
+    }
+  }, [sendToSimulator]);
+
+  const pushAllSensors = useCallback(() => {
+    sensorsRef.current.forEach(pushSensor);
+  }, [pushSensor]);
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const handle = setTimeout(pushAllSensors, 40);
+    return () => clearTimeout(handle);
+  }, [sensors, isRunning, pushAllSensors]);
+
+  const handleSendSerial = useCallback(() => {
+    if (!serialInput || !isRunning) return;
+    sendToSimulator({ type: 'serial_input', data: `${serialInput}\n` });
+    setSerialOutput(prev => `${prev}› ${serialInput}\n`);
+    setSerialInput('');
+  }, [serialInput, isRunning, sendToSimulator]);
+
+  const handleCopySnippet = useCallback(async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedSnippet(id);
+      setTimeout(() => setCopiedSnippet(current => (current === id ? null : current)), 1500);
+    } catch {
+      setCopiedSnippet(null);
+    }
   }, []);
 
   const connectWebSocket = useCallback((): Promise<WebSocket> => {
@@ -188,6 +335,7 @@ export default function SimulatorPageContent() {
               setSimState(msg.state);
               if (msg.state === 'running') {
                 setIsRunning(true);
+                setTimeout(pushAllSensors, 150);
               } else if (msg.state === 'stopped' || msg.state === 'error') {
                 setIsRunning(false);
               }
@@ -207,7 +355,7 @@ export default function SimulatorPageContent() {
         wsRef.current = null;
       };
     });
-  }, []);
+  }, [pushAllSensors]);
 
   const getSensorOption = useCallback((type: string) => {
     return SENSOR_OPTIONS.find((opt) => opt.type === type) || SENSOR_OPTIONS[0];
@@ -681,7 +829,7 @@ export default function SimulatorPageContent() {
 
                   {activeEnvironment && (
                     <p className="text-[10px] text-white/30 leading-relaxed">
-                      Environment active — link sensors below to sync their values.
+                      Environment active — link sensors below and the running sketch reads these values.
                     </p>
                   )}
                 </div>
@@ -703,7 +851,7 @@ export default function SimulatorPageContent() {
                 <div className="p-3">
                   {sensors.length === 0 ? (
                     <p className="text-[11px] text-white/25 py-2 text-center">
-                      No sensors yet — click Add to attach a virtual sensor
+                      No sensors yet — click Add to attach a virtual sensor. Its value reaches the sketch through analogRead or digitalRead.
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -780,6 +928,60 @@ export default function SimulatorPageContent() {
                               </span>
                             </div>
 
+                            {(() => {
+                              const target = parsePin(sensor.pin);
+                              const reading = readingFor(option, sensor.value);
+                              const helpOpen = !!openHelp[sensor.id];
+                              const snippet = option.snippet(sensor.pin.trim().toUpperCase());
+                              return (
+                                <div className="mt-2 space-y-1.5">
+                                  {!target ? (
+                                    <div className="flex items-center gap-1.5 text-[10px] text-amber-300/80">
+                                      <AlertTriangle size={10} />
+                                      Use A0–A5 for analog sensors or D0–D13 for digital ones.
+                                    </div>
+                                  ) : target.kind === 'analog' && !option.toVolts ? (
+                                    <div className="flex items-center gap-1.5 text-[10px] text-amber-300/80">
+                                      <AlertTriangle size={10} />
+                                      This part has a digital output; put it on a D pin.
+                                    </div>
+                                  ) : target.kind === 'analog' && reading ? (
+                                    <div className="flex items-center justify-between font-mono text-[10.5px] tabular-nums">
+                                      <span className="text-white/40">{reading.volts.toFixed(2)} V on {sensor.pin.toUpperCase()}</span>
+                                      <span className="text-white/70">analogRead → <span className="text-blue-300">{reading.raw}</span></span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-between font-mono text-[10.5px]">
+                                      <span className="text-white/40">{sensor.pin.toUpperCase()} driven {sensor.value >= 1 ? 'HIGH' : 'LOW'}</span>
+                                      <span className="text-white/70">digitalRead → <span className="text-blue-300">{sensor.value >= 1 ? 'HIGH' : 'LOW'}</span></span>
+                                    </div>
+                                  )}
+                                  <button
+                                    onClick={() => setOpenHelp(prev => ({ ...prev, [sensor.id]: !helpOpen }))}
+                                    className="flex items-center gap-1 text-[10px] text-white/30 hover:text-white/60 transition-colors"
+                                  >
+                                    {helpOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                                    How it reads
+                                  </button>
+                                  {helpOpen && (
+                                    <div className="rounded-md border border-white/[0.06] bg-black/40 p-2 space-y-1.5">
+                                      <p className="text-[10.5px] leading-relaxed text-white/45">{option.howItWorks}</p>
+                                      <div className="relative">
+                                        <pre className="font-mono text-[10.5px] leading-relaxed text-white/65 whitespace-pre-wrap pr-6">{snippet}</pre>
+                                        <button
+                                          onClick={() => handleCopySnippet(sensor.id, snippet)}
+                                          title="Copy to clipboard"
+                                          className="absolute right-0 top-0 text-white/30 hover:text-white/70 transition-colors"
+                                        >
+                                          {copiedSnippet === sensor.id ? <Check size={11} className="text-green-400" /> : <Copy size={11} />}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
                             {linked && (
                               <div className="mt-1.5 flex items-center gap-1 text-[10px] text-blue-400/70">
                                 <Link2 size={8} />
@@ -843,6 +1045,25 @@ export default function SimulatorPageContent() {
                   {serialOutput || <span className="text-white/20">No serial output yet…</span>}
                 </pre>
               </ScrollArea>
+            </div>
+            <div className="h-9 shrink-0 border-t border-white/[0.06] bg-black flex items-center gap-2 px-3">
+              <span className="font-mono text-[11px] text-white/25">›</span>
+              <input
+                value={serialInput}
+                onChange={(e) => setSerialInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSendSerial()}
+                disabled={!isRunning}
+                placeholder={isRunning ? 'Send a line to Serial…' : 'Run the sketch to send serial input'}
+                className="flex-1 bg-transparent font-mono text-[11px] text-white/70 placeholder:text-white/20 outline-none disabled:cursor-not-allowed"
+              />
+              <button
+                onClick={handleSendSerial}
+                disabled={!isRunning || !serialInput}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-white/50 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send size={10} />
+                Send
+              </button>
             </div>
           </div>
 

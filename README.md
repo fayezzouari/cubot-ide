@@ -249,6 +249,12 @@ Run compiled Arduino firmware in a browser-connected software emulator — no ha
 - `Serial.print()` / `Serial.println()` output
 - All events streamed as JSON over WebSocket
 
+**Live Inputs**
+- Virtual sensors feed the running sketch: an analog sensor sets the voltage on its pin (`analogRead` returns the matching 0–1023 value), a PIR drives its digital pin HIGH or LOW. Environment presets such as *Kitchen Fire* therefore change what the program sees.
+- Each sensor card shows the pin voltage and the exact `analogRead` / `digitalRead` result, with a *How it reads* note (the part's transfer function, e.g. TMP36: 500 mV + 10 mV/°C) and a copyable code snippet to convert the reading back.
+- A serial input line sends text to the sketch's `Serial`.
+- Simulated time is throttled to wall-clock time, so `delay()` and `millis()` behave like on the board.
+
 ---
 
 ### ROS / Kubernetes Sandbox Integration
