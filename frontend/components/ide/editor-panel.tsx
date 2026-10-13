@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { File, MessageSquarePlus, Code2 } from 'lucide-react';
+import { File, Code2 } from 'lucide-react';
 import { AGENT } from '@/lib/branding';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
@@ -140,11 +140,10 @@ export default function EditorPanel({
             {selectionPos && onAddSelectionToChat && (
               <button
                 onMouseDown={e => { e.preventDefault(); handleAddToChat(); }}
-                style={{ top: selectionPos.top, left: selectionPos.left }}
-                className="absolute z-20 flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-amber-100 bg-[#1e1a12] border border-amber-400/30 rounded-md shadow-lg shadow-black/50 hover:bg-amber-400/15 hover:border-amber-400/50 transition-all pointer-events-auto select-none cursor-pointer"
+                className="pixel-border pixel-btn absolute z-20 flex items-center gap-1.5 bg-[#ffb000] px-2 py-1 font-pixel text-[8px] uppercase text-black pointer-events-auto select-none cursor-pointer"
+                style={{ top: selectionPos.top, left: selectionPos.left, ['--pb' as string]: '#ffb000' }}
               >
-                <MessageSquarePlus size={11} />
-                Add to {AGENT.name}
+                ⚒ Add to {AGENT.name}
               </button>
             )}
           </div>
