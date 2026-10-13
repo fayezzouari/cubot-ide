@@ -15,6 +15,7 @@ import type {
   ChatResponse,
   ChatMessageInDB,
   AgentEvent,
+  ThreadSummary,
   CompilerType,
   WiringRequest,
   WiringResponse,
@@ -122,8 +123,22 @@ export const chatService = {
   stream: (projectId: string, data: ChatRequest, onEvent: (event: AgentEvent) => void, signal?: AbortSignal) =>
     apiClient.stream<AgentEvent>(`/chat/${projectId}/stream`, data, onEvent, signal),
 
-  getHistory: (projectId: string, limit: number = 50) => 
-    apiClient.get<ChatMessageInDB[]>(`/chat/${projectId}/history?limit=${limit}`),
+  getHistory: (projectId: string, limit: number = 200, threadId?: string) =>
+    apiClient.get<ChatMessageInDB[]>(
+      `/chat/${projectId}/history?limit=${limit}${threadId ? `&thread_id=${encodeURIComponent(threadId)}` : ''}`,
+    ),
+
+  listThreads: (projectId: string) =>
+    apiClient.get<ThreadSummary[]>(`/chat/${projectId}/threads`),
+
+  createThread: (projectId: string, title?: string) =>
+    apiClient.post<ThreadSummary>(`/chat/${projectId}/threads`, { title }),
+
+  renameThread: (projectId: string, threadId: string, title: string) =>
+    apiClient.put<{ success: boolean }>(`/chat/${projectId}/threads/${threadId}`, { title }),
+
+  deleteThread: (projectId: string, threadId: string) =>
+    apiClient.delete<{ success: boolean }>(`/chat/${projectId}/threads/${threadId}`),
 
   applyOperations: (projectId: string, operations: any[]) =>
     apiClient.post<{ results: any[] }>(
