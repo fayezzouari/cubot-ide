@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { ArrowUp, Code2, FileText, Globe, Hammer, ListChecks, Square, X } from 'lucide-react';
 import { AGENT_MODES } from '@/lib/branding';
 import type { ChatMode } from '@/lib/mock-data';
 
@@ -55,43 +54,41 @@ export default function AgentComposer({
   };
 
   const canSend = !busy && value.trim().length > 0;
-  const accent = mode === 'plan' ? 'focus-within:border-sky-400/40' : 'focus-within:border-amber-400/40';
+  const accent = mode === 'plan' ? '#5ab4ff' : '#ffb000';
 
   return (
-    <div className="flex-shrink-0 border-t border-white/[0.06] bg-[#0b0b0b] p-3">
-      <div className={`rounded-xl border border-white/[0.09] bg-[#121212] transition-colors ${accent}`}>
+    <div className="flex-shrink-0 border-t-2 border-forge-line bg-forge-panel p-3">
+      <div className="pixel-border bg-black" style={{ ['--pb' as string]: busy ? accent : '#3a2f22' }}>
         {/* Context chips */}
         {(activeFileName || codeContexts.length > 0) && (
-          <div className="flex flex-wrap items-center gap-1.5 px-2.5 pt-2.5">
+          <div className="flex flex-wrap items-center gap-2 px-2 pt-2">
             {activeFileName && (
               <button
                 type="button"
                 onClick={() => onIncludeActiveFileChange(!includeActiveFile)}
                 title={includeActiveFile ? 'Open file is sent as context. Click to exclude.' : 'Open file is not sent. Click to include.'}
-                className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors cursor-pointer ${
-                  includeActiveFile
-                    ? 'border-white/[0.12] bg-white/[0.06] text-white/70'
-                    : 'border-dashed border-white/[0.12] text-white/30 line-through'
+                className={`pixel-border px-1.5 py-0.5 font-pixel-body text-[14px] leading-none cursor-pointer ${
+                  includeActiveFile ? 'bg-forge-raised text-forge-ink' : 'bg-transparent text-forge-dim line-through'
                 }`}
+                style={{ ['--pb' as string]: includeActiveFile ? '#3a2f22' : '#2e261c' }}
               >
-                <FileText size={10} />
-                {activeFileName}
+                ▣ {activeFileName}
               </button>
             )}
             {codeContexts.map(ctx => (
               <span
                 key={ctx.id}
-                className="flex items-center gap-1 rounded-md border border-amber-400/25 bg-amber-400/[0.08] px-1.5 py-0.5 font-mono text-[10.5px] text-amber-100/90"
+                className="pixel-border flex items-center gap-1.5 bg-forge-raised px-1.5 py-0.5 font-pixel-body text-[14px] leading-none text-forge-amber"
+                style={{ ['--pb' as string]: '#ffb000' }}
               >
-                <Code2 size={10} className="text-amber-300" />
-                {ctx.fileName}:{ctx.startLine}{ctx.endLine !== ctx.startLine ? `-${ctx.endLine}` : ''}
+                ‹› {ctx.fileName}:{ctx.startLine}{ctx.endLine !== ctx.startLine ? `-${ctx.endLine}` : ''}
                 <button
                   type="button"
                   onClick={() => onRemoveContext(ctx.id)}
-                  className="-mr-0.5 text-amber-200/50 hover:text-amber-100 cursor-pointer"
+                  className="font-pixel text-[8px] text-forge-amber/60 hover:text-forge-amber cursor-pointer"
                   aria-label="Remove selection"
                 >
-                  <X size={10} />
+                  X
                 </button>
               </span>
             ))}
@@ -104,46 +101,44 @@ export default function AgentComposer({
           value={value}
           onChange={e => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={AGENT_MODES[mode].placeholder}
+          placeholder={`> ${AGENT_MODES[mode].placeholder}`}
           rows={2}
-          className="block w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[12.5px] leading-relaxed text-white/85 placeholder:text-white/25 focus:outline-none min-h-[44px] max-h-[180px] overflow-y-auto"
+          spellCheck={false}
+          className="block w-full resize-none bg-transparent px-3 pt-2.5 pb-1 font-pixel-body text-[17px] leading-[1.2] text-forge-ink placeholder:text-forge-dim/70 caret-forge-amber focus:outline-none min-h-[48px] max-h-[180px] overflow-y-auto"
         />
 
         {/* Toolbar */}
-        <div className="flex items-center gap-1 px-2 pb-2">
-          <div className="flex items-center rounded-lg border border-white/[0.07] bg-black/40 p-0.5">
-            <ModeButton
-              active={mode === 'build'}
-              onClick={() => onModeChange('build')}
-              icon={<Hammer size={10} />}
-              label={AGENT_MODES.build.label}
-              hint={AGENT_MODES.build.hint}
-              activeClass="bg-amber-400/15 text-amber-200"
-            />
-            <ModeButton
-              active={mode === 'plan'}
-              onClick={() => onModeChange('plan')}
-              icon={<ListChecks size={10} />}
-              label={AGENT_MODES.plan.label}
-              hint={AGENT_MODES.plan.hint}
-              activeClass="bg-sky-400/15 text-sky-200"
-            />
-          </div>
+        <div className="flex items-center gap-2 px-2 pb-2 pt-1">
+          <ModeButton
+            active={mode === 'build'}
+            onClick={() => onModeChange('build')}
+            label={AGENT_MODES.build.label}
+            hint={AGENT_MODES.build.hint}
+            color="#ffb000"
+          />
+          <ModeButton
+            active={mode === 'plan'}
+            onClick={() => onModeChange('plan')}
+            label={AGENT_MODES.plan.label}
+            hint={AGENT_MODES.plan.hint}
+            color="#5ab4ff"
+          />
 
           <button
             type="button"
             onClick={() => onWebSearchChange(!webSearch)}
             title={webSearch ? 'Web search on. Forge can look up docs and datasheets.' : 'Web search off'}
             aria-pressed={webSearch}
-            className={`ml-1 flex h-6 w-6 items-center justify-center rounded-md transition-colors cursor-pointer ${
-              webSearch ? 'bg-white/[0.08] text-white/85' : 'text-white/30 hover:bg-white/[0.05] hover:text-white/60'
+            className={`pixel-border pixel-btn px-1.5 py-1 font-pixel text-[8px] uppercase cursor-pointer ${
+              webSearch ? 'bg-forge-ink text-black' : 'bg-black text-forge-dim hover:text-forge-ink'
             }`}
+            style={{ ['--pb' as string]: webSearch ? '#f2e9d8' : '#2e261c' }}
           >
-            <Globe size={12} />
+            web {webSearch ? 'on' : 'off'}
           </button>
 
-          <span className="ml-auto hidden text-[10px] text-white/20 sm:block">
-            {busy ? 'Esc to stop' : 'Enter to send · Shift+Enter newline'}
+          <span className="ml-auto hidden font-pixel text-[7px] uppercase text-forge-dim/70 sm:block">
+            {busy ? 'esc = stop' : 'enter = send'}
           </span>
 
           {busy ? (
@@ -151,9 +146,10 @@ export default function AgentComposer({
               type="button"
               onClick={onStop}
               title="Stop"
-              className="ml-1 flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.1] text-white/80 transition-colors hover:bg-red-500/25 hover:text-red-200 cursor-pointer"
+              className="pixel-border pixel-btn bg-forge-red px-2 py-1 font-pixel text-[8px] uppercase text-black cursor-pointer"
+              style={{ ['--pb' as string]: '#ff4d4d' }}
             >
-              <Square size={11} fill="currentColor" />
+              ■ stop
             </button>
           ) : (
             <button
@@ -161,15 +157,15 @@ export default function AgentComposer({
               onClick={onSend}
               disabled={!canSend}
               title="Send"
-              className={`ml-1 flex h-7 w-7 items-center justify-center rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed ${
-                canSend
-                  ? mode === 'plan'
-                    ? 'bg-sky-400 text-black hover:bg-sky-300'
-                    : 'bg-amber-400 text-black hover:bg-amber-300'
-                  : 'bg-white/[0.06] text-white/25'
+              className={`pixel-border pixel-btn px-2 py-1 font-pixel text-[8px] uppercase cursor-pointer disabled:cursor-not-allowed ${
+                canSend ? 'text-black' : 'bg-forge-line text-forge-dim'
               }`}
+              style={{
+                ['--pb' as string]: canSend ? accent : '#2e261c',
+                backgroundColor: canSend ? accent : undefined,
+              }}
             >
-              <ArrowUp size={13} strokeWidth={2.5} />
+              send ▶
             </button>
           )}
         </div>
@@ -179,14 +175,13 @@ export default function AgentComposer({
 }
 
 function ModeButton({
-  active, onClick, icon, label, hint, activeClass,
+  active, onClick, label, hint, color,
 }: {
   active: boolean;
   onClick: () => void;
-  icon: React.ReactNode;
   label: string;
   hint: string;
-  activeClass: string;
+  color: string;
 }) {
   return (
     <button
@@ -194,12 +189,12 @@ function ModeButton({
       onClick={onClick}
       title={hint}
       aria-pressed={active}
-      className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] font-semibold transition-colors cursor-pointer ${
-        active ? activeClass : 'text-white/35 hover:text-white/65'
+      className={`pixel-border pixel-btn px-2 py-1 font-pixel text-[8px] uppercase cursor-pointer ${
+        active ? 'text-black' : 'bg-black text-forge-dim hover:text-forge-ink'
       }`}
+      style={{ ['--pb' as string]: active ? color : '#2e261c', backgroundColor: active ? color : undefined }}
     >
-      {icon}
-      {label}
+      {active ? '◆' : '◇'} {label}
     </button>
   );
 }
