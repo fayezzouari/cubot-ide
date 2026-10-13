@@ -110,6 +110,7 @@ class SimulationService:
 
             process = await asyncio.create_subprocess_exec(
                 *docker_cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -233,21 +234,36 @@ class SimulationService:
 
         del self._sessions[session_id]
 
-    async def send_serial_input(self, session_id: str, data: str) -> bool:
-        """Send serial input to a running simulation."""
+    async def _send_input(self, session_id: str, payload: dict) -> bool:
+        """Write one JSON line to the simulator's stdin."""
         session = self._sessions.get(session_id)
         if not session or session.state != SimulationState.RUNNING:
             return False
+        if not session.process or not session.process.stdin:
+            return False
+        try:
+            session.process.stdin.write((json.dumps(payload) + "\n").encode())
+            await session.process.stdin.drain()
+            return True
+        except Exception:
+            return False
 
-        if session.process and session.process.stdin:
-            try:
-                msg = json.dumps({"type": "serial_input", "data": data}) + "\n"
-                session.process.stdin.write(msg.encode())
-                await session.process.stdin.drain()
-                return True
-            except Exception:
-                return False
-        return False
+    async def send_serial_input(self, session_id: str, data: str) -> bool:
+        """Bytes for the UART receiver, as if typed in a serial monitor."""
+        return await self._send_input(session_id, {"type": "serial_input", "data": data})
+
+    async def send_analog_input(self, session_id: str, channel: int, millivolts: int) -> bool:
+        """Voltage on analog input A0..A5 (ADC channel 0..5), 0..5000 mV."""
+        if not 0 <= channel <= 5:
+            return False
+        millivolts = max(0, min(5000, int(millivolts)))
+        return await self._send_input(session_id, {"type": "analog", "channel": channel, "millivolts": millivolts})
+
+    async def send_digital_input(self, session_id: str, pin: int, value: bool) -> bool:
+        """Logic level driven onto digital pin D0..D13."""
+        if not 0 <= pin <= 13:
+            return False
+        return await self._send_input(session_id, {"type": "digital", "pin": pin, "value": bool(value)})
 
     def get_session(self, session_id: str) -> Optional[SimulationSession]:
         """Get a simulation session by ID."""
