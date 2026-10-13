@@ -1,26 +1,24 @@
 /**
- * Product names used in the UI. Change the agent's identity here only.
+ * Names used by the IDE assistant panel. Change the assistant's identity here only.
  */
 export const PRODUCT_NAME = 'CuBot';
 
 export const AGENT = {
-  /** Name of the coding agent that lives in the IDE side panel. */
-  name: 'Forge',
-  /** Short line under the name. */
-  tagline: 'coding agent',
-  /** What the empty panel says. */
-  intro: 'Reads your project, edits files, compiles, and fixes what breaks.',
+  /** Name shown in the panel header. */
+  name: 'AI Assistant',
 } as const;
 
 export const AGENT_MODES = {
   build: {
-    label: 'Build',
-    hint: 'Forge edits files and verifies the build on its own.',
-    placeholder: 'Tell Forge what to build or fix…',
+    label: 'Vibe',
+    hint: 'The AI edits files and verifies the build on its own.',
+    placeholder: 'Ask AI for help… (Shift+Enter for newline)',
+    empty: 'Ask questions about your code or get help with programming tasks.',
   },
   plan: {
     label: 'Plan',
-    hint: 'Forge writes a step-by-step plan you run one step at a time.',
-    placeholder: 'Describe the feature. Forge drafts the steps…',
+    hint: 'Plan mode — AI will break your request into structured steps you can review before applying.',
+    placeholder: 'Describe what to build — AI will plan the steps…',
+    empty: 'Describe what you want to build and the AI will create a step-by-step plan.',
   },
 } as const;
