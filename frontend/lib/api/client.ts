@@ -44,7 +44,54 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 
+/**
+ * POST and read a server-sent event stream. Each `data:` line is parsed as JSON and
+ * handed to `onEvent`; the stream ends on `[DONE]` or when the body closes.
+ */
+async function streamEvents<T>(
+  endpoint: string,
+  data: unknown,
+  onEvent: (event: T) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...await authHeaders(),
+    },
+    body: JSON.stringify(data ?? {}),
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    await handleResponse(response);
+    throw new ApiError(response.status, 'Empty stream');
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (payload === '[DONE]') return;
+      try {
+        onEvent(JSON.parse(payload) as T);
+      } catch {
+        // a malformed frame is dropped; the next one carries the state
+      }
+    }
+  }
+}
+
 export const apiClient = {
+  stream: streamEvents,
+
   get: async <T>(endpoint: string): Promise<T> => {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'GET',
