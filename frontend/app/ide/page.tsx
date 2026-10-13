@@ -36,7 +36,6 @@ export default function IDEPage() {
   const setMessages = chatMode === 'build' ? setBuildMessages : setPlanMessages;
 
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [includeActiveFile, setIncludeActiveFile] = useState(true);
   const [reverting, setReverting] = useState<{ messageId: string; index: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
@@ -240,7 +239,7 @@ export default function IDEPage() {
 
   /** Context the agent gets with every request: the open file (if included) plus pinned selections. */
   const buildFileContext = (contexts: CodeContext[]) => {
-    const base = includeActiveFile && activeFile && currentFileContent !== null
+    const base = activeFile && currentFileContent !== null
       ? [{ path: activeFilePath!, content: editedContent || currentFileContent }]
       : [];
     const selections = contexts.map(ctx => ({
@@ -409,7 +408,7 @@ export default function IDEPage() {
     const contextSnapshot = [...codeContexts];
     const isPlanMode = chatMode === 'plan';
     const attachments = [
-      ...(includeActiveFile && activeFile ? [activeFile.name] : []),
+      ...(activeFile ? [activeFile.name] : []),
       ...contextSnapshot.map(c => `${c.fileName}:${c.startLine}-${c.endLine}`),
     ];
 
@@ -447,9 +446,18 @@ export default function IDEPage() {
         case 'status':
           patchAssistant(m => ({ ...m, statusText: event.text }));
           break;
+        case 'text_delta':
+          patchAssistant(m => ({ ...m, content: m.content + event.text }));
+          break;
         case 'tool_start': {
           const item: ActivityItem = { id: event.id, tool: event.tool, label: event.label, detail: event.detail, status: 'running' };
-          patchAssistant(m => ({ ...m, statusText: `${event.label}${event.detail ? ' ' + event.detail : ''}`, activity: [...(m.activity ?? []), item] }));
+          patchAssistant(m => ({
+            ...m,
+            statusText: `${event.label}${event.detail ? ' ' + event.detail : ''}`,
+            // Text the model wrote before calling a tool stays; the next text starts a new paragraph.
+            content: m.content && !m.content.endsWith('\n\n') ? m.content.trimEnd() + '\n\n' : m.content,
+            activity: [...(m.activity ?? []), item],
+          }));
           break;
         }
         case 'tool_end':
@@ -484,6 +492,8 @@ export default function IDEPage() {
         case 'error':
           finished = true;
           patchAssistant(m => ({ ...m, status: 'error', statusText: undefined, content: event.message }));
+          break;
+        default:
           break;
       }
     };
@@ -1080,8 +1090,6 @@ export default function IDEPage() {
               webSearch={enableWebsearch}
               onWebSearchChange={setEnableWebsearch}
               activeFileName={activeFile?.name ?? null}
-              includeActiveFile={includeActiveFile}
-              onIncludeActiveFileChange={setIncludeActiveFile}
               codeContexts={codeContexts}
               onRemoveContext={handleRemoveContext}
               onOpenFile={handleOpenChangedFile}
