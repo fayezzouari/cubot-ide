@@ -140,6 +140,18 @@ export interface ChatRequest {
   enable_websearch?: boolean;
   /** Sandbox workspace (ROS projects) the agent may run commands in. */
   workspace_id?: string;
+  /** Conversation to append to; omitted starts a new one. */
+  thread_id?: string;
+}
+
+/** One conversation inside a project. */
+export interface ThreadSummary {
+  id: string;
+  project_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
 }
 
 /** One file the agent created or changed during a turn. `previous_content` is null for created files. */
@@ -166,11 +178,14 @@ export interface ChatResponse {
   message: string;
   file_operations: FileOperation[];
   execution_logs?: ExecutionLogEntry[];
+  thread_id?: string;
 }
 
 /** Server-sent events emitted by `POST /chat/{project}/stream`. */
 export type AgentEvent =
   | { type: 'status'; text: string }
+  /** The conversation this turn is saved in (sent first; new when none was given). */
+  | { type: 'thread'; thread_id: string }
   /** A piece of the assistant's answer, in order; concatenate to build the message. */
   | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; id: string; tool: string; label: string; detail: string }
@@ -214,6 +229,7 @@ export interface ChatMessageInDB {
   file_context: FileContext[];
   file_operations: FileOperation[];
   mode?: 'build' | 'plan' | null;
+  thread_id?: string | null;
 }
 
 // Wiring
