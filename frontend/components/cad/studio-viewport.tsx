@@ -247,8 +247,12 @@ function Scene(props: Props & { handleRef: React.Ref<ViewportHandle> }) {
         Array.from({ length: 3 }, async () => {
           for (let key = queue.shift(); key; key = queue.shift()) {
             if (cancelled) return;
-            const pieces = await cadApi.hulls(key);
-            if (pieces?.hulls?.length) hulls.set(key, pieces);
+            try {
+              const pieces = await cadApi.hulls(key);
+              if (pieces?.hulls?.length) hulls.set(key, pieces);
+            } catch (e) {
+              console.warn('[cad] no collision pieces for', key, e); // one convex hull is used instead
+            }
           }
         }),
       );
