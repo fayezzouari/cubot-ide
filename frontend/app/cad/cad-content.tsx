@@ -698,6 +698,9 @@ export default function CadPageContent() {
                     ? `, ${physicsStatus.summary.overlapping} overlapping pair${physicsStatus.summary.overlapping === 1 ? '' : 's'} left as they are`
                     : ''}
                   .
+                  {physicsStatus.summary.fixed === physicsStatus.summary.bodies && physicsStatus.summary.hinges === 0
+                    ? ' Everything is one block on the ground, so nothing moves by itself: drag a part to move it.'
+                    : ''}
                 </span>
               ) : physicsStatus?.status === 'error' ? (
                 <span className="text-red-300">Physics failed: {physicsStatus.error}</span>
