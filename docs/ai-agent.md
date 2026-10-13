@@ -36,13 +36,23 @@ IDE panel ──POST /api/chat/{project}/stream──► ai_service.chat_stream
   serves. Both share `_run_tool`, which executes the call, records file
   operations and command logs, and emits the timeline events. `invoke_model`
   runs in a worker thread so events keep flowing while the model thinks.
+* The model is called with `invoke_model_with_response_stream`; the stream is
+  reassembled into the usual response shape (text blocks, tool calls) while
+  every text delta goes out as a `text_delta` event. Models that emit their
+  chain of thought as `<reasoning>` text have it filtered live and on save.
+  If the streaming API is refused, the call falls back to one shot.
 * Temperature is 0.2 (was 0.7): coding tasks want determinism.
+* Prompt rules: fix every occurrence of a problem, not only the first; never
+  add code comments unless asked; say when a build could not be verified.
+  After `edit_file` the tool result echoes the whole file (up to 300 lines)
+  so the model re-reads what it just changed.
 
 ### Events
 
 | type | payload | panel shows |
 | --- | --- | --- |
 | `status` | `text` | "Thinking" / "Planning" in the live header |
+| `text_delta` | `text` | the answer, token by token, rendered as markdown while it streams |
 | `tool_start` | `id, tool, label, detail` | a running row: *Editing `main.cpp`* |
 | `tool_end` | `… ok, summary, file_op, log` | the row resolves; compile/sandbox output expands |
 | `done` | `message, file_operations, execution_logs` | the answer and the changed-files card |
@@ -82,8 +92,8 @@ characters so one noisy build cannot flood the context.
 
 
 * `agent-panel.tsx` — header, conversation, empty state with quick prompts.
-* `agent-composer.tsx` — input, context chips (open file toggle + pinned
-  selections), web search, send/stop (Esc stops).
+* `agent-composer.tsx` — input, context chips (the open file, always sent,
+  plus pinned selections), web search, send/stop (Esc stops).
 * `activity-timeline.tsx` — the per-turn tool timeline; collapses to one line
   when the turn is over.
 * `file-change-card.tsx` — changed files with +/− counts, open and revert.
