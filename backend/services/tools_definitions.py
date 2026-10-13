@@ -1,5 +1,5 @@
 """
-Tool definitions for the Forge coding agent (Bedrock invoke_model format).
+Tool definitions for the IDE coding agent (Bedrock invoke_model format).
 
 Every tool is a `toolSpec` dict. `get_tool_config` assembles the set the agent
 may use for one request: file tools always, the sandbox/compile/web tools only
