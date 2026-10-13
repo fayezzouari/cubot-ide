@@ -41,6 +41,14 @@ TextSink = Optional[Callable[[str], Awaitable[None]]]
 
 REASONING_TAGS = ("reasoning", "thinking", "analysis", "reflection")
 _OPENERS = tuple(f"<{t}>" for t in REASONING_TAGS)
+# Where an unclosed reasoning span ends: a line break, or a sentence end followed by a list marker.
+_REASONING_END = re.compile(r"\n|(?<=[.!?])\s*(?=(?:[-*]|\d+\.)\s)")
+
+
+def _unclosed_reasoning_end(text: str) -> int:
+    """Index where an unclosed reasoning span stops, or -1 when it has not stopped yet."""
+    match = _REASONING_END.search(text)
+    return match.start() if match else -1
 
 
 class _ReasoningFilter:
@@ -60,13 +68,18 @@ class _ReasoningFilter:
         while self.buffer:
             if self.closing:
                 end = self.buffer.lower().find(self.closing)
-                if end == -1:
-                    if len(self.buffer) > len(self.closing) * 8:
-                        self.buffer = self.buffer[-len(self.closing):]
-                    return out
-                self.buffer = self.buffer[end + len(self.closing):]
-                self.closing = None
-                continue
+                if end != -1:
+                    self.buffer = self.buffer[end + len(self.closing):]
+                    self.closing = None
+                    continue
+                stop = _unclosed_reasoning_end(self.buffer)
+                if stop != -1:
+                    self.buffer = self.buffer[stop:].lstrip("\n")
+                    self.closing = None
+                    continue
+                if len(self.buffer) > len(self.closing) * 8:
+                    self.buffer = self.buffer[-len(self.closing):]
+                return out
             lower = self.buffer.lower()
             starts = [(lower.find(o), o) for o in _OPENERS if lower.find(o) != -1]
             if starts:
@@ -655,6 +668,13 @@ class AIService:
     def _strip_reasoning_tags(text: str) -> str:
         for tag in REASONING_TAGS:
             text = re.sub(rf"<{tag}>.*?</{tag}>", "", text, flags=re.DOTALL | re.IGNORECASE)
+            while True:
+                start = text.lower().find(f"<{tag}>")
+                if start == -1:
+                    break
+                rest = text[start + len(tag) + 2:]
+                stop = _unclosed_reasoning_end(rest)
+                text = text[:start] + (rest[stop:].lstrip("\n") if stop != -1 else "")
         return re.sub(r"\n{3,}", "\n\n", text).strip()
 
     # ----------------------------------------------------------------- prompts
@@ -716,7 +736,9 @@ class AIService:
 - Include every needed #include / import. Respect memory and timing limits of the target.
 - ROS packages: register new nodes in package.xml, CMakeLists.txt or setup.py.
 - Never claim that code builds or runs unless a tool result showed it. If compile_project fails for a
-  reason unrelated to the code (tool error, missing toolchain), say the build was not verified.
+  reason unrelated to the code (tool error, missing toolchain), say the build was not verified. Do not
+  work around a toolchain failure by creating files, renaming files or restructuring the project.
+- Do not add includes, files or features the user did not ask for unless the build needs them.
 """
 
     def _build_plan_system_prompt(self, compiler: Optional[str], snapshot: str) -> str:
