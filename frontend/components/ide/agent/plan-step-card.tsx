@@ -1,38 +1,34 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertCircle, Check, ChevronDown, ChevronUp, Loader2, Terminal, Trash2, Zap } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, ChevronRight, Loader2, Play, X } from 'lucide-react';
 import MarkdownRenderer from '@/components/ui/markdown-renderer';
 import type { ExecutionLog, PlanStep } from '@/lib/mock-data';
 import FileChangeCard from './file-change-card';
 
-function ExecutionLogBlock({ logs }: { logs: ExecutionLog[] }) {
-  const [expanded, setExpanded] = useState(false);
+function CommandLogs({ logs }: { logs: ExecutionLog[] }) {
+  const [open, setOpen] = useState(false);
   if (logs.length === 0) return null;
   return (
-    <div className="mt-1.5">
+    <div>
       <button
-        onClick={() => setExpanded(v => !v)}
-        className="flex items-center gap-1 text-[10px] text-white/25 hover:text-white/40 transition-colors cursor-pointer"
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1 text-[10.5px] text-white/35 hover:text-white/65 transition-colors cursor-pointer"
       >
-        <Terminal size={9} />
-        {expanded ? 'Hide' : 'Show'} {logs.length} command{logs.length > 1 ? 's' : ''}
-        {expanded ? <ChevronUp size={9} /> : <ChevronDown size={9} />}
+        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        {logs.length} command{logs.length === 1 ? '' : 's'}
       </button>
-      {expanded && (
-        <div className="mt-1 space-y-1.5">
+      {open && (
+        <div className="mt-1 space-y-1">
           {logs.map((log, i) => (
-            <div key={i} className="rounded-lg bg-black/40 border border-white/[0.05] p-2">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${log.success ? 'bg-green-500' : 'bg-red-500'}`} />
-                <code className="text-[10px] text-white/50 font-mono truncate">{log.command}</code>
+            <div key={i} className="rounded border border-white/[0.06] bg-black/50 p-2">
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${log.success ? 'bg-green-400' : 'bg-red-400'}`} />
+                <code className="truncate font-mono text-[10.5px] text-white/60">{log.command}</code>
               </div>
-              {log.stdout && (
-                <pre className="text-[9px] text-white/30 font-mono whitespace-pre-wrap leading-relaxed max-h-24 overflow-y-auto">{log.stdout.trim()}</pre>
-              )}
-              {log.stderr && (
-                <pre className="text-[9px] text-red-400/50 font-mono whitespace-pre-wrap leading-relaxed max-h-16 overflow-y-auto">{log.stderr.trim()}</pre>
-              )}
+              {log.stdout && <pre className="max-h-24 overflow-y-auto whitespace-pre-wrap font-mono text-[10.5px] leading-relaxed text-white/40">{log.stdout.trim()}</pre>}
+              {log.stderr && <pre className="max-h-16 overflow-y-auto whitespace-pre-wrap font-mono text-[10.5px] leading-relaxed text-red-300/70">{log.stderr.trim()}</pre>}
             </div>
           ))}
         </div>
@@ -50,93 +46,84 @@ interface PlanStepCardProps {
 
 export default function PlanStepCard({ step, messageId, onRun, onDiscard }: PlanStepCardProps) {
   const [expanded, setExpanded] = useState(true);
-  const isPending = step.status === 'pending';
-  const isExecuting = step.status === 'executing';
-  const isDone = step.status === 'done';
-  const isDiscarded = step.status === 'discarded';
-  const failed = isDone && step.executionResult && !step.executionResult.success;
+  const running = step.status === 'executing';
+  const discarded = step.status === 'discarded';
+  const done = step.status === 'done';
+  const failed = done && step.executionResult && !step.executionResult.success;
+  const pending = step.status === 'pending';
+
+  const badge = failed
+    ? 'bg-red-500/20 text-red-300'
+    : done
+    ? 'bg-green-500/20 text-green-300'
+    : running
+    ? 'bg-white/[0.12] text-white/90'
+    : pending
+    ? 'bg-blue-500/20 text-blue-200'
+    : 'bg-white/[0.06] text-white/35';
 
   return (
-    <div
-      className={`rounded-xl border transition-colors ${
-        isDone && !failed
-          ? 'border-green-500/20 bg-green-500/[0.04]'
-          : failed
-          ? 'border-red-500/20 bg-red-500/[0.03]'
-          : isExecuting
-          ? 'border-blue-500/20 bg-blue-500/[0.04]'
-          : isDiscarded
-          ? 'border-white/[0.05] bg-transparent opacity-40'
-          : 'border-white/[0.08] bg-white/[0.02]'
-      }`}
-    >
-      <div className="flex items-center gap-2 px-3 py-2">
-        <div
-          className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${
-            isDone && !failed
-              ? 'bg-green-500/20 text-green-400'
-              : failed
-              ? 'bg-red-500/20 text-red-400'
-              : isDiscarded
-              ? 'bg-white/[0.06] text-white/30'
-              : 'bg-blue-500/10 text-blue-400'
-          }`}
-        >
-          {isExecuting ? <Loader2 size={10} className="animate-spin" /> : isDone && !failed ? <Check size={10} /> : failed ? <AlertCircle size={10} /> : step.stepNumber}
-        </div>
-        <span
-          className={`flex-1 text-[11px] font-semibold leading-tight ${
-            isDiscarded ? 'line-through text-white/30' : isDone && !failed ? 'text-green-300/80' : failed ? 'text-red-300/80' : isExecuting ? 'text-blue-300/80' : 'text-white/70'
-          }`}
-        >
+    <div className={`rounded-md border bg-[#121212] ${running ? 'border-white/20' : 'border-white/[0.08]'} ${discarded ? 'opacity-40' : ''}`}>
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-[10px] font-semibold ${badge}`}>
+          {running ? <Loader2 size={9} className="animate-spin" /> : failed ? <AlertCircle size={9} /> : done ? <Check size={9} /> : step.stepNumber}
+        </span>
+        <span className={`min-w-0 flex-1 truncate text-[12px] ${discarded ? 'line-through text-white/35' : 'text-white/85'}`}>
           {step.title}
         </span>
-        {isExecuting && <span className="text-[9px] text-blue-400/60 font-medium">Running…</span>}
-        {isDone && !failed && <span className="text-[9px] text-green-400/60 font-medium">Done</span>}
-        {failed && <span className="text-[9px] text-red-400/60 font-medium">Failed</span>}
-        {step.body && !isExecuting && (
-          <button onClick={() => setExpanded(v => !v)} className="text-white/20 hover:text-white/50 transition-colors cursor-pointer">
-            {expanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+        {running && <span className="text-[10.5px] text-white/50">Running</span>}
+        {done && !failed && <span className="text-[10.5px] text-green-300/70">Done</span>}
+        {failed && <span className="text-[10.5px] text-red-300/80">Failed</span>}
+        {pending && (
+          <>
+            <button
+              type="button"
+              onClick={() => onRun(messageId, step.id)}
+              className="flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-[10.5px] font-medium text-black hover:bg-white/85 transition-colors cursor-pointer"
+            >
+              <Play size={9} fill="currentColor" />
+              Run
+            </button>
+            <button
+              type="button"
+              onClick={() => onDiscard(messageId, step.id)}
+              title="Skip this step"
+              className="flex h-5 w-5 items-center justify-center rounded text-white/35 hover:bg-white/[0.07] hover:text-white/80 transition-colors cursor-pointer"
+            >
+              <X size={11} />
+            </button>
+          </>
+        )}
+        {step.body && !running && (
+          <button
+            type="button"
+            onClick={() => setExpanded(v => !v)}
+            className="flex h-5 w-5 items-center justify-center rounded text-white/30 hover:text-white/70 cursor-pointer"
+            aria-label={expanded ? 'Collapse step' : 'Expand step'}
+          >
+            {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           </button>
         )}
       </div>
 
-      {step.body && expanded && !isExecuting && (
-        <div className="px-3 pb-2">
-          <div className="text-[11px] text-white/40 leading-relaxed pl-7">
-            <MarkdownRenderer content={step.body} />
-          </div>
-        </div>
-      )}
-
-      {isDone && step.executionResult && (
-        <div className="px-3 pb-2.5 pl-10 space-y-1">
-          {step.executionResult.message && (
-            <div className="text-[11px] text-white/40 leading-snug">
-              <MarkdownRenderer content={step.executionResult.message} />
+      {((step.body && expanded && !running) || (done && step.executionResult)) && (
+        <div className="space-y-1.5 border-t border-white/[0.06] px-2 py-1.5 pl-8">
+          {step.body && expanded && !running && (
+            <div className="text-[11.5px] leading-relaxed text-white/50">
+              <MarkdownRenderer content={step.body} />
             </div>
           )}
-          {step.executionResult.fileOps.length > 0 && <FileChangeCard changes={step.executionResult.fileOps} />}
-          <ExecutionLogBlock logs={step.executionResult.logs} />
-        </div>
-      )}
-
-      {isPending && (
-        <div className="flex items-center gap-1.5 px-3 pb-2.5 pl-10">
-          <button
-            onClick={() => onRun(messageId, step.id)}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-colors cursor-pointer"
-          >
-            <Zap size={9} />
-            Execute step
-          </button>
-          <button
-            onClick={() => onDiscard(messageId, step.id)}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-white/[0.04] border border-white/[0.08] text-white/30 hover:text-white/50 hover:bg-white/[0.08] transition-colors cursor-pointer"
-          >
-            <Trash2 size={9} />
-            Discard
-          </button>
+          {done && step.executionResult && (
+            <>
+              {step.executionResult.message && (
+                <div className="text-[11.5px] leading-relaxed text-white/65">
+                  <MarkdownRenderer content={step.executionResult.message} />
+                </div>
+              )}
+              {step.executionResult.fileOps.length > 0 && <FileChangeCard changes={step.executionResult.fileOps} />}
+              <CommandLogs logs={step.executionResult.logs} />
+            </>
+          )}
         </div>
       )}
     </div>
