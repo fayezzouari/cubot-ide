@@ -153,7 +153,7 @@ export default function AgentPanel(props: AgentPanelProps) {
             message={message}
             onOpenFile={onOpenFile}
             onRevert={index => onRevertChange(message.id, index)}
-            revertingIndex={reverting?.messageId === message.id ? reverting.index : null}
+            revertingIndex={reverting && reverting.messageId === message.id ? reverting.index : null}
             onRunStep={onRunStep}
             onRunAllSteps={onRunAllSteps}
             onDiscardStep={onDiscardStep}
