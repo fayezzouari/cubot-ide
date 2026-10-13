@@ -6,7 +6,8 @@
  * piece); a revolute mate becomes a hinge about the mated port's axis; a
  * body with a copy mated to the ground is static. Parts placed by hand are
  * free bodies: they fall, rest and collide. Dragging a part drives its
- * body kinematically, so hinged neighbours swing and free parts get pushed.
+ * body kinematically, so hinged neighbours swing and free parts get pushed;
+ * a static body can be dragged too and stays where it is released.
  *
  * Rapier works in metres; the assembly is in millimetres. Poses come back
  * in millimetres and degrees (Euler XYZ), the viewer's convention.
@@ -299,8 +300,9 @@ export async function buildPhysics(
       const k = index.get(instanceId);
       if (k === undefined) return false;
       const body = bodyOf.get(k)!;
+      // A grounded body follows the pointer too (and stays put when released), so an assembly
+      // that is one block fixed to the ground can still be moved to see its hinges react.
       const wasDynamic = body.isDynamic();
-      if (!wasDynamic && body.isFixed()) return false; // grounded: it doesn't move
       const t = body.translation();
       held = { body, offset: new THREE.Vector3(point[0] * MM - t.x, point[1] * MM - t.y, point[2] * MM - t.z), wasDynamic };
       body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
@@ -316,7 +318,7 @@ export async function buildPhysics(
     },
     release() {
       if (!held) return;
-      held.body.setBodyType(R.RigidBodyType.Dynamic, true);
+      held.body.setBodyType(held.wasDynamic ? R.RigidBodyType.Dynamic : R.RigidBodyType.Fixed, true);
       held = null;
     },
     dispose() {
