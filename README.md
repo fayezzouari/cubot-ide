@@ -152,6 +152,9 @@ The assistant in the IDE side panel is a coding agent: it reads the project, edi
 - A changed-files card per turn. Open any file in the editor, or **Revert** it (the previous content is kept on the message).
 - **Fix with AI** on the compile dialog hands the errors straight to the agent.
 
+**Conversations**
+- Every project keeps as many chats as you like. `+` starts a new one, the clock lists past chats (auto-titled from the first message) with rename and delete. The IDE reopens the last one you used.
+
 **Context**
 - The open file is always attached; requests that name no file refer to it. Select code in the editor and click *Add to chat* to pin a range.
 - Optional web search (Exa) for current library docs and datasheets.
