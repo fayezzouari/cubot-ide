@@ -6,7 +6,7 @@
 
 <p align="center">
   A web-based IDE for embedded systems and robotics development.<br/>
-  Code editor · Hardware simulator · AI assistant · CAD studio · Visual block programming — all in one platform.
+  Code editor · Hardware simulator · Forge coding agent · CAD studio · Visual block programming — all in one platform.
 </p>
 
 > [!NOTE]
@@ -126,7 +126,7 @@ The IDE is built around Monaco Editor — the same engine that powers VS Code.
 - Compiler runs in an isolated Docker container per toolchain
 - Supported targets: Arduino (avr-gcc), TI ARM (arm-none-eabi-gcc), ESP32 (xtensa)
 - Compile output streams to an integrated terminal panel
-- Errors are highlighted and can be explained by the AI assistant
+- Errors are highlighted, explained by the AI, or handed to Forge to fix
 
 **Serial Monitor**
 - Connect to physical hardware over USB serial
@@ -139,23 +139,28 @@ The IDE is built around Monaco Editor — the same engine that powers VS Code.
 
 ---
 
-### AI Assistant
+### Forge — the coding agent
 
-The chat sidebar is embedded directly in the IDE and powered by AWS Bedrock (default), with optional OpenAI and Google GenAI backends.
+Forge is the coding agent in the IDE side panel. It reads the project, edits files with tools, compiles, and fixes what breaks, while the panel shows every step as it happens. Details in [docs/forge-agent.md](docs/forge-agent.md).
 
-**Chat Modes**
-- **Vibe** — Conversational coding help. Ask questions, get explanations, debug logic
-- **Plan** — Structured multi-step code generation. The AI produces a plan and executes each step sequentially, streaming results
+**Modes**
+- **Build** — Forge makes the change itself: reads the relevant files, edits them, runs the compiler, and iterates on errors (up to three rounds) before reporting back.
+- **Plan** — Forge writes a numbered plan. You run the steps one at a time (or all at once); each step runs with the same tools as Build mode.
 
-**Context Awareness**
-- Select files from the explorer to inject them as context into any message
-- The AI reads your entire open file and uses it to give grounded answers
-- Compile errors are automatically forwarded to the AI for explanation
+**What you see while it works**
+- A live activity timeline: *Reading main.cpp*, *Editing main.cpp (+4 −3)*, *Compiling project · Build passed*. Command and compiler output expands inline.
+- A changed-files card per turn. Open any file in the editor, or **Revert** it (the previous content is kept on the message).
+- **Fix with Forge** on the compile dialog hands the errors straight to the agent.
+
+**Context**
+- The open file is attached automatically (toggle it off on the chip). Select code in the editor and click *Add to Forge* to pin a range.
+- Optional web search (Exa) for current library docs and datasheets.
+
+**Agent tools**
+`list_files`, `read_file`, `create_file`, `edit_file` (exact-span replace), `update_file`, `compile_project` (embedded targets), `execute_in_sandbox` (ROS projects), `search_web`.
 
 **Providers**
-- AWS Bedrock (default, configurable model ID)
-- Google GenAI
-- OpenAI
+- AWS Bedrock (default, configurable model ID; Claude and OpenAI-compatible models)
 
 ---
 
