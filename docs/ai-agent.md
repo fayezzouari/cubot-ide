@@ -51,6 +51,7 @@ IDE panel ──POST /api/chat/{project}/stream──► ai_service.chat_stream
 
 | type | payload | panel shows |
 | --- | --- | --- |
+| `thread` | `thread_id` | the conversation the turn is saved in |
 | `status` | `text` | "Thinking" / "Planning" in the live header |
 | `text_delta` | `text` | the answer, token by token, rendered as markdown while it streams |
 | `tool_start` | `id, tool, label, detail` | a running row: *Editing `main.cpp`* |
@@ -77,23 +78,44 @@ the model (`result_for_model`) and kept for the client, which reverts by
 writing it back (or deleting a created file). Tool output is capped at 6 000
 characters so one noisy build cannot flood the context.
 
+## Conversations
+
+Messages belong to a thread (`chat_threads` collection; `thread_id` on each
+message). A project has many threads; the panel header shows the active one,
+`+` starts a new one and the clock icon lists past chats with rename and
+delete. The thread is created on the server with the first message of a new
+chat and titled from that message; the stream announces it in a `thread`
+event. Messages saved before threads existed are adopted into one thread named
+"Earlier conversation" the first time the list is requested.
+
+```
+GET    /api/chat/{project}/threads              list, most recent first
+POST   /api/chat/{project}/threads              create (optional title)
+PUT    /api/chat/{project}/threads/{thread}     rename
+DELETE /api/chat/{project}/threads/{thread}     delete with its messages
+GET    /api/chat/{project}/history?thread_id=   messages of one thread
+```
+
+The IDE remembers the last open thread per project in localStorage.
+
 ## Modes
 
 * **Vibe** (`plan_mode=false`, `build` in code): the full loop above, up to 30 model turns.
 * **Plan** (`plan_mode=true`): one completion with the plan prompt and the
   conversation history, no tools. The client parses `**Step N: Title**` blocks
   into cards; *Run step* calls `/execute-step`, which runs the Vibe loop scoped
-  to that step (20 turns). Plan and Vibe keep separate histories; messages are
-  stored with their `mode`, so reloading the IDE restores both.
+  to that step (20 turns). Both modes share one thread; each message is stored
+  with its `mode`.
 
 ## Frontend
 
 `frontend/components/ide/agent/`
 
 
-* `agent-panel.tsx` — header, conversation, empty state with quick prompts.
+* `agent-panel.tsx` — header with thread title, new chat and history popover,
+  conversation, empty state with quick prompts.
 * `agent-composer.tsx` — input, context chips (the open file, always sent,
-  plus pinned selections), web search, send/stop (Esc stops).
+  plus pinned selections), mode menu, web search, send/stop (Esc stops).
 * `activity-timeline.tsx` — the per-turn tool timeline; collapses to one line
   when the turn is over.
 * `file-change-card.tsx` — changed files with +/− counts, open and revert.
