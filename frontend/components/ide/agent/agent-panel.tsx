@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { AlertCircle, Bot, CheckCheck, ListChecks, Loader2, Sparkles, Trash2, User, Zap } from 'lucide-react';
 import MarkdownRenderer from '@/components/ui/markdown-renderer';
 import { AGENT, AGENT_MODES } from '@/lib/branding';
 import type { ChatMessage, ChatMode, FileChange } from '@/lib/mock-data';
-import AgentMark from './agent-mark';
 import ActivityTimeline from './activity-timeline';
 import FileChangeCard from './file-change-card';
 import PlanStepCard from './plan-step-card';
@@ -44,8 +44,6 @@ export interface AgentPanelProps {
   quickPrompts?: Array<{ label: string; prompt: string; icon?: 'fix' | 'explain' | 'improve' }>;
 }
 
-const QUICK_GLYPH = { fix: '☠', explain: '?', improve: '⚒' } as const;
-
 export default function AgentPanel(props: AgentPanelProps) {
   const {
     messages, mode, onModeChange, busy, input, onInputChange, onSend, onStop, onClear,
@@ -73,62 +71,74 @@ export default function AgentPanel(props: AgentPanelProps) {
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const empty = messages.length === 0;
-  const modeColor = mode === 'plan' ? '#5ab4ff' : '#ffb000';
-
   return (
-    <aside className="scanlines relative flex h-full w-full flex-col border-l-2 border-forge-line bg-forge-panel">
+    <aside className="w-full h-full border-l border-white/[0.06] flex flex-col bg-[#0b0b0b]">
       {/* Header */}
-      <div className="flex h-11 flex-shrink-0 items-center gap-3 border-b-2 border-forge-line bg-black px-3">
-        <AgentMark size={24} active={busy} />
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="font-pixel text-[11px] font-bold uppercase tracking-wide text-forge-ink">{AGENT.name}</span>
-          <span className="truncate font-pixel text-[7px] uppercase text-forge-dim">
-            {busy ? <span className="animate-pixel-blink text-forge-amber">working</span> : AGENT.tagline}
-          </span>
+      <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center gap-2 flex-shrink-0">
+        <div className="w-6 h-6 rounded-md bg-white/[0.06] flex items-center justify-center">
+          <Bot size={13} className="text-white/60" />
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <span
-            className="pixel-border px-1.5 py-0.5 font-pixel text-[7px] uppercase text-black"
-            style={{ ['--pb' as string]: modeColor, backgroundColor: modeColor }}
-          >
-            {AGENT_MODES[mode].label}
-          </span>
+        <span className="text-xs font-semibold text-white/70">{AGENT.name}</span>
+
+        <div className="ml-auto flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
           <button
-            type="button"
-            onClick={onClear}
-            disabled={busy || empty}
-            title="Clear conversation"
-            className="pixel-border pixel-btn bg-black px-1.5 py-0.5 font-pixel text-[7px] uppercase text-forge-dim hover:text-forge-red disabled:opacity-30 disabled:hover:text-forge-dim cursor-pointer disabled:cursor-default"
+            onClick={() => onModeChange('build')}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
+              mode === 'build' ? 'bg-white/[0.08] text-white/80' : 'text-white/30 hover:text-white/50'
+            }`}
           >
-            clr
+            <Zap size={10} />
+            {AGENT_MODES.build.label}
+          </button>
+          <button
+            onClick={() => onModeChange('plan')}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
+              mode === 'plan' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'text-white/30 hover:text-white/50'
+            }`}
+          >
+            <ListChecks size={10} />
+            {AGENT_MODES.plan.label}
           </button>
         </div>
+
+        <button
+          onClick={onClear}
+          disabled={busy}
+          title="Clear conversation"
+          className="p-1 rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.06] disabled:opacity-30 transition-colors cursor-pointer ml-1"
+        >
+          <Trash2 size={12} />
+        </button>
+
+        {busy && <Loader2 size={12} className="animate-spin text-white/30 ml-1" />}
       </div>
 
-      {/* Conversation */}
-      <div ref={scrollRef} className="relative flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        {empty && (
-          <div className="flex h-full flex-col items-center justify-center px-2 text-center">
-            <AgentMark size={64} className="mb-5" />
-            <p className="font-pixel text-[13px] font-bold uppercase tracking-wide text-forge-ink">{AGENT.name}</p>
-            <p className="mt-1 font-pixel text-[7px] uppercase text-forge-dim">{AGENT.tagline}</p>
-            <p className="mt-3 max-w-[260px] font-pixel-body text-[16px] leading-tight text-forge-dim">
-              {mode === 'plan' ? AGENT_MODES.plan.hint : AGENT.intro}
-            </p>
+      {/* Plan mode banner */}
+      {mode === 'plan' && (
+        <div className="px-3 py-2 border-b border-blue-500/10 bg-blue-500/[0.04] flex items-center gap-2">
+          <ListChecks size={11} className="text-blue-400 flex-shrink-0" />
+          <p className="text-[10px] text-blue-300/60 leading-snug">{AGENT_MODES.plan.hint}</p>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8">
+            <div className="w-10 h-10 rounded-xl border border-white/[0.08] bg-white/[0.04] flex items-center justify-center mb-4">
+              <Bot size={18} className="text-white/30" />
+            </div>
+            <p className="text-xs font-semibold text-white/60 mb-1">{AGENT.name}</p>
+            <p className="text-[11px] text-white/25 leading-relaxed max-w-[200px]">{AGENT_MODES[mode].empty}</p>
             {quickPrompts.length > 0 && (
-              <div className="mt-6 flex w-full max-w-[280px] flex-col gap-3">
-                <p className="font-pixel text-[7px] uppercase text-forge-dim/70">— select —</p>
+              <div className="mt-4 flex w-full max-w-[220px] flex-col gap-1.5">
                 {quickPrompts.map(q => (
                   <button
                     key={q.label}
-                    type="button"
                     onClick={() => onSend(q.prompt)}
                     disabled={busy}
-                    className="pixel-border pixel-btn group flex items-center gap-3 bg-black px-3 py-2 text-left font-pixel-body text-[16px] leading-none text-forge-ink hover:bg-forge-raised disabled:opacity-40 cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg border border-white/[0.08] bg-white/[0.02] text-left text-[10px] text-white/40 hover:text-white/70 hover:bg-white/[0.05] disabled:opacity-40 transition-colors cursor-pointer"
                   >
-                    <span className="w-3 font-pixel text-[9px] text-forge-amber opacity-0 group-hover:opacity-100">▶</span>
-                    <span className="w-4 font-pixel text-[9px] text-forge-dim">{q.icon ? QUICK_GLYPH[q.icon] : '•'}</span>
                     {q.label}
                   </button>
                 ))}
@@ -141,7 +151,6 @@ export default function AgentPanel(props: AgentPanelProps) {
           <MessageRow
             key={message.id}
             message={message}
-            mode={mode}
             onOpenFile={onOpenFile}
             onRevert={index => onRevertChange(message.id, index)}
             revertingIndex={reverting?.messageId === message.id ? reverting.index : null}
@@ -159,7 +168,6 @@ export default function AgentPanel(props: AgentPanelProps) {
         onStop={onStop}
         busy={busy}
         mode={mode}
-        onModeChange={onModeChange}
         webSearch={webSearch}
         onWebSearchChange={onWebSearchChange}
         activeFileName={activeFileName}
@@ -173,10 +181,9 @@ export default function AgentPanel(props: AgentPanelProps) {
 }
 
 function MessageRow({
-  message, mode, onOpenFile, onRevert, revertingIndex, onRunStep, onRunAllSteps, onDiscardStep,
+  message, onOpenFile, onRevert, revertingIndex, onRunStep, onRunAllSteps, onDiscardStep,
 }: {
   message: ChatMessage;
-  mode: ChatMode;
   onOpenFile: (change: FileChange) => void;
   onRevert: (index: number) => void;
   revertingIndex: number | null;
@@ -184,24 +191,7 @@ function MessageRow({
   onRunAllSteps: (messageId: string) => void;
   onDiscardStep: (messageId: string, stepId: string) => void;
 }) {
-  if (message.role === 'user') {
-    return (
-      <div className="flex justify-end pr-1">
-        <div className="pixel-border max-w-[88%] bg-forge-raised px-3 py-2" style={{ ['--pb' as string]: '#3a2f22' }}>
-          <div className="mb-1 flex flex-wrap items-center gap-2 font-pixel text-[7px] uppercase text-forge-dim">
-            <span>you</span>
-            {message.attachments?.map(a => (
-              <span key={a} className="font-pixel-body text-[13px] normal-case text-forge-dim/80">[{a}]</span>
-            ))}
-          </div>
-          <p className="whitespace-pre-wrap break-words font-pixel-body text-[16px] leading-tight text-forge-ink" style={{ wordBreak: 'break-word' }}>
-            {message.content}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
+  const isUser = message.role === 'user';
   const streaming = message.status === 'streaming';
   const errored = message.status === 'error';
   const steps = message.planSteps ?? [];
@@ -210,34 +200,58 @@ function MessageRow({
   const changes = message.fileOps ?? [];
 
   return (
-    <div className="flex items-start gap-3">
-      <AgentMark size={22} active={streaming} className="mt-0.5" />
-      <div className="min-w-0 flex-1 space-y-3">
-        {(activity.length > 0 || streaming) && (
-          <ActivityTimeline items={activity} live={streaming} statusText={message.statusText} />
-        )}
+    <div className={`flex gap-2 items-start ${isUser ? 'flex-row-reverse' : ''}`}>
+      <div className={`w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-md ${isUser ? 'bg-white/[0.06] text-white/40' : 'bg-blue-500/10 text-blue-400'}`}>
+        {isUser ? <User size={12} /> : <Bot size={12} />}
+      </div>
 
-        {errored && (
-          <div className="pixel-border bg-black px-3 py-2 font-pixel-body text-[15px] leading-tight text-forge-red" style={{ ['--pb' as string]: '#ff4d4d' }}>
-            <span className="mr-2 font-pixel text-[8px] uppercase">error</span>
-            {message.content || 'Something went wrong.'}
+      <div
+        className={`flex-1 min-w-0 text-xs leading-relaxed ${isUser ? 'px-3 py-2.5 rounded-xl bg-white/[0.06] text-white/70' : 'bg-transparent text-white/60'}`}
+        style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
+      >
+        {isUser ? (
+          <>
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="mb-1 flex flex-wrap gap-1">
+                {message.attachments.map(a => (
+                  <span key={a} className="rounded border border-white/[0.1] px-1 font-mono text-[9px] text-white/35">{a}</span>
+                ))}
+              </div>
+            )}
+            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          </>
+        ) : (
+          <div className="px-1">
+            {(activity.length > 0 || streaming) && (
+              <ActivityTimeline items={activity} live={streaming} statusText={message.statusText} />
+            )}
+
+            {streaming && activity.length === 0 && (
+              <div className="flex items-center gap-2 text-white/30 py-1">
+                <Sparkles size={11} className="animate-pulse" />
+                <span>{message.statusText || 'Thinking…'}</span>
+              </div>
+            )}
+
+            {errored && (
+              <div className="flex items-start gap-1.5 rounded-lg border border-red-500/20 bg-red-500/[0.04] px-2.5 py-2 text-[11px] text-red-300/80">
+                <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />
+                <span>{message.content || 'Something went wrong.'}</span>
+              </div>
+            )}
+
+            {!errored && message.content && !hasSteps && (
+              <div className="prose prose-sm max-w-none break-words [&>*]:break-words [&_pre]:whitespace-pre-wrap [&_code]:break-words [&_p]:break-words">
+                <MarkdownRenderer content={message.content} />
+              </div>
+            )}
+
+            {hasSteps && <PlanSteps message={message} steps={steps} onRunStep={onRunStep} onRunAllSteps={onRunAllSteps} onDiscardStep={onDiscardStep} />}
+
+            {changes.length > 0 && (
+              <FileChangeCard changes={changes} onOpen={onOpenFile} onRevert={onRevert} revertingIndex={revertingIndex} />
+            )}
           </div>
-        )}
-
-        {!errored && message.content && !hasSteps && (
-          <div className="font-pixel-body text-[16px] leading-tight text-forge-ink/90">
-            <MarkdownRenderer content={message.content} variant="pixel" />
-          </div>
-        )}
-
-        {hasSteps && <PlanSteps message={message} steps={steps} onRunStep={onRunStep} onRunAllSteps={onRunAllSteps} onDiscardStep={onDiscardStep} />}
-
-        {changes.length > 0 && (
-          <FileChangeCard changes={changes} onOpen={onOpenFile} onRevert={onRevert} revertingIndex={revertingIndex} />
-        )}
-
-        {message.mode && message.mode !== mode && (
-          <p className="font-pixel text-[7px] uppercase text-forge-dim/60">{AGENT_MODES[message.mode].label} mode</p>
         )}
       </div>
     </div>
@@ -261,31 +275,29 @@ function PlanSteps({
   const pending = steps.filter(s => s.status === 'pending').length;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {message.content && (
-        <div className="font-pixel-body text-[15px] leading-tight text-forge-dim">
-          <MarkdownRenderer content={message.content} variant="pixel" />
+        <div className="px-1 pb-1 prose prose-sm max-w-none text-white/40 text-[11px]">
+          <MarkdownRenderer content={message.content} />
         </div>
       )}
-      <div className="font-pixel text-[8px] uppercase tracking-wide text-forge-blue">
-        ≡ quest log · {steps.length} step{steps.length === 1 ? '' : 's'}
-      </div>
       {visible.map(step => (
         <PlanStepCard key={step.id} step={step} messageId={message.id} onRun={onRunStep} onDiscard={onDiscardStep} />
       ))}
       {hidden > 0 && (
-        <p className="text-center font-pixel text-[7px] uppercase text-forge-dim/70">
-          ▼ {hidden} more locked ▼
-        </p>
+        <div className="flex items-center gap-2 px-3 py-2">
+          <div className="flex-1 h-px bg-white/[0.06]" />
+          <span className="text-[10px] text-white/20 whitespace-nowrap">{hidden} more step{hidden > 1 ? 's' : ''} to review</span>
+          <div className="flex-1 h-px bg-white/[0.06]" />
+        </div>
       )}
       {pending > 1 && !anyRunning && (
         <button
-          type="button"
           onClick={() => onRunAllSteps(message.id)}
-          className="pixel-border pixel-btn w-full bg-black py-1.5 font-pixel text-[8px] uppercase text-forge-blue hover:bg-forge-raised cursor-pointer"
-          style={{ ['--pb' as string]: '#5ab4ff' }}
+          className="w-full flex items-center justify-center gap-1.5 mt-1 py-1.5 rounded-xl text-[10px] font-semibold border border-blue-500/20 bg-blue-500/[0.06] text-blue-400 hover:bg-blue-500/10 transition-colors cursor-pointer"
         >
-          ▶▶ run all {pending} steps
+          <CheckCheck size={11} />
+          Execute all {pending} steps
         </button>
       )}
     </div>
