@@ -6,4 +6,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     binutils-arm-none-eabi \
     && rm -rf /var/lib/apt/lists/*
 
+LABEL cubot.keep="true"
+
 WORKDIR /src
