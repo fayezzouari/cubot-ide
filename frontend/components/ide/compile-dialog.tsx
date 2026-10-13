@@ -1,7 +1,8 @@
 'use client';
 
 import ReactMarkdown from 'react-markdown';
-import { Loader2, Play, Sparkles, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { Loader2, Play, Sparkles, CheckCircle2, XCircle, AlertCircle, Flame } from 'lucide-react';
+import { AGENT } from '@/lib/branding';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
@@ -19,6 +20,8 @@ interface CompileDialogProps {
   onSelectCompiler: (compiler: CompilerType) => void;
   onCompile: () => void;
   onExplainLogs: () => void;
+  /** Hand the errors to the coding agent, which fixes and recompiles. */
+  onFixWithAgent?: () => void;
   isCompiling: boolean;
   isExplaining: boolean;
   compileLogs: string;
@@ -39,6 +42,7 @@ export default function CompileDialog({
   onSelectCompiler,
   onCompile,
   onExplainLogs,
+  onFixWithAgent,
   isCompiling,
   isExplaining,
   compileLogs,
@@ -120,6 +124,15 @@ export default function CompileDialog({
               <div className="flex items-center gap-1.5">
                 <AlertCircle size={12} className="text-red-400 flex-shrink-0" />
                 <span className="text-[11px] font-semibold text-red-400 uppercase tracking-wider">Errors</span>
+                {onFixWithAgent && !isCompiling && (
+                  <button
+                    onClick={onFixWithAgent}
+                    className="ml-auto inline-flex items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-200 transition-colors hover:bg-amber-400/20 cursor-pointer"
+                  >
+                    <Flame size={10} />
+                    Fix with {AGENT.name}
+                  </button>
+                )}
               </div>
               <ul className="space-y-1 pl-1">
                 {compileErrors.map((err, idx) => (
