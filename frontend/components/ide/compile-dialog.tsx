@@ -2,7 +2,6 @@
 
 import ReactMarkdown from 'react-markdown';
 import { Loader2, Play, Sparkles, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
-import { AGENT } from '@/lib/branding';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
@@ -20,7 +19,7 @@ interface CompileDialogProps {
   onSelectCompiler: (compiler: CompilerType) => void;
   onCompile: () => void;
   onExplainLogs: () => void;
-  /** Hand the errors to the coding agent, which fixes and recompiles. */
+  /** Hand the errors to the AI assistant, which fixes and recompiles. */
   onFixWithAgent?: () => void;
   isCompiling: boolean;
   isExplaining: boolean;
@@ -124,15 +123,6 @@ export default function CompileDialog({
               <div className="flex items-center gap-1.5">
                 <AlertCircle size={12} className="text-red-400 flex-shrink-0" />
                 <span className="text-[11px] font-semibold text-red-400 uppercase tracking-wider">Errors</span>
-                {onFixWithAgent && !isCompiling && (
-                  <button
-                    onClick={onFixWithAgent}
-                    className="pixel-border pixel-btn ml-auto inline-flex items-center gap-1.5 bg-[#ffb000] px-2 py-1 font-pixel text-[8px] uppercase text-black cursor-pointer"
-                    style={{ ['--pb' as string]: '#ffb000' }}
-                  >
-                    ⚒ Fix with {AGENT.name}
-                  </button>
-                )}
               </div>
               <ul className="space-y-1 pl-1">
                 {compileErrors.map((err, idx) => (
@@ -181,6 +171,16 @@ export default function CompileDialog({
                 <><Sparkles size={12} />Explain</>
               )}
             </button>
+            {onFixWithAgent && hasErrors && (
+              <button
+                onClick={onFixWithAgent}
+                disabled={isCompiling}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-30 border border-blue-500/20 hover:border-blue-500/30 text-blue-400 font-medium text-xs rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+              >
+                <Sparkles size={12} />
+                Fix with AI
+              </button>
+            )}
             <button
               onClick={() => onOpenChange(false)}
               disabled={isCompiling}
