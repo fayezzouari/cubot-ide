@@ -30,6 +30,7 @@ from models.chat import (
     StepExecutionResponse,
     ExecutionLogEntry,
 )
+from services import chat_threads
 from services.tools_definitions import FILE_TOOL_NAMES, get_tool_config
 from services.tools_functions import handle_tool_use, project_snapshot, result_for_model
 
@@ -350,6 +351,11 @@ class AIService:
 
     async def _run_chat(self, project_id: str, request: ChatRequest, on_event: EventSink) -> Dict[str, Any]:
         mode = "plan" if request.plan_mode else "build"
+        thread_id = request.thread_id
+        if not thread_id or await chat_threads.get_thread(project_id, thread_id) is None:
+            thread_id = await chat_threads.create_thread(project_id)
+        if on_event:
+            await on_event({"type": "thread", "thread_id": thread_id})
         history = self._history_messages(request.conversation_history)
         user_content = self._with_file_context(request.message, request.file_context)
 
@@ -383,9 +389,10 @@ class AIService:
                 max_iterations=MAX_CHAT_ITERATIONS, workspace_id=request.workspace_id, on_event=on_event,
             )
 
-        await self._save_message(project_id, MessageRole.USER, request.message, file_context=request.file_context, mode=mode)
-        await self._save_message(project_id, MessageRole.ASSISTANT, text, file_operations=file_operations, mode=mode)
-        return {"message": text, "file_operations": file_operations, "execution_logs": logs}
+        await self._save_message(project_id, thread_id, MessageRole.USER, request.message, file_context=request.file_context, mode=mode)
+        await self._save_message(project_id, thread_id, MessageRole.ASSISTANT, text, file_operations=file_operations, mode=mode)
+        await chat_threads.touch_thread(project_id, thread_id, first_message=request.message)
+        return {"message": text, "file_operations": file_operations, "execution_logs": logs, "thread_id": thread_id}
 
     @staticmethod
     def _history_messages(history: Optional[List[dict]]) -> List[Dict[str, Any]]:
@@ -763,7 +770,7 @@ What to do in this step: files to touch (full paths), functions, key code fragme
     # ----------------------------------------------------------------- storage
 
     async def _save_message(
-        self, project_id: str, role: MessageRole, content: str,
+        self, project_id: str, thread_id: str, role: MessageRole, content: str,
         file_context: Optional[List[FileContext]] = None,
         file_operations: Optional[List[dict]] = None,
         mode: Optional[str] = None,
@@ -771,6 +778,7 @@ What to do in this step: files to touch (full paths), functions, key code fragme
         collection = get_collection(self.COLLECTION_NAME)
         await collection.insert_one({
             "project_id": project_id,
+            "thread_id": thread_id,
             "role": role.value,
             "content": content,
             "timestamp": datetime.utcnow(),
@@ -779,9 +787,12 @@ What to do in this step: files to touch (full paths), functions, key code fragme
             "mode": mode,
         })
 
-    async def get_chat_history(self, project_id: str, limit: int = 50) -> List[ChatMessageInDB]:
+    async def get_chat_history(self, project_id: str, limit: int = 50, thread_id: Optional[str] = None) -> List[ChatMessageInDB]:
         collection = get_collection(self.COLLECTION_NAME)
-        cursor = collection.find({"project_id": project_id}).sort("timestamp", 1).limit(limit)
+        query: Dict[str, Any] = {"project_id": project_id}
+        if thread_id:
+            query["thread_id"] = thread_id
+        cursor = collection.find(query).sort("timestamp", 1).limit(limit)
         messages = []
         async for doc in cursor:
             messages.append(ChatMessageInDB(
@@ -793,12 +804,13 @@ What to do in this step: files to touch (full paths), functions, key code fragme
                 file_context=doc.get("file_context", []),
                 file_operations=doc.get("file_operations", []),
                 mode=doc.get("mode"),
+                thread_id=doc.get("thread_id"),
             ))
         return messages
 
     async def clear_chat_history(self, project_id: str) -> None:
-        collection = get_collection(self.COLLECTION_NAME)
-        await collection.delete_many({"project_id": project_id})
+        await get_collection(self.COLLECTION_NAME).delete_many({"project_id": project_id})
+        await get_collection(chat_threads.THREADS).delete_many({"project_id": project_id})
 
     async def apply_file_operations(self, project_id: str, operations: List[dict]) -> List[dict]:
         """Apply a list of file operations (legacy endpoint)."""
