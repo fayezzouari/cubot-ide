@@ -10,6 +10,8 @@ Client → Server:
   {"type": "start", "hex": "<intel hex content>"}
   {"type": "stop"}
   {"type": "serial_input", "data": "text to send"}
+  {"type": "analog_input", "channel": 0-5, "millivolts": 0-5000}   voltage on A0..A5
+  {"type": "digital_input", "pin": 0-13, "value": true/false}      level on D0..D13
 
 Server → Client:
   {"type": "state", "state": "starting|running|stopped|error"}
@@ -117,6 +119,23 @@ async def simulate_websocket(websocket: WebSocket):
                 data = msg.get("data", "")
                 if data:
                     await simulation_service.send_serial_input(session_id, data)
+
+            elif msg_type == "analog_input":
+                try:
+                    channel = int(msg.get("channel"))
+                    millivolts = int(msg.get("millivolts"))
+                except (TypeError, ValueError):
+                    await send_json({"type": "error", "message": "analog_input needs channel and millivolts"})
+                    continue
+                await simulation_service.send_analog_input(session_id, channel, millivolts)
+
+            elif msg_type == "digital_input":
+                try:
+                    pin = int(msg.get("pin"))
+                except (TypeError, ValueError):
+                    await send_json({"type": "error", "message": "digital_input needs pin and value"})
+                    continue
+                await simulation_service.send_digital_input(session_id, pin, bool(msg.get("value")))
 
             else:
                 await send_json({"type": "error", "message": f"Unknown message type: {msg_type}"})
