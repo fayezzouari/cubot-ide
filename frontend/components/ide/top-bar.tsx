@@ -1,14 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { Play, Home, TerminalSquare, Cpu, Usb } from 'lucide-react';
+import { Play, Settings, Home, TerminalSquare, Cpu, Usb } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
-import { PRODUCT_NAME } from '@/lib/branding';
 
 interface TopBarProps {
   projectId: string | null;
-  projectName?: string | null;
   isArduinoProject: boolean;
   projectType: string | null;
   onOpenCompile: () => void;
@@ -16,12 +14,8 @@ interface TopBarProps {
   onOpenUpload: () => void;
 }
 
-const ghostButton =
-  'inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/55 hover:text-white font-medium text-xs rounded-lg transition-all cursor-pointer';
-
 export default function TopBar({
   projectId,
-  projectName,
   isArduinoProject,
   projectType,
   onOpenCompile,
@@ -29,27 +23,25 @@ export default function TopBar({
   onOpenUpload,
 }: TopBarProps) {
   const { data: session, status } = useSession();
-
+  
   return (
     <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
-      {/* Left: brand and project */}
-      <div className="flex items-center gap-3 min-w-0">
-        <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
-          <img src="/cubot.svg" alt={PRODUCT_NAME} className="w-6 h-6 object-contain" />
-          <span className="font-pixel text-[11px] font-bold uppercase tracking-wide text-white/85 group-hover:text-white transition-colors">{PRODUCT_NAME}</span>
+      {/* Left: Logo */}
+      <div className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-2 group">
+          <img src="/cubot.svg" alt="CuBot" className="w-6 h-6 object-contain" />
+          <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">CuBot</span>
         </Link>
-        <span className="text-white/[0.12]">/</span>
-        <span className="font-pixel text-[8px] uppercase text-white/35 flex-shrink-0">IDE</span>
-        {projectName && (
-          <>
-            <span className="text-white/[0.12]">/</span>
-            <span className="text-xs text-white/60 truncate" title={projectName}>{projectName}</span>
-          </>
-        )}
+
+        <span className="text-white/[0.12]">·</span>
+
+        <span className="text-xs text-white/30 font-mono">IDE</span>
       </div>
 
-      {/* Right: actions */}
+      {/* Right: Actions */}
       <div className="flex items-center gap-1.5">
+  
+
         {isArduinoProject && projectType !== 'ros' && (
           <>
             <button
@@ -59,16 +51,26 @@ export default function TopBar({
               <Play size={11} />
               Compile
             </button>
-            <button onClick={onOpenUpload} className={ghostButton}>
+            <button
+              onClick={onOpenUpload}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-blue-500 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
+            >
               <Usb size={11} />
               Connect
             </button>
-            <button onClick={onOpenSerial} className={ghostButton}>
+            <button
+              onClick={onOpenSerial}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/50 hover:text-white font-medium text-xs rounded-lg transition-all cursor-pointer"
+            >
               <TerminalSquare size={11} />
               Serial
             </button>
+
             {projectId && (
-              <Link href={`/simulator?project=${projectId}`} className={ghostButton}>
+              <Link
+                href={`/simulator?project=${projectId}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/50 hover:text-white font-medium text-xs rounded-lg transition-all"
+              >
                 <Cpu size={11} />
                 Simulate
               </Link>
@@ -78,22 +80,29 @@ export default function TopBar({
 
         <span className="w-px h-4 bg-white/[0.08] mx-1" />
 
+
         <Link
           href="/dashboard"
-          className="w-7 h-7 flex items-center justify-center text-white/35 hover:text-white/80 hover:bg-white/[0.06] rounded-lg transition-all"
+          className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
           title="Back to Dashboard"
         >
           <Home size={13} />
         </Link>
-        {status === 'authenticated' && session?.user?.image && (
-          <Image
-            src={session.user.image}
-            alt={session.user.name ?? 'User'}
-            width={24}
-            height={24}
-            className="rounded-full"
-          />
-        )}
+        <>
+          {status === 'authenticated' && (
+            <>
+              {session?.user?.image && (
+                <Image
+                  src={session.user.image}
+                  alt={session.user.name ?? 'User'}
+                  width={24}
+                  height={24}
+                  className="rounded-full"
+                />
+              )}
+            </>
+          )}
+        </>
       </div>
     </header>
   );
