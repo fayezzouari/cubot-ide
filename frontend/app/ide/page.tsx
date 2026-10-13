@@ -5,12 +5,12 @@ import { sandboxApi, type SandboxFileEntry } from '@/lib/api/sandbox';
 import { compileService, chatService, projectService, fileService } from '@/lib/api';
 import type { CompilerType, ProjectWithFiles } from '@/lib/api/types';
 import { useProject } from '@/contexts/project-context';
-import { mockVibeModeMessages, mockPlanModeMessages, parsePlanSteps, type FileNode, type ChatMessage, type ChatMode } from '@/lib/mock-data';
+import { parsePlanSteps, type ChatMessage, type ChatMode, type FileChange, type ActivityItem } from '@/lib/mock-data';
+import type { AgentEvent, FileOperation, FileResponse } from '@/lib/api/types';
 import TopBar from '@/components/ide/top-bar';
 import VscodeFileExplorer from '@/components/ide/vscode-file-explorer';
 import EditorPanel, { type EditorSelection } from '@/components/ide/editor-panel';
-import RightSidebar from '@/components/ide/right-sidebar';
-import type { CodeContext } from '@/components/ide/chat-sidebar';
+import AgentPanel, { type CodeContext } from '@/components/ide/agent/agent-panel';
 import TerminalTabsManager from '@/components/ide/terminal-tabs-manager';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
@@ -25,17 +25,20 @@ export default function IDEPage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [enableWebsearch, setEnableWebsearch] = useState(false);
-  const [chatMode, setChatMode] = useState<ChatMode>('vibe');
+  const [chatMode, setChatMode] = useState<ChatMode>('build');
 
   // Separate message history for each mode
-  const [vibeMessages, setVibeMessages] = useState<ChatMessage[]>(mockVibeModeMessages);
-  const [planMessages, setPlanMessages] = useState<ChatMessage[]>(mockPlanModeMessages);
+  const [buildMessages, setBuildMessages] = useState<ChatMessage[]>([]);
+  const [planMessages, setPlanMessages] = useState<ChatMessage[]>([]);
 
   // Current messages (switches based on mode)
-  const messages = chatMode === 'vibe' ? vibeMessages : planMessages;
-  const setMessages = chatMode === 'vibe' ? setVibeMessages : setPlanMessages;
+  const messages = chatMode === 'build' ? buildMessages : planMessages;
+  const setMessages = chatMode === 'build' ? setBuildMessages : setPlanMessages;
 
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [includeActiveFile, setIncludeActiveFile] = useState(true);
+  const [reverting, setReverting] = useState<{ messageId: string; index: number } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [editedContent, setEditedContent] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -199,13 +202,26 @@ export default function IDEPage() {
     setCodeContexts((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
-  /** Apply file operations from a chat API response and refresh editor state. */
-  const applyFileOperations = async (fileOps: any[]) => {
-    if (!currentProject || fileOps.length === 0) return;
+  /** Full project-relative path of a file, whichever storage convention it uses. */
+  const fullPathOf = (f: { path: string; name: string }) => {
+    const raw = (f.path || '').replace(/^\/+|\/+$/g, '');
+    if (!raw || raw === '.' || raw === f.name) return f.name;
+    if (raw.endsWith('/' + f.name)) return raw;
+    return `${raw}/${f.name}`;
+  };
+
+  const activeFile = selectedFile ? currentProject?.files.find(f => f.id === selectedFile) ?? null : null;
+  const activeFilePath = activeFile ? fullPathOf(activeFile) : undefined;
+  // ROS projects verify in the sandbox; the compile tool only makes sense for embedded targets.
+  const agentCompiler = currentProject?.project_type === 'ros' ? undefined : currentProject?.target_compiler;
+
+  /** Pull the latest file contents from the server after the agent changed files. */
+  const refreshFilesFromServer = async (changed: FileOperation[] | FileChange[]) => {
+    if (!currentProject) return;
     await loadProject(currentProject.id);
     const updatedProject = await projectService.getWithFiles(currentProject.id);
     const newContents: Record<string, string> = {};
-    updatedProject.files.forEach(file => {
+    updatedProject.files.forEach((file: FileResponse) => {
       newContents[file.id] = file.content;
     });
     setFileContents(newContents);
@@ -213,21 +229,32 @@ export default function IDEPage() {
       setEditedContent(newContents[selectedFile]);
       setHasUnsavedChanges(false);
     }
-    if (!selectedFile && fileOps.some(op => op.operation === 'create_file')) {
-      const createdOp = fileOps.find(op => op.operation === 'create_file');
-      const fileId = createdOp?.file_id;
-      if (fileId && newContents[fileId]) {
-        setSelectedFile(fileId);
-        setEditedContent(newContents[fileId]);
+    if (!selectedFile) {
+      const created = changed.find(op => op.operation === 'create_file' && op.file_id && newContents[op.file_id] !== undefined);
+      if (created?.file_id) {
+        setSelectedFile(created.file_id);
+        setEditedContent(newContents[created.file_id]);
       }
     }
+  };
+
+  /** Context the agent gets with every request: the open file (if included) plus pinned selections. */
+  const buildFileContext = (contexts: CodeContext[]) => {
+    const base = includeActiveFile && activeFile && currentFileContent !== null
+      ? [{ path: activeFilePath!, content: editedContent || currentFileContent }]
+      : [];
+    const selections = contexts.map(ctx => ({
+      path: `${ctx.fileName}:${ctx.startLine}-${ctx.endLine}`,
+      content: ctx.content,
+    }));
+    const all = [...base, ...selections];
+    return all.length > 0 ? all : undefined;
   };
 
   /** Execute a single plan step via the agent and update the step card with the result. */
   const handleAcceptStep = async (messageId: string, stepId: string) => {
     if (!currentProject) return;
 
-    // Find the step
     let stepToRun: import('@/lib/mock-data').PlanStep | undefined;
     setMessages((prev) =>
       prev.map((m) => {
@@ -245,69 +272,41 @@ export default function IDEPage() {
 
     if (!stepToRun) return;
 
-    // Build file context for the current file
-    const fileCtx = selectedFile && currentFileContent
-      ? [{ path: currentProject.files.find(f => f.id === selectedFile)?.path || '', content: editedContent || currentFileContent }]
-      : undefined;
+    const finish = (result: import('@/lib/mock-data').PlanStepExecutionResult) =>
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId || !m.planSteps) return m;
+          return {
+            ...m,
+            planSteps: m.planSteps.map((s) =>
+              s.id === stepId ? { ...s, status: 'done' as const, executionResult: result } : s
+            ),
+          };
+        })
+      );
 
     try {
       const result = await chatService.executeStep(currentProject.id, {
         step_title: stepToRun.title,
         step_body: stepToRun.body,
         workspace_id: activeWorkspaceId ?? undefined,
-        file_context: fileCtx,
-        compiler: currentProject.target_compiler,
+        file_context: buildFileContext([]),
+        active_file_path: activeFilePath,
+        compiler: agentCompiler,
         enable_websearch: enableWebsearch,
       });
-
-      // Mark step as done with result
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.id !== messageId || !m.planSteps) return m;
-          const updatedSteps = m.planSteps.map((s) =>
-            s.id === stepId
-              ? {
-                  ...s,
-                  status: 'done' as const,
-                  executionResult: {
-                    message: result.message,
-                    logs: result.execution_logs,
-                    fileOps: result.file_operations,
-                    success: result.success,
-                  },
-                }
-              : s
-          );
-          return { ...m, planSteps: updatedSteps };
-        })
-      );
-
-      // Apply file operations if the agent created/modified files
+      finish({
+        message: result.message,
+        logs: result.execution_logs,
+        fileOps: result.file_operations,
+        success: result.success,
+      });
       if (result.file_operations.length > 0) {
-        await applyFileOperations(result.file_operations);
+        await refreshFilesFromServer(result.file_operations);
       }
     } catch (err) {
       console.error('Step execution failed:', err);
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.id !== messageId || !m.planSteps) return m;
-          const updatedSteps = m.planSteps.map((s) =>
-            s.id === stepId
-              ? {
-                  ...s,
-                  status: 'done' as const,
-                  executionResult: {
-                    message: 'Execution failed. Please try again.',
-                    logs: [],
-                    fileOps: [],
-                    success: false,
-                  },
-                }
-              : s
-          );
-          return { ...m, planSteps: updatedSteps };
-        })
-      );
+      finish({ message: 'Execution failed. Please try again.', logs: [], fileOps: [], success: false });
     }
   };
 
@@ -324,10 +323,11 @@ export default function IDEPage() {
   };
 
   const handleClearChat = async () => {
-    if (chatMode === 'vibe') {
-      setVibeMessages([...mockVibeModeMessages]);
+    abortRef.current?.abort();
+    if (chatMode === 'build') {
+      setBuildMessages([]);
     } else {
-      setPlanMessages([...mockPlanModeMessages]);
+      setPlanMessages([]);
     }
     setChatInput('');
     setCodeContexts([]);
@@ -344,7 +344,6 @@ export default function IDEPage() {
   const handleAcceptAllSteps = async (messageId: string) => {
     if (!currentProject) return;
 
-    // Gather all pending step IDs in order
     let pendingStepIds: string[] = [];
     setMessages((prev) =>
       prev.map((m) => {
@@ -354,112 +353,188 @@ export default function IDEPage() {
       })
     );
 
-    // Execute each one sequentially
     for (const stepId of pendingStepIds) {
       await handleAcceptStep(messageId, stepId);
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!chatInput.trim() || !currentProject) return;
+  /** Put one of the agent's file changes back: restore the old content, or delete a created file. */
+  const handleRevertChange = async (messageId: string, index: number) => {
+    const message = messages.find(m => m.id === messageId);
+    const change = message?.fileOps?.[index];
+    if (!change?.file_id || change.reverted || !currentProject) return;
+    setReverting({ messageId, index });
+    try {
+      if (change.operation === 'create_file') {
+        await deleteFile(change.file_id, true);
+        if (selectedFile === change.file_id) {
+          setSelectedFile(null);
+          setEditedContent('');
+        }
+      } else if (typeof change.previous_content === 'string') {
+        await updateFile(change.file_id, { content: change.previous_content });
+      } else {
+        return;
+      }
+      setMessages(prev =>
+        prev.map(m =>
+          m.id !== messageId || !m.fileOps
+            ? m
+            : { ...m, fileOps: m.fileOps.map((op, i) => (i === index ? { ...op, reverted: true } : op)) }
+        )
+      );
+      await refreshFilesFromServer([]);
+    } catch (err) {
+      console.error('Revert failed:', err);
+      alert('Could not revert this change.');
+    } finally {
+      setReverting(null);
+    }
+  };
+
+  const handleOpenChangedFile = (change: FileChange) => {
+    if (!change.file_id || !currentProject?.files.some(f => f.id === change.file_id)) return;
+    handleFileSelect(change.file_id);
+  };
+
+  const handleStopAgent = () => {
+    abortRef.current?.abort();
+  };
+
+  const handleSendMessage = async (override?: string) => {
+    const userMessage = (override ?? chatInput).trim();
+    if (!userMessage || !currentProject || isChatLoading) return;
 
     setIsChatLoading(true);
-    const userMessage = chatInput.trim();
     const contextSnapshot = [...codeContexts];
     const isPlanMode = chatMode === 'plan';
+    const attachments = [
+      ...(includeActiveFile && activeFile ? [activeFile.name] : []),
+      ...contextSnapshot.map(c => `${c.fileName}:${c.startLine}-${c.endLine}`),
+    ];
 
-    const newUserMessage: ChatMessage = {
-      id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-      role: 'user',
-      content: userMessage,
+    const newId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    const newUserMessage: ChatMessage = { id: newId(), role: 'user', content: userMessage, attachments };
+    const assistantId = newId();
+    const placeholder: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      mode: chatMode,
+      status: 'streaming',
+      statusText: isPlanMode ? 'Planning' : 'Thinking',
+      activity: [],
     };
 
-    setMessages([...messages, newUserMessage]);
+    // Conversation history is what's on screen before this message.
+    const conversationHistory = messages
+      .filter(m => m.status !== 'error' && m.content)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    setMessages([...messages, newUserMessage, placeholder]);
     setChatInput('');
     setCodeContexts([]);
 
-    // Add loading message
-    const loadingMessage: ChatMessage = {
-      id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-      role: 'assistant',
-      content: '...',
+    const patchAssistant = (fn: (m: ChatMessage) => ChatMessage) =>
+      setMessages(prev => prev.map(m => (m.id === assistantId ? fn(m) : m)));
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let finished = false;
+
+    const onEvent = (event: AgentEvent) => {
+      switch (event.type) {
+        case 'status':
+          patchAssistant(m => ({ ...m, statusText: event.text }));
+          break;
+        case 'tool_start': {
+          const item: ActivityItem = { id: event.id, tool: event.tool, label: event.label, detail: event.detail, status: 'running' };
+          patchAssistant(m => ({ ...m, statusText: `${event.label}${event.detail ? ' ' + event.detail : ''}`, activity: [...(m.activity ?? []), item] }));
+          break;
+        }
+        case 'tool_end':
+          patchAssistant(m => ({
+            ...m,
+            activity: (m.activity ?? []).map(a =>
+              a.id === event.id ? { ...a, status: event.ok ? 'done' : 'failed', summary: event.summary, log: event.log } : a
+            ),
+          }));
+          if (event.file_op) {
+            // Refresh the editor as soon as a file lands so the user watches the change happen.
+            void refreshFilesFromServer([event.file_op]);
+          }
+          break;
+        case 'done': {
+          finished = true;
+          const planSteps = isPlanMode ? parsePlanSteps(event.message) : undefined;
+          const hasPlanSteps = !!planSteps && planSteps.length > 0;
+          patchAssistant(m => ({
+            ...m,
+            status: 'done',
+            statusText: undefined,
+            content: hasPlanSteps ? '' : event.message,
+            ...(hasPlanSteps && { planSteps }),
+            fileOps: event.file_operations,
+          }));
+          if (event.file_operations.length > 0) {
+            void refreshFilesFromServer(event.file_operations);
+          }
+          break;
+        }
+        case 'error':
+          finished = true;
+          patchAssistant(m => ({ ...m, status: 'error', statusText: undefined, content: event.message }));
+          break;
+      }
     };
-    setMessages((prev) => [...prev, loadingMessage]);
 
     try {
-      // Prepare file context (current file + any pinned code selections)
-      const baseFileContext = selectedFile && currentFileContent
-        ? [{
-            path: currentProject.files.find(f => f.id === selectedFile)?.path || '',
-            content: editedContent || currentFileContent,
-          }]
-        : [];
-
-      const selectionContext = contextSnapshot.map((ctx) => ({
-        path: `${ctx.fileName}:${ctx.startLine}-${ctx.endLine}`,
-        content: ctx.content,
-      }));
-
-      const fileContext = [...baseFileContext, ...selectionContext].length > 0
-        ? [...baseFileContext, ...selectionContext]
-        : undefined;
-
-      // Prepare conversation history
-      const conversationHistory = messages.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-      }));
-
-      // Call chat API — plan_mode=true makes the backend use a planning-only prompt (no tools)
-      const response = await chatService.sendMessage(currentProject.id, {
-        message: userMessage,
-        file_context: fileContext,
-        compiler: currentProject.target_compiler,
-        conversation_history: conversationHistory,
-        plan_mode: isPlanMode,
-        enable_websearch: enableWebsearch,
-      } as any);
-
-      // Parse plan steps in plan mode
-      const planSteps = isPlanMode ? parsePlanSteps(response.message) : undefined;
-      const hasPlanSteps = planSteps && planSteps.length > 0;
-
-      // Remove loading message and add real response
-      setMessages((prev) => {
-        const withoutLoading = prev.filter(m => m.id !== loadingMessage.id);
-        return [
-          ...withoutLoading,
-          {
-            id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-            role: 'assistant' as const,
-            content: hasPlanSteps ? '' : response.message,
-            ...(hasPlanSteps && { planSteps }),
-          },
-        ];
-      });
-
-      // Auto-apply file operations only in vibe mode
-      if (!isPlanMode && response.file_operations && response.file_operations.length > 0) {
-        console.log('File operations performed:', response.file_operations);
-        await applyFileOperations(response.file_operations);
+      await chatService.stream(
+        currentProject.id,
+        {
+          message: userMessage,
+          file_context: buildFileContext(contextSnapshot),
+          active_file_path: activeFilePath,
+          compiler: agentCompiler,
+          conversation_history: conversationHistory,
+          plan_mode: isPlanMode,
+          enable_websearch: enableWebsearch,
+          workspace_id: activeWorkspaceId ?? undefined,
+        },
+        onEvent,
+        controller.signal,
+      );
+      if (!finished) {
+        patchAssistant(m => ({ ...m, status: 'error', statusText: undefined, content: 'The connection closed before the agent finished.' }));
       }
-
-    } catch (error) {
-      console.error('Chat error:', error);
-      setMessages((prev) => {
-        const withoutLoading = prev.filter(m => m.id !== loadingMessage.id);
-        return [
-          ...withoutLoading,
-          {
-            id: (Date.now() + 2).toString(),
-            role: 'assistant',
-            content: 'Sorry, I encountered an error. Please try again.',
-          },
-        ];
-      });
+    } catch (error: any) {
+      if (controller.signal.aborted) {
+        patchAssistant(m => ({
+          ...m,
+          status: 'done',
+          statusText: undefined,
+          content: m.content || 'Stopped.',
+          activity: (m.activity ?? []).map(a => (a.status === 'running' ? { ...a, status: 'failed', summary: 'stopped' } : a)),
+        }));
+      } else {
+        console.error('Chat error:', error);
+        patchAssistant(m => ({ ...m, status: 'error', statusText: undefined, content: error?.message || 'Something went wrong. Please try again.' }));
+      }
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setIsChatLoading(false);
     }
+  };
+
+  /** Hand the compiler's errors to the agent and let it fix them. */
+  const handleFixWithAgent = () => {
+    const errorText = compileErrors.length > 0 ? compileErrors.join('\n') : compileLogs.trim().split('\n').slice(-30).join('\n');
+    if (!errorText) return;
+    setIsCompileModalOpen(false);
+    setChatMode('build');
+    const prompt = `The ${selectedCompiler} build failed. Fix the errors and make sure it compiles.\n\n\`\`\`\n${errorText}\n\`\`\``;
+    // Build-mode state is set above; send on the next tick so the mode switch is applied first.
+    setTimeout(() => void handleSendMessage(prompt), 0);
   };
 
   const handleFileSelect = (fileId: string) => {
@@ -799,15 +874,28 @@ export default function IDEPage() {
   const loadChatHistory = async (projectId: string) => {
     try {
       const history = await chatService.getHistory(projectId, 50);
-      const formattedMessages = history.map(msg => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-      }));
-      setMessages(formattedMessages);
+      const build: ChatMessage[] = [];
+      const plan: ChatMessage[] = [];
+      history.forEach(msg => {
+        const isPlan = msg.mode === 'plan';
+        const planSteps = isPlan && msg.role === 'assistant' ? parsePlanSteps(msg.content) : undefined;
+        const hasSteps = !!planSteps && planSteps.length > 0;
+        const formatted: ChatMessage = {
+          id: msg.id,
+          role: msg.role as 'user' | 'assistant',
+          content: hasSteps ? '' : msg.content,
+          mode: isPlan ? 'plan' : 'build',
+          status: msg.role === 'assistant' ? 'done' : undefined,
+          ...(hasSteps && { planSteps }),
+          ...(msg.file_operations?.length ? { fileOps: msg.file_operations as FileChange[] } : {}),
+          ...(msg.role === 'user' && msg.file_context?.length ? { attachments: msg.file_context.map(fc => fc.path) } : {}),
+        };
+        (isPlan ? plan : build).push(formatted);
+      });
+      setBuildMessages(build);
+      setPlanMessages(plan);
     } catch (error) {
       console.error('Failed to load chat history:', error);
-      // Keep initial messages if loading fails
     }
   };
 
@@ -856,10 +944,27 @@ export default function IDEPage() {
   }, [isInitialized, loadProject]);
 
 
+  const quickPrompts = useMemo(() => {
+    if (!currentProject) return [];
+    const fileName = activeFile?.name;
+    const list: Array<{ label: string; prompt: string; icon: 'fix' | 'explain' | 'improve' }> = [];
+    if (fileName) {
+      list.push({ label: `Explain ${fileName}`, prompt: `Explain what ${fileName} does, section by section, and point out anything fragile.`, icon: 'explain' });
+      list.push({ label: `Review ${fileName} for bugs`, prompt: `Review ${fileName} for bugs, undefined behaviour and timing issues on this target. Fix what you find and verify the build.`, icon: 'fix' });
+    }
+    if (currentProject.project_type !== 'ros') {
+      list.push({ label: 'Compile and fix errors', prompt: 'Compile the project. If it fails, fix the errors and compile again until it passes.', icon: 'improve' });
+    } else {
+      list.push({ label: 'Build the workspace', prompt: 'Build the ROS workspace in the sandbox and fix any errors you find.', icon: 'improve' });
+    }
+    return list;
+  }, [currentProject, activeFile?.name]);
+
   return (
     <div className="h-screen flex flex-col bg-black text-foreground overflow-hidden">
       <TopBar
         projectId={currentProject?.id ?? null}
+        projectName={currentProject?.name ?? null}
         isArduinoProject={currentProject?.target_compiler === 'arduino'}
         projectType={currentProject?.project_type ?? null}
         onOpenCompile={handleOpenCompileModal}
@@ -874,6 +979,7 @@ export default function IDEPage() {
         onSelectCompiler={(compiler) => setSelectedCompiler(compiler)}
         onCompile={handleCompile}
         onExplainLogs={handleExplainLogs}
+        onFixWithAgent={handleFixWithAgent}
         isCompiling={isCompiling}
         isExplaining={isExplaining}
         compileLogs={compileLogs}
@@ -961,23 +1067,31 @@ export default function IDEPage() {
 
           <ResizableHandle withHandle className="w-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
 
-          <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
-            <RightSidebar
+          <ResizablePanel defaultSize={25} minSize={20} maxSize={45}>
+            <AgentPanel
               messages={messages}
-              chatInput={chatInput}
-              onChatInputChange={setChatInput}
-              onSendMessage={handleSendMessage}
-              isLoading={isChatLoading}
+              mode={chatMode}
+              onModeChange={setChatMode}
+              busy={isChatLoading}
+              input={chatInput}
+              onInputChange={setChatInput}
+              onSend={text => void handleSendMessage(text)}
+              onStop={handleStopAgent}
+              onClear={handleClearChat}
+              webSearch={enableWebsearch}
+              onWebSearchChange={setEnableWebsearch}
+              activeFileName={activeFile?.name ?? null}
+              includeActiveFile={includeActiveFile}
+              onIncludeActiveFileChange={setIncludeActiveFile}
               codeContexts={codeContexts}
               onRemoveContext={handleRemoveContext}
-              chatMode={chatMode}
-              onModeChange={setChatMode}
-              onAcceptStep={handleAcceptStep}
-              onAcceptAllSteps={handleAcceptAllSteps}
+              onOpenFile={handleOpenChangedFile}
+              onRevertChange={handleRevertChange}
+              reverting={reverting}
+              onRunStep={handleAcceptStep}
+              onRunAllSteps={handleAcceptAllSteps}
               onDiscardStep={handleDiscardStep}
-              enableWebsearch={enableWebsearch}
-              onWebsearchChange={setEnableWebsearch}
-              onClearChat={handleClearChat}
+              quickPrompts={quickPrompts}
             />
           </ResizablePanel>
         </ResizablePanelGroup>
