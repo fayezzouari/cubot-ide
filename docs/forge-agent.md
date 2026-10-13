@@ -80,6 +80,12 @@ characters so one noisy build cannot flood the context.
 
 `frontend/components/ide/agent/`
 
+The panel is drawn in a pixel-art theme: Silkscreen for labels, VT323 for
+running text, hard 2px notched borders (`.pixel-border`, a box-shadow trick),
+stepped animations and faint scanlines. Tokens (`--color-forge-*`, the two
+font faces) and the utilities live in `app/globals.css` under the Tailwind v4
+`@theme`; the faces are loaded in `app/layout.tsx`.
+
 * `agent-panel.tsx` — header, conversation, empty state with quick prompts.
 * `agent-composer.tsx` — input, context chips (open file toggle + pinned
   selections), Build/Plan switch, web search, send/stop (Esc stops).
