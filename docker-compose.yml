@@ -1,5 +1,6 @@
 services:
   compiler-arduino:
+    platform: linux/amd64
     build:
       context: ./compilers
       dockerfile: arduino.Dockerfile
@@ -7,6 +8,7 @@ services:
     profiles: ["build-compilers"]
 
   compiler-arm:
+    platform: linux/amd64
     build:
       context: ./compilers
       dockerfile: arm.Dockerfile

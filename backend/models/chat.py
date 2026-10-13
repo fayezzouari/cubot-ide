@@ -20,7 +20,7 @@ class ChatMessageBase(BaseModel):
     """Base chat message model"""
     role: MessageRole
     content: str
-    
+
 
 class ChatMessageInDB(ChatMessageBase):
     """Chat message as stored in MongoDB"""
@@ -28,28 +28,55 @@ class ChatMessageInDB(ChatMessageBase):
     project_id: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     file_context: List[FileContext] = []
-    
-    # For assistant messages, track any file operations
+
+    # For assistant messages: files the agent created or changed. Each entry carries
+    # operation, path, file_id, summary, added/removed line counts and previous_content
+    # (null for created files) so the client can show a change card and revert it.
     file_operations: List[dict] = Field(default=[], description="Files created/edited by this message")
-    
+    mode: Optional[str] = Field(default=None, description="'build' or 'plan'")
+    thread_id: Optional[str] = None
+
     class Config:
         populate_by_name = True
+
+
+class ThreadSummary(BaseModel):
+    """One conversation inside a project"""
+    id: str
+    project_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+
+class ThreadCreate(BaseModel):
+    title: Optional[str] = None
+
+
+class ThreadUpdate(BaseModel):
+    title: str
 
 
 class ChatRequest(BaseModel):
     """Chat request from frontend"""
     message: str
     file_context: Optional[List[FileContext]] = None
+    active_file_path: Optional[str] = Field(default=None, description="Path of the file open in the editor")
     compiler: Optional[str] = None
     conversation_history: Optional[List[dict]] = None
     plan_mode: bool = False
     enable_websearch: bool = False
+    workspace_id: Optional[str] = Field(default=None, description="Sandbox workspace for ROS projects")
+    thread_id: Optional[str] = Field(default=None, description="Conversation to append to; omitted = new thread")
 
 
 class ChatResponse(BaseModel):
     """Chat response to frontend"""
     message: str
     file_operations: List[dict] = []
+    execution_logs: List["ExecutionLogEntry"] = []
+    thread_id: Optional[str] = None
 
 
 class StepExecutionRequest(BaseModel):
@@ -58,12 +85,13 @@ class StepExecutionRequest(BaseModel):
     step_body: str
     workspace_id: Optional[str] = None
     file_context: Optional[List[FileContext]] = None
+    active_file_path: Optional[str] = None
     compiler: Optional[str] = None
     enable_websearch: bool = False
 
 
 class ExecutionLogEntry(BaseModel):
-    """Record of a single sandbox command run during step execution"""
+    """Record of a single command run during an agent turn: a sandbox command or a compile."""
     command: str
     stdout: str
     stderr: str
@@ -77,3 +105,6 @@ class StepExecutionResponse(BaseModel):
     file_operations: List[dict] = []
     execution_logs: List[ExecutionLogEntry] = []
     success: bool = True
+
+
+ChatResponse.model_rebuild()

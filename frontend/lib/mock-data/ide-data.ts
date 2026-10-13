@@ -223,14 +223,22 @@ make flash
 MIT License`,
 };
 
-// Chat mode
-export type ChatMode = 'vibe' | 'plan';
+// Chat mode: Build lets the agent change files; Plan drafts steps the user runs one by one.
+export type ChatMode = 'build' | 'plan';
+
+export interface ExecutionLog {
+  command: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  success: boolean;
+}
 
 // Plan step (used in plan mode messages)
 export interface PlanStepExecutionResult {
   message: string;
-  logs: Array<{ command: string; stdout: string; stderr: string; exit_code: number; success: boolean }>;
-  fileOps: any[];
+  logs: ExecutionLog[];
+  fileOps: FileChange[];
   success: boolean;
 }
 
@@ -243,13 +251,43 @@ export interface PlanStep {
   executionResult?: PlanStepExecutionResult;
 }
 
-// Mock chat messages
+/** One tool call the agent made during a turn, shown in the activity timeline. */
+export interface ActivityItem {
+  id: string;
+  tool: string;
+  label: string;
+  detail: string;
+  status: 'running' | 'done' | 'failed';
+  summary?: string;
+  log?: ExecutionLog | null;
+}
+
+/** A file the agent created or changed; `previous_content` lets the user revert it. */
+export interface FileChange {
+  operation: string;
+  path: string;
+  file_id?: string;
+  summary?: string;
+  added?: number;
+  removed?: number;
+  previous_content?: string | null;
+  reverted?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'assistant' | 'user';
   content: string;
+  mode?: ChatMode;
   planSteps?: PlanStep[];
-  pendingFileOps?: any[];
+  fileOps?: FileChange[];
+  activity?: ActivityItem[];
+  /** Assistant messages only: streaming while the agent works, then done or error. */
+  status?: 'streaming' | 'done' | 'error';
+  /** What the agent is doing right now (streaming only). */
+  statusText?: string;
+  /** Files pasted into the message as context (user messages). */
+  attachments?: string[];
 }
 
 /** Parse a plan-mode AI response into structured PlanStep objects. */
@@ -292,27 +330,7 @@ export function parsePlanSteps(content: string): PlanStep[] {
   return steps;
 }
 
-// Separate initial messages for each mode to maintain independent conversation histories
-export const mockMessages: ChatMessage[] = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'Hello! I\'m your AI assistant for embedded development. How can I help you today?',
-  },
-];
-
-export const mockVibeModeMessages: ChatMessage[] = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'Hello! I\'m your AI assistant. How can I help?',
-  },
-];
-
-export const mockPlanModeMessages: ChatMessage[] = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'I can help you plan complex projects step-by-step. Describe what you want to build!',
-  },
-];
+// Fresh conversations start empty; the panel shows its own intro.
+export const mockMessages: ChatMessage[] = [];
+export const mockVibeModeMessages: ChatMessage[] = [];
+export const mockPlanModeMessages: ChatMessage[] = [];

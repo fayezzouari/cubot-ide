@@ -1,218 +1,141 @@
 """
-Tool definitions for AWS Bedrock Converse API
-These define the tools available to the AI assistant
+Tool definitions for the IDE coding agent (Bedrock invoke_model format).
+
+Every tool is a `toolSpec` dict. `get_tool_config` assembles the set the agent
+may use for one request: file tools always, the sandbox/compile/web tools only
+when the caller has them available.
 """
 
-from typing import Dict, Any
+import logging
+from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
 
 
-_EXECUTE_IN_SANDBOX_TOOL = {
-    "toolSpec": {
-        "name": "execute_in_sandbox",
-        "description": "Execute a shell command in the sandbox workspace. Use this to run builds, install packages, run tests, or verify code. Returns stdout, stderr, and exit code.",
-        "inputSchema": {
-            "json": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The shell command to execute (e.g., 'colcon build', 'python3 script.py', 'pip install rclpy')"
-                    },
-                    "timeout": {
-                        "type": "integer",
-                        "description": "Timeout in seconds (default: 60, max: 120)",
-                        "default": 60
-                    }
-                },
-                "required": ["command"]
-            }
+def _tool(name: str, description: str, properties: Dict[str, Any], required: list[str]) -> Dict[str, Any]:
+    return {
+        "toolSpec": {
+            "name": name,
+            "description": description,
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                }
+            },
         }
     }
-}
-
-_SEARCH_WEB_TOOL = {
-    "toolSpec": {
-        "name": "search_web",
-        "description": "Search the web for up-to-date information: recent releases, library docs, changelogs, blog posts, GitHub repos, and technical references. Use this when you need information beyond your training data.",
-        "inputSchema": {
-            "json": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query (e.g., 'ROS 2 Humble latest packages', 'Arduino ESP32 3.x migration guide', 'colcon build flags reference')"
-                    },
-                    "num_results": {
-                        "type": "integer",
-                        "description": "Number of results to return (default: 5, max: 10)",
-                        "default": 5
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    }
-}
 
 
-def get_tool_config(include_sandbox: bool = False, include_websearch: bool = False) -> Dict[str, Any]:
-    """
-    Get tool configuration for Bedrock Converse API.
+LIST_FILES_TOOL = _tool(
+    "list_files",
+    "List every file in the project with its full path, plus the set of directories. "
+    "The project snapshot in your instructions is taken at the start of the turn; call this "
+    "if you created files and need fresh paths.",
+    {},
+    [],
+)
 
-    Args:
-        include_sandbox: When True, adds the execute_in_sandbox tool.
-        include_websearch: When True, adds the search_web tool.
+READ_FILE_TOOL = _tool(
+    "read_file",
+    "Read the full content of one project file. Always read a file before editing it "
+    "unless its content is already in your context.",
+    {
+        "path": {"type": "string", "description": "Full path as listed by list_files (e.g. 'src/main.cpp')."},
+    },
+    ["path"],
+)
 
-    Returns:
-        Dictionary containing tool specifications
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"get_tool_config: include_sandbox={include_sandbox}, include_websearch={include_websearch}")
+CREATE_FILE_TOOL = _tool(
+    "create_file",
+    "Create a new file. Fails if the path already exists (use edit_file or update_file instead).",
+    {
+        "path": {"type": "string", "description": "Full path relative to the project root (e.g. 'src/sensors.h')."},
+        "content": {"type": "string", "description": "The complete file content."},
+        "summary": {"type": "string", "description": "One short sentence: what this file is for."},
+    },
+    ["path", "content"],
+)
 
+EDIT_FILE_TOOL = _tool(
+    "edit_file",
+    "Replace one exact text span in an existing file. Preferred for targeted changes: "
+    "cheaper and safer than rewriting the whole file. `old_text` must appear exactly once; "
+    "include enough surrounding lines to make it unique. Whitespace and indentation must match.",
+    {
+        "path": {"type": "string", "description": "Full path of the file to edit."},
+        "old_text": {"type": "string", "description": "Exact text to replace (must match once)."},
+        "new_text": {"type": "string", "description": "Replacement text."},
+        "summary": {"type": "string", "description": "One short sentence describing the change."},
+    },
+    ["path", "old_text", "new_text"],
+)
+
+UPDATE_FILE_TOOL = _tool(
+    "update_file",
+    "Overwrite an existing file with new complete content. Use only for rewrites that touch "
+    "most of the file; prefer edit_file for localized changes.",
+    {
+        "path": {"type": "string", "description": "Full path of the file to overwrite."},
+        "content": {"type": "string", "description": "The new complete file content."},
+        "summary": {"type": "string", "description": "One short sentence describing the change."},
+    },
+    ["path", "content"],
+)
+
+COMPILE_PROJECT_TOOL = _tool(
+    "compile_project",
+    "Compile the project with its configured toolchain and return the result. Call this after "
+    "changing code so you can verify it builds; if it fails, fix the reported errors and compile again.",
+    {
+        "main_file": {
+            "type": "string",
+            "description": "Optional entry file (e.g. 'sketch.ino'). Defaults to the project's main sketch.",
+        },
+    },
+    [],
+)
+
+EXECUTE_IN_SANDBOX_TOOL = _tool(
+    "execute_in_sandbox",
+    "Run a shell command in the live sandbox workspace (build, test, install packages, inspect "
+    "the filesystem). Returns stdout, stderr and the exit code.",
+    {
+        "command": {"type": "string", "description": "Shell command (e.g. 'colcon build', 'python3 node.py')."},
+        "timeout": {"type": "integer", "description": "Timeout in seconds (default 60, max 120).", "default": 60},
+    },
+    ["command"],
+)
+
+SEARCH_WEB_TOOL = _tool(
+    "search_web",
+    "Search the web for current technical information: library docs, API changes, datasheets, "
+    "release notes. Use when the answer depends on information newer than your training data.",
+    {
+        "query": {"type": "string", "description": "Search query."},
+        "num_results": {"type": "integer", "description": "Results to return (default 5, max 10).", "default": 5},
+    },
+    ["query"],
+)
+
+FILE_TOOL_NAMES = {"create_file", "edit_file", "update_file"}
+
+
+def get_tool_config(
+    include_sandbox: bool = False,
+    include_websearch: bool = False,
+    include_compile: bool = False,
+) -> Dict[str, Any]:
+    """Assemble the tool list for one agent run."""
     tools = []
-
-    # Add web search first if enabled (priority)
     if include_websearch:
-        tools.append(_SEARCH_WEB_TOOL)
-        logger.info("Added search_web tool (priority)")
-
-    # Add remaining file tools
-    tools.extend([
-            {
-                "toolSpec": {
-                    "name": "create_file",
-                    "description": "Create a new file in the project with the specified path and content. Use this when the user asks to create a new file or add new code.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "path": {
-                                    "type": "string",
-                                    "description": "The file path relative to project root (e.g., 'src/main.cpp', 'include/config.h')"
-                                },
-                                "content": {
-                                    "type": "string",
-                                    "description": "The complete content of the file"
-                                },
-                                "description": {
-                                    "type": "string",
-                                    "description": "Brief description of what this file does"
-                                }
-                            },
-                            "required": ["path", "content"]
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "update_file",
-                    "description": "Update an existing file's content. Use this when the user asks to modify, edit, or update existing code.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "path": {
-                                    "type": "string",
-                                    "description": "The file path to update"
-                                },
-                                "content": {
-                                    "type": "string",
-                                    "description": "The new complete content of the file"
-                                },
-                                "changes_description": {
-                                    "type": "string",
-                                    "description": "Brief description of what changed"
-                                }
-                            },
-                            "required": ["path", "content"]
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "read_file",
-                    "description": "Read the current content of a file. Use this when you need to see the current state of a file before modifying it.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "path": {
-                                    "type": "string",
-                                    "description": "The file path to read"
-                                }
-                            },
-                            "required": ["path"]
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "list_files",
-                    "description": "List all files in the project. Returns a list of files and a deduplicated `directories` array to understand the project structure. Call this before creating new files so you place them under existing packages (e.g., 'src/pkg_name/scripts').",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {},
-                            "required": []
-                        }
-                    }
-                }
-            }
-    ])
-
+        tools.append(SEARCH_WEB_TOOL)
+    tools.extend([LIST_FILES_TOOL, READ_FILE_TOOL, CREATE_FILE_TOOL, EDIT_FILE_TOOL, UPDATE_FILE_TOOL])
+    if include_compile:
+        tools.append(COMPILE_PROJECT_TOOL)
     if include_sandbox:
-        tools.append(_EXECUTE_IN_SANDBOX_TOOL)
-        logger.info("Added execute_in_sandbox tool")
+        tools.append(EXECUTE_IN_SANDBOX_TOOL)
 
-    tool_names = [t.get("toolSpec", {}).get("name", "unknown") for t in tools]
-    logger.info(f"Final tool config: {tool_names}")
+    logger.info("tool config: %s", [t["toolSpec"]["name"] for t in tools])
     return {"tools": tools}
-
-
-# Tool metadata for documentation
-TOOL_METADATA = {
-    "create_file": {
-        "name": "Create File",
-        "category": "File Operations",
-        "description": "Creates a new file in the project",
-        "examples": [
-            "Create a new file called main.cpp",
-            "Add a header file for LED control",
-            "Create a configuration file"
-        ]
-    },
-    "update_file": {
-        "name": "Update File",
-        "category": "File Operations",
-        "description": "Updates an existing file's content",
-        "examples": [
-            "Update main.cpp to add button control",
-            "Modify the LED class to support PWM",
-            "Fix the bug in the sensor reading code"
-        ]
-    },
-    "read_file": {
-        "name": "Read File",
-        "category": "File Operations",
-        "description": "Reads the current content of a file",
-        "examples": [
-            "Read the main.cpp file",
-            "Show me the contents of config.h",
-            "What's in the LED class?"
-        ]
-    },
-    "list_files": {
-        "name": "List Files",
-        "category": "File Operations",
-        "description": "Lists all files in the project",
-        "examples": [
-            "What files are in this project?",
-            "Show me the project structure",
-            "List all source files"
-        ]
-    }
-}

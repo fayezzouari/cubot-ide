@@ -105,6 +105,17 @@ flowchart TD
 
 ---
 
+## Running locally
+
+```bash
+docker compose up -d mongodb                                  # or any MongoDB on localhost:27017
+docker compose --profile build-compilers build                # Arduino and ARM compiler images (linux/amd64)
+cd backend && uv sync && MONGODB_URI=mongodb://localhost:27017 BEDROCK_MODEL_ID=<model> COMPILE_WORKDIR=/tmp/cubot-compile uv run uvicorn main:app --reload
+cd frontend && npm install && npm run dev
+```
+
+The compiler images are built for `linux/amd64`: the AVR toolchain only ships x86-64 binaries, and Docker Desktop runs them under Rosetta on Apple Silicon. `COMPILE_WORKDIR` must be a writable directory (the default `/compile_tmp` is a container path).
+
 ## Features
 
 ### Code Editor (IDE)
@@ -126,7 +137,7 @@ The IDE is built around Monaco Editor — the same engine that powers VS Code.
 - Compiler runs in an isolated Docker container per toolchain
 - Supported targets: Arduino (avr-gcc), TI ARM (arm-none-eabi-gcc), ESP32 (xtensa)
 - Compile output streams to an integrated terminal panel
-- Errors are highlighted and can be explained by the AI assistant
+- Errors are highlighted, explained by the AI, or handed to the AI to fix
 
 **Serial Monitor**
 - Connect to physical hardware over USB serial
@@ -141,21 +152,29 @@ The IDE is built around Monaco Editor — the same engine that powers VS Code.
 
 ### AI Assistant
 
-The chat sidebar is embedded directly in the IDE and powered by AWS Bedrock (default), with optional OpenAI and Google GenAI backends.
+The assistant in the IDE side panel is a coding agent: it reads the project, edits files with tools, compiles, and fixes what breaks, while the panel shows every step as it happens. Details in [docs/ai-agent.md](docs/ai-agent.md).
 
-**Chat Modes**
-- **Vibe** — Conversational coding help. Ask questions, get explanations, debug logic
-- **Plan** — Structured multi-step code generation. The AI produces a plan and executes each step sequentially, streaming results
+**Modes**
+- **Vibe** — The AI makes the change itself: reads the relevant files, edits them, runs the compiler, and iterates on errors (up to three rounds) before reporting back.
+- **Plan** — The AI writes a numbered plan. You run the steps one at a time (or all at once); each step runs with the same tools as Vibe mode.
 
-**Context Awareness**
-- Select files from the explorer to inject them as context into any message
-- The AI reads your entire open file and uses it to give grounded answers
-- Compile errors are automatically forwarded to the AI for explanation
+**What you see while it works**
+- The answer streams token by token as rendered markdown, with a live activity list above it: *Reading main.cpp*, *Editing main.cpp (+4 −3)*, *Compiling project · Build passed*. Command and compiler output expands inline.
+- A changed-files card per turn. Open any file in the editor, or **Revert** it (the previous content is kept on the message).
+- **Fix with AI** on the compile dialog hands the errors straight to the agent.
+
+**Conversations**
+- Every project keeps as many chats as you like. `+` starts a new one, the clock lists past chats (auto-titled from the first message) with rename and delete. The IDE reopens the last one you used.
+
+**Context**
+- The open file is always attached; requests that name no file refer to it. Select code in the editor and click *Add to chat* to pin a range.
+- Optional web search (Exa) for current library docs and datasheets.
+
+**Agent tools**
+`list_files`, `read_file`, `create_file`, `edit_file` (exact-span replace), `update_file`, `compile_project` (embedded targets), `execute_in_sandbox` (ROS projects), `search_web`.
 
 **Providers**
-- AWS Bedrock (default, configurable model ID)
-- Google GenAI
-- OpenAI
+- AWS Bedrock (default, configurable model ID; Claude and OpenAI-compatible models)
 
 ---
 
@@ -229,6 +248,12 @@ Run compiled Arduino firmware in a browser-connected software emulator — no ha
 - Digital pin HIGH/LOW transitions with timestamps
 - `Serial.print()` / `Serial.println()` output
 - All events streamed as JSON over WebSocket
+
+**Live Inputs**
+- Virtual sensors feed the running sketch: an analog sensor sets the voltage on its pin (`analogRead` returns the matching 0–1023 value), a PIR drives its digital pin HIGH or LOW. Environment presets such as *Kitchen Fire* therefore change what the program sees.
+- Each sensor card shows the pin voltage and the exact `analogRead` / `digitalRead` result, with a *How it reads* note (the part's transfer function, e.g. TMP36: 500 mV + 10 mV/°C) and a copyable code snippet to convert the reading back.
+- A serial input line sends text to the sketch's `Serial`.
+- Simulated time is throttled to wall-clock time, so `delay()` and `millis()` behave like on the board.
 
 ---
 

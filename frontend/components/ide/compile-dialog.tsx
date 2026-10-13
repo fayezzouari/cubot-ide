@@ -19,6 +19,8 @@ interface CompileDialogProps {
   onSelectCompiler: (compiler: CompilerType) => void;
   onCompile: () => void;
   onExplainLogs: () => void;
+  /** Hand the errors to the AI assistant, which fixes and recompiles. */
+  onFixWithAgent?: () => void;
   isCompiling: boolean;
   isExplaining: boolean;
   compileLogs: string;
@@ -39,6 +41,7 @@ export default function CompileDialog({
   onSelectCompiler,
   onCompile,
   onExplainLogs,
+  onFixWithAgent,
   isCompiling,
   isExplaining,
   compileLogs,
@@ -168,6 +171,16 @@ export default function CompileDialog({
                 <><Sparkles size={12} />Explain</>
               )}
             </button>
+            {onFixWithAgent && hasErrors && (
+              <button
+                onClick={onFixWithAgent}
+                disabled={isCompiling}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-30 border border-blue-500/20 hover:border-blue-500/30 text-blue-400 font-medium text-xs rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+              >
+                <Sparkles size={12} />
+                Fix with AI
+              </button>
+            )}
             <button
               onClick={() => onOpenChange(false)}
               disabled={isCompiling}
