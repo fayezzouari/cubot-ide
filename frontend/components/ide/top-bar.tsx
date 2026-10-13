@@ -36,10 +36,10 @@ export default function TopBar({
       <div className="flex items-center gap-3 min-w-0">
         <Link href="/" className="flex items-center gap-2 group flex-shrink-0">
           <img src="/cubot.svg" alt={PRODUCT_NAME} className="w-6 h-6 object-contain" />
-          <span className="text-sm font-semibold text-white/85 group-hover:text-white transition-colors">{PRODUCT_NAME}</span>
+          <span className="font-pixel text-[11px] font-bold uppercase tracking-wide text-white/85 group-hover:text-white transition-colors">{PRODUCT_NAME}</span>
         </Link>
         <span className="text-white/[0.12]">/</span>
-        <span className="text-xs text-white/35 font-mono flex-shrink-0">IDE</span>
+        <span className="font-pixel text-[8px] uppercase text-white/35 flex-shrink-0">IDE</span>
         {projectName && (
           <>
             <span className="text-white/[0.12]">/</span>
