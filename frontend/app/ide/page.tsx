@@ -964,7 +964,6 @@ export default function IDEPage() {
     <div className="h-screen flex flex-col bg-black text-foreground overflow-hidden">
       <TopBar
         projectId={currentProject?.id ?? null}
-        projectName={currentProject?.name ?? null}
         isArduinoProject={currentProject?.target_compiler === 'arduino'}
         projectType={currentProject?.project_type ?? null}
         onOpenCompile={handleOpenCompileModal}
