@@ -812,7 +812,7 @@ function BlocksIDE() {
           </Button>
         </Link>
         {session?.user?.image && (
-          <Image src={session.user.image} alt={session.user.name ?? 'User'} width={26} height={26} className="rounded-full border border-white/10" />
+          <Image src={session.user.image} alt={session.user.name ?? 'User'} width={26} height={26} className="rounded-full border border-white/10" referrerPolicy="no-referrer" />
         )}
       </header>
 
