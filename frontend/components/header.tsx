@@ -84,6 +84,7 @@ export default function Header() {
                 className="rounded-full"
                 onError={() => setImageError(true)}
                 crossOrigin="anonymous"
+                referrerPolicy="no-referrer"
               />
             ) : (
               <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
