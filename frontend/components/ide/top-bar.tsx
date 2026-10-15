@@ -98,6 +98,7 @@ export default function TopBar({
                   width={24}
                   height={24}
                   className="rounded-full"
+                  referrerPolicy="no-referrer"
                 />
               )}
             </>
