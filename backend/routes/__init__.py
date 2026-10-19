@@ -10,6 +10,7 @@ from routes.blocks import router as blocks_router, arm_ws_router
 from routes.components import router as components_router
 from routes.sandbox import router as sandbox_router
 from routes.users import router as users_router
+from routes.fleet import router as fleet_router
 
 __all__ = [
     "files_router",
@@ -25,4 +26,5 @@ __all__ = [
     "components_router",
     "sandbox_router",
     "users_router",
+    "fleet_router",
 ]
