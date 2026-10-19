@@ -64,6 +64,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=/api
             NEXT_PUBLIC_WS_URL=wss://${{ secrets.DOMAIN }}
+            NEXT_PUBLIC_FLEET_MQTT_URL=wss://${{ secrets.DOMAIN }}/mqtt
           tags: |
             ${{ env.ECR_REGISTRY }}/cubot/frontend:${{ steps.meta.outputs.tag }}
             ${{ env.ECR_REGISTRY }}/cubot/frontend:latest
