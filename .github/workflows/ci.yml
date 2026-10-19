@@ -63,7 +63,7 @@ jobs:
         run: pip install ruff
 
       - name: Lint
-        run: ruff check backend/
+        run: ruff check backend/ sdk/
 
   docker-build-check:
     name: Docker Build Check — ${{ matrix.service }}
@@ -80,6 +80,7 @@ jobs:
             build_args: |
               NEXT_PUBLIC_API_URL=/api
               NEXT_PUBLIC_WS_URL=ws://localhost
+              NEXT_PUBLIC_FLEET_MQTT_URL=ws://localhost/mqtt
     steps:
       - uses: actions/checkout@v4
 

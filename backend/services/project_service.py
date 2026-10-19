@@ -5,6 +5,7 @@ from bson import ObjectId
 from core.database import get_collection
 from models.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectWithFiles
 from services.file_service import file_service
+from services.fleet.db import delete_project_data as delete_fleet_data
 
 
 class ProjectService:
@@ -156,6 +157,7 @@ class ProjectService:
 
         # Delete all files first
         await file_service.delete_files_by_project(project_id)
+        await delete_fleet_data(project_id)
 
         # Delete the project
         result = await collection.delete_one({"_id": ObjectId(project_id)})

@@ -1,10 +1,11 @@
 'use client';
 
-import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft, Cpu, CheckCircle2 } from 'lucide-react';
+import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft, CheckCircle2, Route } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/contexts/project-context';
 import { useEffect, useState } from 'react';
 import { compileService } from '@/lib/api';
+import { fleetApi } from '@/lib/api/fleet';
 import type { ProjectType } from '@/lib/api/types';
 import {
   Dialog,
@@ -67,6 +68,43 @@ const WORKSPACE_OPTIONS = [
     icon: Box,
     description: 'AI-powered 3D modeling. Describe parts in plain language, export to STL.',
   },
+  {
+    id: 'fleet' as const,
+    label: 'Fleet Planner',
+    icon: Route,
+    description: 'Plan paths and dispatch tasks to simulated or real robot and drone fleets over VDA 5050.',
+  },
+];
+
+type WorkspaceType = (typeof WORKSPACE_OPTIONS)[number]['id'];
+
+const WORKSPACE_NOUNS: Record<WorkspaceType, string> = {
+  ide: 'Code',
+  blocks: 'Block',
+  cad: 'CAD',
+  fleet: 'Fleet',
+};
+
+const WORKSPACE_ROUTES: Record<WorkspaceType, string> = {
+  ide: '/ide',
+  blocks: '/blocks',
+  cad: '/cad',
+  fleet: '/fleet',
+};
+
+const FLEET_DIMENSIONS = [
+  {
+    id: '2d' as const,
+    label: '2D floor',
+    description: 'Ground robots on a grid floor plan: AGVs and AMRs moving between stations.',
+    badge: 'AGV · AMR',
+  },
+  {
+    id: '3d' as const,
+    label: '3D volume',
+    description: 'A volumetric space where drones fly alongside ground robots.',
+    badge: 'Drones · UAV',
+  },
 ];
 
 const PROJECT_TYPES = [
@@ -89,6 +127,7 @@ const STEP_TITLES: Record<string, string> = {
   projectType: 'Project type',
   name:        'Name your project',
   compiler:    'Compiler target',
+  dimension:   'Environment',
 };
 
 const STEP_DESCRIPTIONS: Record<string, string> = {
@@ -96,15 +135,25 @@ const STEP_DESCRIPTIONS: Record<string, string> = {
   projectType: 'Choose between embedded systems or robotics development',
   name:        'Give your project a descriptive name',
   compiler:    'Pick the compiler target for your project',
+  dimension:   'Choose the space your fleet operates in',
 };
+
+type Step = 'select' | 'projectType' | 'dimension' | 'name' | 'compiler';
+
+function stepsFor(type: WorkspaceType | null, projectType: 'embedded' | 'ros'): Step[] {
+  if (type === 'fleet') return ['select', 'dimension', 'name'];
+  if (type && type !== 'ide') return ['select', 'name'];
+  return projectType === 'ros' ? ['select', 'projectType', 'name'] : ['select', 'projectType', 'name', 'compiler'];
+}
 
 export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalProps) {
   const router = useRouter();
   const { createProject, createFile, loadProject } = useProject();
   const [isCreating, setIsCreating] = useState(false);
-  const [step, setStep] = useState<'select' | 'projectType' | 'name' | 'compiler'>('select');
-  const [selectedType, setSelectedType] = useState<'ide' | 'blocks' | 'cad' | null>(null);
+  const [step, setStep] = useState<Step>('select');
+  const [selectedType, setSelectedType] = useState<WorkspaceType | null>(null);
   const [selectedProjectType, setSelectedProjectType] = useState<'embedded' | 'ros'>('embedded');
+  const [selectedDimension, setSelectedDimension] = useState<'2d' | '3d'>('2d');
   const [projectName, setProjectName] = useState('');
   const [compilers, setCompilers] = useState<Array<{ id: string; name: string; description: string }>>([]);
   const [selectedCompiler, setSelectedCompiler] = useState('arduino');
@@ -113,6 +162,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
     setStep('select');
     setSelectedType(null);
     setSelectedProjectType('embedded');
+    setSelectedDimension('2d');
     setProjectName('');
     setSelectedCompiler('arduino');
   };
@@ -126,10 +176,10 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
     }).catch(() => {});
   }, [open]);
 
-  const handleSelectWorkspace = (type: 'ide' | 'blocks' | 'cad') => {
+  const handleSelectWorkspace = (type: WorkspaceType) => {
     setSelectedType(type);
-    setProjectName(`My ${type === 'ide' ? 'Code' : type === 'blocks' ? 'Block' : 'CAD'} Project`);
-    setStep(type === 'ide' ? 'projectType' : 'name');
+    setProjectName(`My ${WORKSPACE_NOUNS[type]} Project`);
+    setStep(type === 'ide' ? 'projectType' : type === 'fleet' ? 'dimension' : 'name');
   };
 
   const handleCreateProject = async () => {
@@ -138,7 +188,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
     let newProjectId: string | null = null;
     try {
       const project = await createProject(
-        projectName.trim() || `My ${selectedType === 'ide' ? 'Code' : selectedType === 'blocks' ? 'Block' : 'CAD'} Project`,
+        projectName.trim() || `My ${WORKSPACE_NOUNS[selectedType]} Project`,
         `Created on ${new Date().toLocaleDateString()}`,
         selectedType === 'ide' ? selectedCompiler : 'arduino',
         selectedType === 'ide' ? (selectedProjectType as ProjectType) : undefined,
@@ -147,6 +197,10 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       localStorage.setItem('cubot-ide-last-project', project.id);
       localStorage.setItem(`cubot-ide-project-workspace-${project.id}`, selectedType);
 
+      if (selectedType === 'fleet') {
+        await fleetApi.initProject(project.id, selectedDimension);
+      }
+
       if (selectedType !== 'cad') await loadProject(project.id);
 
       if (selectedType === 'ide' && selectedProjectType !== 'ros') {
@@ -154,14 +208,10 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
       }
 
       onOpenChange(false);
-      if (selectedType === 'ide') router.push(`/ide?project=${project.id}`);
-      else if (selectedType === 'blocks') router.push(`/blocks?project=${project.id}`);
-      else router.push(`/cad?project=${project.id}`);
+      router.push(`${WORKSPACE_ROUTES[selectedType]}?project=${project.id}`);
     } catch {
       onOpenChange(false);
-      if (selectedType === 'ide') router.push(newProjectId ? `/ide?project=${newProjectId}` : '/dashboard');
-      else if (selectedType === 'blocks') router.push(newProjectId ? `/blocks?project=${newProjectId}` : '/dashboard');
-      else router.push(newProjectId ? `/cad?project=${newProjectId}` : '/dashboard');
+      router.push(newProjectId ? `${WORKSPACE_ROUTES[selectedType]}?project=${newProjectId}` : '/dashboard');
     } finally {
       setIsCreating(false);
       resetModal();
@@ -192,10 +242,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
             </div>
             {/* Step dots */}
             <div className="flex items-center gap-1.5">
-              {(['select', 'projectType', 'name', 'compiler'] as const).filter(s => selectedProjectType !== 'ros' || s !== 'compiler').map((s, i) => {
-                const steps = selectedProjectType === 'ros'
-                  ? ['select', 'projectType', 'name']
-                  : ['select', 'projectType', 'name', 'compiler'];
+              {stepsFor(selectedType, selectedProjectType).map((s, i, steps) => {
                 const current = steps.indexOf(step);
                 const isDone = i < current;
                 const isActive = i === current;
@@ -211,7 +258,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
 
         {/* ── Step: select workspace ── */}
         {step === 'select' && (
-          <div className="p-4 grid grid-cols-3 gap-2.5">
+          <div className="p-4 grid grid-cols-2 gap-2.5">
             {WORKSPACE_OPTIONS.map(opt => {
               const Icon = opt.icon;
               return (
@@ -280,6 +327,46 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
           </div>
         )}
 
+        {step === 'dimension' && (
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 gap-2.5">
+              {FLEET_DIMENSIONS.map(d => {
+                const selected = selectedDimension === d.id;
+                return (
+                  <button
+                    key={d.id}
+                    onClick={() => { setSelectedDimension(d.id); setStep('name'); }}
+                    disabled={isCreating}
+                    className={`flex flex-col gap-2 p-4 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 ${
+                      selected
+                        ? 'border-white/30 bg-white/[0.06]'
+                        : 'border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <p className="text-xs font-semibold text-white/80">{d.label}</p>
+                      {selected && <CheckCircle2 size={13} className="text-white/60 flex-shrink-0" />}
+                    </div>
+                    <p className="text-[11px] text-white/30 leading-relaxed">{d.description}</p>
+                    <span className="text-[10px] font-medium text-white/25 px-1.5 py-0.5 rounded border border-white/[0.06] bg-white/[0.03] w-fit">
+                      {d.badge}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="pt-1">
+              <button
+                onClick={() => setStep('select')}
+                disabled={isCreating}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
+              >
+                <ArrowLeft size={12} /> Back
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── Step: name ── */}
         {step === 'name' && (
           <div className="p-4 space-y-4">
@@ -301,7 +388,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
             </div>
             <div className="flex items-center justify-between pt-1">
               <button
-                onClick={() => setStep(selectedType === 'ide' ? 'projectType' : 'select')}
+                onClick={() => setStep(selectedType === 'ide' ? 'projectType' : selectedType === 'fleet' ? 'dimension' : 'select')}
                 disabled={isCreating}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
               >

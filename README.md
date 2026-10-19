@@ -6,7 +6,7 @@
 
 <p align="center">
   A web-based IDE for embedded systems and robotics development.<br/>
-  Code editor · Hardware simulator · AI assistant · CAD studio · Visual block programming — all in one platform.
+  Code editor · Hardware simulator · AI assistant · CAD studio · Visual block programming · Fleet planner — all in one platform.
 </p>
 
 > [!NOTE]
@@ -112,9 +112,13 @@ docker compose up -d mongodb                                  # or any MongoDB o
 docker compose --profile build-compilers build                # Arduino and ARM compiler images (linux/amd64)
 cd backend && uv sync && MONGODB_URI=mongodb://localhost:27017 BEDROCK_MODEL_ID=<model> COMPILE_WORKDIR=/tmp/cubot-compile uv run uvicorn main:app --reload
 cd frontend && npm install && npm run dev
+docker compose up -d fleet-broker                             # Fleet Planner MQTT broker (TCP 1893, WebSocket 127.0.0.1:9011)
+cd backend && MONGODB_URI=mongodb://localhost:27017 uv run python -m services.fleet.coordinator
 ```
 
 The compiler images are built for `linux/amd64`: the AVR toolchain only ships x86-64 binaries, and Docker Desktop runs them under Rosetta on Apple Silicon. `COMPILE_WORKDIR` must be a writable directory (the default `/compile_tmp` is a container path).
+
+The last two lines are only needed for Fleet projects. The fleet coordinator is a separate process next to the backend; with the defaults (`FLEET_MQTT_HOST=localhost`, `FLEET_MQTT_PORT=1893`, `FLEET_MQTT_WS_URL=ws://localhost:9011`) the backend, the coordinator and the browser all find the broker on localhost.
 
 ## Features
 
@@ -235,6 +239,25 @@ A drag-and-drop node editor (powered by XYFlow) for programming robot arm motion
 
 ---
 
+### Fleet Planner
+
+A workspace for planning and coordinating a fleet of ground robots and drones. Details in [docs/fleet-planner.md](docs/fleet-planner.md).
+
+**Scene**
+- 2D or 3D grid environment with obstacles and floor presets, rendered in SVG or Three.js
+- Robots, drones, tasks (priority, deadline, ground or aerial) and categories that restrict which vehicle can do which task
+
+**Planning**
+- Path planning with A*, Dijkstra, Theta*, RRT and RRT* (3D A* for drones), with obstacle clearance and an animation of the explored cells
+- Greedy task assignment to the closest eligible vehicle, and per-vehicle task sequences
+
+**Coordination**
+- The fleet coordinator schedules tasks against their deadlines and dispatches routes as VDA 5050 orders (`uagv/v2/...`) to robots and `uav/v1/...` orders to drones over MQTT (Mosquitto)
+- **Simulated** mode drives the fleet in the browser; **live** mode shows only what real vehicles report
+- `sdk/cubot-sdk` connects real robots and drones: implement `get_state()` and `on_order()`, the SDK handles the protocol
+
+---
+
 ### Simulator
 
 Run compiled Arduino firmware in a browser-connected software emulator — no hardware required.
@@ -341,6 +364,7 @@ cubot-ide/
 │   │   ├── ide/            # Code editor
 │   │   ├── cad/            # CAD studio
 │   │   ├── blocks/         # Block editor
+│   │   ├── fleet/          # Fleet Planner
 │   │   └── simulator/      # Firmware simulator
 │   ├── components/
 │   │   ├── ide/            # Editor, chat, compile, serial, upload, terminal
@@ -358,6 +382,8 @@ cubot-ide/
 │   ├── models/             # Pydantic data models
 │   ├── schemas/            # Request / response validation
 │   └── core/               # Config, database, auth
+├── sdk/
+│   └── cubot-sdk/          # Vehicle SDK for connecting robots and drones to the Fleet Planner
 ├── compilers/              # Compiler Docker image definitions
 │   ├── arduino/
 │   └── ti-arm/
@@ -366,6 +392,7 @@ cubot-ide/
 │   └── setup-k3s.sh        # One-time k3s install for ROS sandbox pods
 ├── k8s/                    # Sandbox namespace, RBAC, network policy
 ├── nginx/                  # Reverse proxy config
+├── mosquitto/              # Fleet Planner MQTT broker config
 ├── .github/workflows/      # CI and CD pipelines
 └── docker-compose.yml      # Service orchestration
 ```
@@ -389,6 +416,9 @@ cubot-ide/
 | `SANDBOX_NAMESPACE` / `SANDBOX_IMAGE` | Namespace and image for ROS sandbox pods (backend `.env`) |
 | `SECRET_KEY` | FastAPI JWT signing key |
 | `ALLOWED_ORIGINS` | CORS allowed origins |
+| `FLEET_MQTT_HOST` / `FLEET_MQTT_PORT` | MQTT broker the fleet coordinator connects to (default `localhost:1893`) |
+| `FLEET_MQTT_WS_URL` | Broker WebSocket URL handed to the browser (default `ws://localhost:9011`, `wss://${DOMAIN}/mqtt` in docker-compose) |
+| `NEXT_PUBLIC_FLEET_MQTT_URL` | Frontend fallback broker WebSocket URL (build argument) |
 | `DD_API_KEY` | Datadog API key |
 | `DD_SITE` / `DD_ENV` / `DD_VERSION` | Datadog configuration |
 

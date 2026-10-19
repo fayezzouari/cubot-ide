@@ -51,6 +51,7 @@ services:
       # CAD Studio: geometry runs in the sandboxed cad-worker service
       - CAD_WORKER_URL=http://cad-worker:8100
       - CAD_STORAGE_DIR=/data/cad
+      - FLEET_MQTT_WS_URL=wss://${DOMAIN:-localhost}/mqtt
     extra_hosts:
       - "host.docker.internal:host-gateway"
     group_add:
@@ -96,6 +97,37 @@ services:
     networks:
       - cad-internal
 
+  fleet-broker:
+    image: eclipse-mosquitto:2
+    container_name: cubot-fleet-broker
+    restart: unless-stopped
+    ports:
+      - "1893:1883"
+      - "127.0.0.1:9011:9001"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - fleet_broker_data:/mosquitto/data
+    networks:
+      - cubot-network
+
+  fleet-coordinator:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cubot-fleet-coordinator
+    restart: unless-stopped
+    command: [".venv/bin/python", "-m", "services.fleet.coordinator"]
+    env_file: backend/.env
+    environment:
+      - MONGODB_URI=mongodb://${MONGO_USER:-cubot}:${MONGO_PASSWORD}@mongodb:27017/cubot_ide?authSource=admin
+      - FLEET_MQTT_HOST=fleet-broker
+      - FLEET_MQTT_PORT=1883
+    depends_on:
+      - mongodb
+      - fleet-broker
+    networks:
+      - cubot-network
+
   frontend:
     build:
       context: ./frontend
@@ -103,6 +135,7 @@ services:
       args:
         - NEXT_PUBLIC_API_URL=/api
         - NEXT_PUBLIC_WS_URL=ws://${DOMAIN:-localhost}
+        - NEXT_PUBLIC_FLEET_MQTT_URL=wss://${DOMAIN:-localhost}/mqtt
     container_name: cubot-frontend
     restart: unless-stopped
     env_file: frontend/.env.local
@@ -151,12 +184,14 @@ services:
     depends_on:
       - frontend
       - backend
+      - fleet-broker
     networks:
       - cubot-network
 
 volumes:
   mongodb_data:
   cad_data:
+  fleet_broker_data:
 
 networks:
   cubot-network:

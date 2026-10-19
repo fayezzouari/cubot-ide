@@ -69,6 +69,25 @@ class Settings(BaseSettings):
     # Exa Web Search
     EXA_API_KEY: Optional[str] = None
 
+    FLEET_MQTT_WS_URL: str = "ws://localhost:9011"
+    FLEET_MQTT_HOST: str = "localhost"
+    FLEET_MQTT_PORT: int = 1893
+    FLEET_POLL_INTERVAL_S: float = 3.0
+    FLEET_TICK_INTERVAL_S: float = 2.0
+    FLEET_MANUFACTURER: str = "cubot"
+    FLEET_CELL_SIZE_M: float = 1.0
+    FLEET_MAP_ORIGIN_X: float = 0.0
+    FLEET_MAP_ORIGIN_Y: float = 0.0
+    FLEET_ROBOT_CLEARANCE_CELLS: int = 1
+    FLEET_HORIZON_BASE_NODES: int = 4
+    FLEET_VDA5050_ENABLED: bool = True
+    FLEET_VDA5050_INTERFACE: str = "uagv"
+    FLEET_VDA5050_MAJOR_VERSION: int = 2
+    FLEET_VDA5050_VERSION: str = "2.0.0"
+    FLEET_UAV_ENABLED: bool = True
+    FLEET_UAV_INTERFACE: str = "uav"
+    FLEET_UAV_MAJOR_VERSION: int = 1
+
     # CORS
     ALLOWED_ORIGINS: str = "*"
 
