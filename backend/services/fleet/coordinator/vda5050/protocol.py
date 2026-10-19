@@ -1,0 +1,49 @@
+ORDER = "order"
+INSTANT_ACTIONS = "instantActions"
+STATE = "state"
+VISUALIZATION = "visualization"
+CONNECTION = "connection"
+FACTSHEET = "factsheet"
+
+MASTER_TO_VEHICLE = (ORDER, INSTANT_ACTIONS)
+VEHICLE_TO_MASTER = (STATE, VISUALIZATION, CONNECTION, FACTSHEET)
+
+
+class ConnectionState:
+    ONLINE = "ONLINE"
+    OFFLINE = "OFFLINE"
+    CONNECTIONBROKEN = "CONNECTIONBROKEN"
+
+
+class BlockingType:
+    NONE = "NONE"
+    SOFT = "SOFT"
+    HARD = "HARD"
+
+
+class ActionStatus:
+    WAITING = "WAITING"
+    INITIALIZING = "INITIALIZING"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    FINISHED = "FINISHED"
+    FAILED = "FAILED"
+
+
+class OperatingMode:
+    AUTOMATIC = "AUTOMATIC"
+    SEMIAUTOMATIC = "SEMIAUTOMATIC"
+    MANUAL = "MANUAL"
+    SERVICE = "SERVICE"
+    TEACHIN = "TEACHIN"
+
+
+class EStop:
+    AUTOACK = "AUTOACK"
+    MANUAL = "MANUAL"
+    REMOTE = "REMOTE"
+    NONE = "NONE"
+
+
+CANCEL_ORDER = "cancelOrder"
+FACTSHEET_REQUEST = "factsheetRequest"
