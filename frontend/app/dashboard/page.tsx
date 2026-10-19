@@ -7,7 +7,7 @@ import CRTWarp from '@/components/ui/CRTWarp';
 import WorkspaceModal from '@/components/workspace-modal';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
-import { Plus, ArrowRight, Trash2, Code2, Cpu, Blocks, Box, X } from 'lucide-react';
+import { Plus, ArrowRight, Trash2, Code2, Cpu, Blocks, Box, Route, X } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import {
   AlertDialog,
@@ -74,6 +74,7 @@ export default function DashboardPage() {
     localStorage.setItem('cubot-ide-last-project', project.id);
     if (ws === 'blocks') router.push(`/blocks?project=${project.id}`);
     else if (ws === 'cad') router.push(`/cad?session=${project.id}`);
+    else if (ws === 'fleet') router.push(`/fleet?project=${project.id}`);
     else router.push(`/ide?project=${project.id}`);
   };
 
@@ -106,6 +107,7 @@ export default function DashboardPage() {
       : 'ide';
     if (ws === 'blocks') return { Icon: Blocks, label: 'Blocks' };
     if (ws === 'cad') return { Icon: Box, label: 'CAD' };
+    if (ws === 'fleet') return { Icon: Route, label: 'Fleet' };
     return { Icon: Code2, label: 'IDE' };
   };
 
@@ -288,9 +290,11 @@ export default function DashboardPage() {
                         <span className="text-white/70 px-2 py-0.5 rounded-md border border-white/[0.14]">
                           {workspaceLabel}
                         </span>
-                        <span className="text-white/45 px-2 py-0.5 rounded-md border border-white/[0.08]">
-                          {project.target_compiler || 'unknown'}
-                        </span>
+                        {workspaceLabel !== 'Fleet' && (
+                          <span className="text-white/45 px-2 py-0.5 rounded-md border border-white/[0.08]">
+                            {project.target_compiler || 'unknown'}
+                          </span>
+                        )}
                         <span className="text-white/30 normal-case tracking-normal pl-1">
                           {project.file_count ?? 0} file{project.file_count === 1 ? '' : 's'} · {formatDate(project.updated_at)}
                         </span>
