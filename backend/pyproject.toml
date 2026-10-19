@@ -30,6 +30,7 @@ dependencies = [
     "numpy<2.0",
     "kubernetes==35.0.0",
     "coacd>=1.0.14",
+    "aiomqtt>=2.3",
 ]
 
 [tool.ruff]
