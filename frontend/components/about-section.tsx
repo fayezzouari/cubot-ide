@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, Boxes, Box, Check, Cpu, Zap, Radio, RotateCcw } from 'lucide-react';
+import { Code2, Boxes, Box, Check, Cpu, Zap, Radio, RotateCcw, Route } from 'lucide-react';
 
 const workspaces = [
   {
@@ -42,6 +42,19 @@ const workspaces = [
     ],
     tag: '/cad',
   },
+  {
+    icon: Route,
+    title: 'Fleet Planner',
+    subtitle: 'Multi-Robot Coordination',
+    desc: 'Draw a warehouse, drop in ground robots, drones and tasks, and let CuBot plan the paths and assign the work. The same workspace drives a simulated fleet or real hardware over VDA 5050.',
+    items: [
+      'A*, Theta*, Dijkstra, RRT and RRT* path planning',
+      'Deadline-aware task assignment',
+      'Simulated or live fleets over MQTT',
+      'Connect real vehicles with cubot-sdk',
+    ],
+    tag: '/fleet',
+  },
 ];
 
 
@@ -61,16 +74,16 @@ export default function AboutSection() {
         <div className="mb-16">
           <p className="text-xs font-mono text-white/30 mb-3 tracking-widest uppercase">Platform</p>
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
-            Three workspaces.<br />One platform.
+            Four workspaces.<br />One platform.
           </h2>
           <p className="text-white/40 text-sm max-w-md leading-relaxed">
-            Switch between a pro code editor, visual block builder, and AI CAD designer
-            — all connected to the same project.
+            Switch between a pro code editor, visual block builder, AI CAD designer
+            and fleet planner — all connected to the same project.
           </p>
         </div>
 
         {/* Workspace cards */}
-        <div className="grid md:grid-cols-3 gap-3 mb-20">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3 mb-20">
           {workspaces.map(({ icon: Icon, title, subtitle, desc, items, tag }) => (
             <div
               key={title}
