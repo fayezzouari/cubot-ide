@@ -6,6 +6,7 @@ from core.database import connect_to_mongo, close_mongo_connection
 from core.auth import get_current_user
 from services.cad import repository as cad_repository
 from services.cad.geometry import geometry
+from services.missions import progress as mission_progress
 from routes import (
     files_router,
     projects_router,
@@ -21,6 +22,7 @@ from routes import (
     sandbox_router,
     users_router,
     fleet_router,
+    missions_router,
 )
 import uvicorn
 
@@ -31,6 +33,7 @@ async def lifespan(app: FastAPI):
     # Startup
     await connect_to_mongo(settings.MONGODB_URI, settings.MONGODB_DB_NAME)
     await cad_repository.ensure_indexes()
+    await mission_progress.ensure_indexes()
     await geometry.start()
     yield
     # Shutdown
@@ -69,6 +72,7 @@ app.include_router(components_router, prefix="/api", dependencies=_auth)
 app.include_router(sandbox_router, prefix="/api", dependencies=_auth)
 app.include_router(users_router, prefix="/api", dependencies=_auth)
 app.include_router(fleet_router, prefix="/api", dependencies=_auth)
+app.include_router(missions_router, prefix="/api", dependencies=_auth)
 
 
 @app.get("/")
