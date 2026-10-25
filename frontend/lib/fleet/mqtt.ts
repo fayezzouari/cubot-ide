@@ -15,8 +15,9 @@ export function connectFleetMqtt(wsUrl: string | null | undefined, setup: (clien
   let client: MqttClient | null = null;
   let disposed = false;
   void import('mqtt')
-    .then(({ connect }) => {
+    .then((mod) => {
       if (disposed) return;
+      const connect = mod.connect ?? (mod.default as unknown as typeof mod).connect;
       client = connect(resolveBrokerUrl(wsUrl), { reconnectPeriod: 2000 });
       client.on('error', () => {});
       setup(client);
