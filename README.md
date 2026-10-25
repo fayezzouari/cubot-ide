@@ -418,6 +418,7 @@ cubot-ide/
 | `ALLOWED_ORIGINS` | CORS allowed origins |
 | `FLEET_MQTT_HOST` / `FLEET_MQTT_PORT` | MQTT broker the fleet coordinator connects to (default `localhost:1893`) |
 | `FLEET_MQTT_WS_URL` | Broker WebSocket URL handed to the browser (default `ws://localhost:9011`, `wss://${DOMAIN}/mqtt` in docker-compose) |
+| `FLEET_MQTT_PUBLIC_HOST` / `FLEET_MQTT_PUBLIC_PORT` | Broker TCP address shown to users for connecting their robots (default: the app's hostname and `1893`; `${DOMAIN}` in docker-compose) |
 | `NEXT_PUBLIC_FLEET_MQTT_URL` | Frontend fallback broker WebSocket URL (build argument) |
 | `DD_API_KEY` | Datadog API key |
 | `DD_SITE` / `DD_ENV` / `DD_VERSION` | Datadog configuration |
