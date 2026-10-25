@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import {
   Play,
   Square,
-  Home,
+  ArrowLeft,
   Cpu,
   Lightbulb,
   RotateCcw,
@@ -592,16 +592,22 @@ export default function SimulatorPageContent() {
     <div className="h-screen flex flex-col bg-[#080808] text-[#ededed] overflow-hidden">
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <header className="h-12 border-b border-white/[0.06] flex items-center justify-between px-4 shrink-0">
+      <header className="h-12 border-b border-white/[0.06] flex items-center justify-between px-4 shrink-0 bg-[#0e0e0e]">
         <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link
+            href={`/ide?project=${projectId}`}
+            className="inline-flex items-center gap-1.5 h-7 pl-1.5 pr-2.5 text-xs text-white/50 hover:text-white hover:bg-white/[0.06] rounded-lg transition-all"
+          >
+            <ArrowLeft size={13} />
+            IDE
+          </Link>
+          <span className="w-px h-4 bg-white/[0.08]" />
+          <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-blue-500/10 rounded-lg flex items-center justify-center">
               <Cpu size={13} className="text-blue-400" />
             </div>
-            <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">
-              Simulator
-            </span>
-          </Link>
+            <span className="text-sm font-semibold text-white/80">Simulator</span>
+          </div>
           {currentProject && (
             <>
               <span className="text-white/20">/</span>
@@ -650,15 +656,6 @@ export default function SimulatorPageContent() {
             Reset
           </button>
 
-          <div className="w-px h-5 bg-white/[0.08] mx-1" />
-
-          {/* Back to IDE */}
-          <Link
-            href={`/ide?project=${projectId}`}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-white/40 hover:text-white transition-colors"
-          >
-            <Home size={13} />
-          </Link>
         </div>
       </header>
 
