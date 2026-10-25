@@ -35,7 +35,7 @@ import {
   Code2,
   FolderOpen,
   Gauge,
-  Home,
+  ArrowLeft,
   LayoutTemplate,
   Pause,
   Play,
@@ -685,11 +685,19 @@ function BlocksIDE() {
   return (
     <div className="flex h-screen flex-col bg-[#080808] text-foreground" style={BLOCKS_THEME}>
       {/* Top bar */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/[0.08] bg-[#0a0a0a] px-3">
-        <Link href="/dashboard" className="flex items-center gap-2">
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/[0.08] bg-[#0e0e0e] px-3">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 h-7 pl-1.5 pr-2.5 text-xs text-white/50 hover:text-white hover:bg-white/[0.06] rounded-lg transition-all"
+        >
+          <ArrowLeft size={13} />
+          Dashboard
+        </Link>
+        <span className="w-px h-4 bg-white/[0.08]" />
+        <div className="flex items-center gap-2">
           <img src="/cubot.svg" alt="CuBot" className="h-7 w-7 object-contain" />
           <span className="text-sm font-semibold text-white/80">CuBot</span>
-        </Link>
+        </div>
         <span className="text-white/15">/</span>
         <span className="font-mono text-xs text-white/35">Blocks</span>
         <input
@@ -806,11 +814,6 @@ function BlocksIDE() {
         >
           <Usb size={14} /> {serial ? 'Arm connected' : 'Connect arm'}
         </Button>
-        <Link href="/dashboard" title="Dashboard">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-white/40 hover:text-white/70">
-            <Home size={15} />
-          </Button>
-        </Link>
         {session?.user?.image && (
           <Image src={session.user.image} alt={session.user.name ?? 'User'} width={26} height={26} className="rounded-full border border-white/10" referrerPolicy="no-referrer" />
         )}
