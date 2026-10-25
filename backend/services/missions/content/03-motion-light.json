@@ -1,0 +1,33 @@
+{
+  "id": "motion-light",
+  "order": 3,
+  "track": "Embedded basics",
+  "title": "Motion light",
+  "summary": "Read a PIR motion sensor and switch a light.",
+  "difficulty": "beginner",
+  "concepts": ["digitalRead", "if / else", "INPUT pins"],
+  "goal": "The LED on pin 13 is on exactly while the PIR sensor on pin 2 reports motion.",
+  "brief": "A PIR (passive infrared) sensor drives its output **HIGH** while it sees movement. It is wired to **digital pin 2**.\n\n1. Make pin 2 an `INPUT` and pin 13 an `OUTPUT`.\n2. In `loop()`, read pin 2 with `digitalRead`.\n3. If it is `HIGH`, turn the LED on, otherwise turn it off.\n\nThe check walks in front of the sensor at 1.5 s and walks away at 3 s.",
+  "duration_ms": 4500,
+  "starter_files": [
+    {
+      "path": "main.ino",
+      "content": "const int PIR_PIN = 2;\nconst int LED_PIN = 13;\n\nvoid setup() {\n}\n\nvoid loop() {\n}\n"
+    }
+  ],
+  "scenario": [
+    { "at_ms": 0, "action": "digital", "pin": 2, "value": false },
+    { "at_ms": 1500, "action": "digital", "pin": 2, "value": true },
+    { "at_ms": 3000, "action": "digital", "pin": 2, "value": false }
+  ],
+  "checks": [
+    { "id": "idle", "label": "LED off with no motion", "type": "pin_state", "pin": 13, "at_ms": 1200, "value": false },
+    { "id": "motion", "label": "LED on during motion", "type": "pin_state", "pin": 13, "at_ms": 2600, "value": true },
+    { "id": "after", "label": "LED off again after motion", "type": "pin_state", "pin": 13, "at_ms": 4200, "value": false }
+  ],
+  "hints": [
+    "You need to read the sensor every time loop() runs, not just once in setup().",
+    "int motion = digitalRead(PIR_PIN); gives HIGH or LOW. Compare it in an if.",
+    "if (digitalRead(PIR_PIN) == HIGH) { digitalWrite(LED_PIN, HIGH); } else { digitalWrite(LED_PIN, LOW); }"
+  ]
+}

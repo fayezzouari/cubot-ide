@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Check, ChevronDown, FileText, Globe, ListChecks, Square, X, Zap } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, FileText, Globe, GraduationCap, ListChecks, Square, X, Zap } from 'lucide-react';
 import { AGENT_MODES } from '@/lib/branding';
 import type { ChatMode } from '@/lib/mock-data';
 
@@ -28,7 +28,8 @@ interface AgentComposerProps {
   onRemoveContext: (id: string) => void;
 }
 
-const MODE_ICON = { build: Zap, plan: ListChecks } as const;
+const MODE_ICON = { build: Zap, plan: ListChecks, tutor: GraduationCap } as const;
+const MODE_TINT = { build: 'text-white/60', plan: 'text-blue-300', tutor: 'text-amber-300' } as const;
 
 export default function AgentComposer({
   value, onChange, onSend, onStop, busy, mode, onModeChange,
@@ -165,13 +166,13 @@ function ModeMenu({ mode, onChange }: { mode: ChatMode; onChange: (mode: ChatMod
         aria-expanded={open}
         className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-white/70 hover:bg-white/[0.07] hover:text-white/90 transition-colors cursor-pointer"
       >
-        <Icon size={11} className={mode === 'plan' ? 'text-blue-300' : 'text-white/60'} />
+        <Icon size={11} className={MODE_TINT[mode]} />
         {AGENT_MODES[mode].label}
         <ChevronDown size={10} className="text-white/35" />
       </button>
       {open && (
         <div role="menu" className="absolute bottom-7 left-0 z-30 w-56 rounded-md border border-white/[0.1] bg-[#1a1a1a] p-1 shadow-xl shadow-black/60">
-          {(['build', 'plan'] as ChatMode[]).map(m => {
+          {(['build', 'plan', 'tutor'] as ChatMode[]).map(m => {
             const ItemIcon = MODE_ICON[m];
             return (
               <button
@@ -181,7 +182,7 @@ function ModeMenu({ mode, onChange }: { mode: ChatMode; onChange: (mode: ChatMod
                 onClick={() => { onChange(m); setOpen(false); }}
                 className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-white/[0.07] cursor-pointer"
               >
-                <ItemIcon size={12} className={`mt-0.5 flex-shrink-0 ${m === 'plan' ? 'text-blue-300' : 'text-white/60'}`} />
+                <ItemIcon size={12} className={`mt-0.5 flex-shrink-0 ${MODE_TINT[m]}`} />
                 <span className="min-w-0 flex-1">
                   <span className="block text-[12px] text-white/90">{AGENT_MODES[m].label}</span>
                   <span className="block text-[10.5px] leading-snug text-white/40">{AGENT_MODES[m].hint}</span>

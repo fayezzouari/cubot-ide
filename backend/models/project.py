@@ -13,6 +13,7 @@ class ProjectBase(BaseModel):
     project_type: ProjectType = Field(default=ProjectType.EMBEDDED)
     sandbox_id: Optional[str] = Field(default=None, description="Sandbox pod name for this project")
     user_id: Optional[str] = Field(default=None, description="Google sub of the owning user")
+    mission_id: Optional[str] = Field(default=None, description="Learning mission this project was started for")
 
 
 class ProjectCreate(ProjectBase):

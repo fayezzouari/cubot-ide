@@ -1,0 +1,33 @@
+{
+  "id": "temperature-alarm",
+  "order": 4,
+  "track": "Embedded basics",
+  "title": "Temperature alarm",
+  "summary": "Convert an analog reading to °C and raise an alarm.",
+  "difficulty": "intermediate",
+  "concepts": ["analogRead", "ADC", "transfer functions", "float math"],
+  "goal": "When the TMP36 on A0 reads above 40 °C, turn on the LED on pin 13 and print \"ALARM\". Below that, keep the LED off and stay quiet.",
+  "brief": "A **TMP36** temperature sensor outputs a voltage: 500 mV at 0 °C, plus 10 mV for every degree. It is wired to **A0**.\n\n`analogRead(A0)` returns 0 to 1023 for 0 to 5 V, so:\n\n```\nvolts = reading * 5.0 / 1023.0\ntempC = (volts - 0.5) * 100.0\n```\n\n1. Read A0 a few times per second and convert the reading to °C.\n2. Above 40 °C: LED on and print `ALARM`.\n3. Otherwise: LED off, print nothing alarming.\n\nThe check starts the room at 25 °C and heats it to 50 °C at 2 s.",
+  "duration_ms": 4500,
+  "starter_files": [
+    {
+      "path": "main.ino",
+      "content": "const int SENSOR_PIN = A0;\nconst int LED_PIN = 13;\nconst float ALARM_C = 40.0;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(LED_PIN, OUTPUT);\n}\n\nvoid loop() {\n}\n"
+    }
+  ],
+  "scenario": [
+    { "at_ms": 0, "action": "analog", "channel": 0, "millivolts": 750 },
+    { "at_ms": 2000, "action": "analog", "channel": 0, "millivolts": 1000 }
+  ],
+  "checks": [
+    { "id": "calm-led", "label": "LED off at 25 °C", "type": "pin_state", "pin": 13, "at_ms": 1800, "value": false },
+    { "id": "calm-serial", "label": "No alarm at 25 °C", "type": "serial_contains", "text": "ALARM", "before_ms": 1800, "absent": true },
+    { "id": "hot-led", "label": "LED on at 50 °C", "type": "pin_state", "pin": 13, "at_ms": 4000, "value": true },
+    { "id": "hot-serial", "label": "Prints ALARM at 50 °C", "type": "serial_contains", "text": "ALARM", "after_ms": 2000 }
+  ],
+  "hints": [
+    "analogRead gives a number from 0 to 1023, not a voltage. Convert it to volts first.",
+    "Use float, not int: (reading * 5.0 / 1023.0 - 0.5) * 100.0. Integer division throws the decimals away.",
+    "float tempC = (analogRead(SENSOR_PIN) * 5.0 / 1023.0 - 0.5) * 100.0; if (tempC > ALARM_C) { digitalWrite(LED_PIN, HIGH); Serial.println(\"ALARM\"); } else { digitalWrite(LED_PIN, LOW); } delay(200);"
+  ]
+}

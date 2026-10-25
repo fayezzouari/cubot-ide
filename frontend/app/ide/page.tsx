@@ -15,6 +15,7 @@ import TerminalTabsManager from '@/components/ide/terminal-tabs-manager';
 import CompileDialog from '@/components/ide/compile-dialog';
 import SerialDialog from '@/components/ide/serial-dialog';
 import UploadDialog from '@/components/ide/upload-dialog';
+import MissionPanel from '@/components/ide/mission-panel';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { buildProjectFileTree, buildSandboxFileTree, buildUnifiedFileTree } from './helpers/fileTreeHelpers';
 import { importSandboxFile, syncSandboxToProject } from './helpers/fileHandlers';
@@ -52,6 +53,7 @@ export default function IDEPage() {
   const [codeContexts, setCodeContexts] = useState<CodeContext[]>([]);
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isMissionCollapsed, setIsMissionCollapsed] = useState(false);
 
   const hasLoadedProjectRef = useRef(false);
 
@@ -434,13 +436,14 @@ export default function IDEPage() {
     abortRef.current?.abort();
   };
 
-  const handleSendMessage = async (override?: string) => {
+  const handleSendMessage = async (override?: string, modeOverride?: ChatMode) => {
     const userMessage = (override ?? chatInput).trim();
     if (!userMessage || !currentProject || isChatLoading) return;
 
     setIsChatLoading(true);
     const contextSnapshot = [...codeContexts];
-    const isPlanMode = chatMode === 'plan';
+    const sendMode = modeOverride ?? chatMode;
+    const isPlanMode = sendMode === 'plan';
     const attachments = [
       ...(activeFile ? [activeFile.name] : []),
       ...contextSnapshot.map(c => `${c.fileName}:${c.startLine}-${c.endLine}`),
@@ -453,7 +456,7 @@ export default function IDEPage() {
       id: assistantId,
       role: 'assistant',
       content: '',
-      mode: chatMode,
+      mode: sendMode,
       status: 'streaming',
       statusText: isPlanMode ? 'Planning' : 'Thinking',
       activity: [],
@@ -549,6 +552,7 @@ export default function IDEPage() {
           compiler: agentCompiler,
           conversation_history: conversationHistory,
           plan_mode: isPlanMode,
+          tutor_mode: sendMode === 'tutor',
           enable_websearch: enableWebsearch,
           workspace_id: activeWorkspaceId ?? undefined,
           thread_id: threadAtSend ?? undefined,
@@ -587,7 +591,18 @@ export default function IDEPage() {
     setChatMode('build');
     const prompt = `The ${selectedCompiler} build failed. Fix the errors and make sure it compiles.\n\n\`\`\`\n${errorText}\n\`\`\``;
     // Build-mode state is set above; send on the next tick so the mode switch is applied first.
-    setTimeout(() => void handleSendMessage(prompt), 0);
+    setTimeout(() => void handleSendMessage(prompt, 'build'), 0);
+  };
+
+  const missionId = currentProject?.mission_id ?? null;
+
+  useEffect(() => {
+    if (missionId) setChatMode('tutor');
+  }, [missionId]);
+
+  const handleAskTutor = (prompt: string) => {
+    setChatMode('tutor');
+    setTimeout(() => void handleSendMessage(prompt, 'tutor'), 0);
   };
 
   const handleFileSelect = (fileId: string) => {
@@ -936,13 +951,14 @@ export default function IDEPage() {
       const loaded: ChatMessage[] = [];
       history.forEach(msg => {
         const isPlan = msg.mode === 'plan';
+        const historyMode: ChatMode = msg.mode === 'plan' || msg.mode === 'tutor' ? msg.mode : 'build';
         const planSteps = isPlan && msg.role === 'assistant' ? parsePlanSteps(msg.content) : undefined;
         const hasSteps = !!planSteps && planSteps.length > 0;
         const formatted: ChatMessage = {
           id: msg.id,
           role: msg.role as 'user' | 'assistant',
           content: hasSteps ? '' : msg.content,
-          mode: isPlan ? 'plan' : 'build',
+          mode: historyMode,
           status: msg.role === 'assistant' ? 'done' : undefined,
           ...(hasSteps && { planSteps }),
           ...(msg.file_operations?.length ? { fileOps: msg.file_operations as FileChange[] } : {}),
@@ -1016,6 +1032,34 @@ export default function IDEPage() {
     }
     return list;
   }, [currentProject, activeFile?.name]);
+
+  const editorPanel = (
+    <EditorPanel
+      currentFileName={currentFileName}
+      currentProjectName={currentProject?.name ?? null}
+      hasUnsavedChanges={hasUnsavedChanges}
+      isSaving={isSaving}
+      onSave={handleSaveFile}
+      currentFileContent={currentFileContent}
+      editedContent={editedContent}
+      onChange={handleContentChange}
+      getLanguageFromFileName={getLanguageFromFileName}
+      onAddSelectionToChat={handleAddSelectionToChat}
+    />
+  );
+
+  const missionPanel = missionId && currentProject ? (
+    <MissionPanel
+      missionId={missionId}
+      projectId={currentProject.id}
+      files={currentProject.files}
+      hasUnsavedChanges={hasUnsavedChanges}
+      onSave={handleSaveFile}
+      onAskTutor={handleAskTutor}
+      collapsed={isMissionCollapsed}
+      onToggleCollapsed={() => setIsMissionCollapsed(v => !v)}
+    />
+  ) : null;
 
   return (
     <div className="h-screen flex flex-col bg-black text-foreground overflow-hidden">
@@ -1104,20 +1148,24 @@ export default function IDEPage() {
                   />
                 </ResizablePanel>
               </ResizablePanelGroup>
+            ) : missionPanel && isMissionCollapsed ? (
+              <div className="h-full flex flex-col">
+                <div className="flex-1 min-h-0">{editorPanel}</div>
+                <div className="h-10 shrink-0">{missionPanel}</div>
+              </div>
+            ) : missionPanel ? (
+              <ResizablePanelGroup direction="vertical">
+                <ResizablePanel defaultSize={58} minSize={25}>
+                  {editorPanel}
+                </ResizablePanel>
+                <ResizableHandle withHandle className="h-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
+                <ResizablePanel defaultSize={42} minSize={15}>
+                  {missionPanel}
+                </ResizablePanel>
+              </ResizablePanelGroup>
             ) : (
               /* Non-ROS Projects - Editor Only */
-              <EditorPanel
-                currentFileName={currentFileName}
-                currentProjectName={currentProject?.name ?? null}
-                hasUnsavedChanges={hasUnsavedChanges}
-                isSaving={isSaving}
-                onSave={handleSaveFile}
-                currentFileContent={currentFileContent}
-                editedContent={editedContent}
-                onChange={handleContentChange}
-                getLanguageFromFileName={getLanguageFromFileName}
-                onAddSelectionToChat={handleAddSelectionToChat}
-              />
+              editorPanel
             )}
           </ResizablePanel>
 

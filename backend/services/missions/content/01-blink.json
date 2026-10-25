@@ -1,0 +1,35 @@
+{
+  "id": "blink",
+  "order": 1,
+  "track": "Embedded basics",
+  "title": "Blink",
+  "summary": "Make the built-in LED blink once per second.",
+  "difficulty": "beginner",
+  "concepts": ["pinMode", "digitalWrite", "delay"],
+  "goal": "The LED on pin 13 turns on for 500 ms, then off for 500 ms, forever.",
+  "brief": "Every microcontroller journey starts with a blinking LED. The Arduino Uno has an LED wired to **digital pin 13**.\n\n1. In `setup()`, make pin 13 an output with `pinMode`.\n2. In `loop()`, switch it on with `digitalWrite(13, HIGH)`, wait 500 ms with `delay`, switch it off, wait again.\n\n`loop()` runs over and over, so the LED keeps blinking.",
+  "duration_ms": 4000,
+  "starter_files": [
+    {
+      "path": "main.ino",
+      "content": "void setup() {\n}\n\nvoid loop() {\n}\n"
+    }
+  ],
+  "scenario": [],
+  "checks": [
+    {
+      "id": "toggles",
+      "label": "Pin 13 toggles every 500 ms",
+      "type": "pin_toggles",
+      "pin": 13,
+      "interval_ms": 500,
+      "tolerance": 0.15,
+      "min_edges": 4
+    }
+  ],
+  "hints": [
+    "A pin is an input by default. Which function turns it into an output?",
+    "pinMode(13, OUTPUT); goes in setup(). In loop() you need four lines: on, wait, off, wait.",
+    "digitalWrite(13, HIGH); delay(500); digitalWrite(13, LOW); delay(500);"
+  ]
+}

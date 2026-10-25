@@ -21,6 +21,10 @@ import type {
   WiringResponse,
   StepExecutionRequest,
   StepExecutionResponse,
+  Mission,
+  MissionRun,
+  MissionStart,
+  MissionSummary,
 } from './types';
 
 // File Service
@@ -157,4 +161,18 @@ export const chatService = {
 export const wiringService = {
   generate: (data: WiringRequest) =>
     apiClient.post<WiringResponse>('/wiring/generate', data),
+};
+
+export const missionService = {
+  list: () =>
+    apiClient.get<MissionSummary[]>('/missions/'),
+
+  get: (missionId: string) =>
+    apiClient.get<Mission>(`/missions/${missionId}`),
+
+  start: (missionId: string) =>
+    apiClient.post<MissionStart>(`/missions/${missionId}/start`, {}),
+
+  check: (missionId: string, hex: string, projectId?: string) =>
+    apiClient.post<MissionRun>(`/missions/${missionId}/check`, { hex, project_id: projectId }),
 };

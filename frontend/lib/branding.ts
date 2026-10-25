@@ -21,4 +21,10 @@ export const AGENT_MODES = {
     placeholder: 'Describe what to build — AI will plan the steps…',
     empty: 'Describe what you want to build and the AI will create a step-by-step plan.',
   },
+  tutor: {
+    label: 'Tutor',
+    hint: 'Coaches you with questions and hints. Reads your code but never writes it for you.',
+    placeholder: 'Ask for a hint or an explanation…',
+    empty: 'Stuck on something? Ask for a hint. The tutor explains and nudges, you write the code.',
+  },
 } as const;

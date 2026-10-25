@@ -7,7 +7,8 @@ import CRTWarp from '@/components/ui/CRTWarp';
 import WorkspaceModal from '@/components/workspace-modal';
 import { projectService } from '@/lib/api';
 import type { ProjectResponse } from '@/lib/api/types';
-import { Plus, ArrowRight, Trash2, Code2, Cpu, Blocks, Box, Route, X } from 'lucide-react';
+import { Plus, ArrowRight, Trash2, Code2, Cpu, Blocks, Box, Route, X, GraduationCap } from 'lucide-react';
+import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
   AlertDialog,
@@ -57,7 +58,7 @@ export default function DashboardPage() {
   }, []);
 
   const sortedProjects = useMemo(() =>
-    [...projects].sort((a, b) =>
+    projects.filter(p => !p.mission_id).sort((a, b) =>
       new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     ), [projects]);
 
@@ -166,6 +167,23 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
+
+        <Link
+          href="/learn"
+          className="group mb-8 flex items-center gap-4 rounded-xl border border-white/[0.08] bg-black px-5 py-4 transition-colors hover:bg-[#0b0b0b] hover:border-white/[0.16]"
+        >
+          <div className="w-9 h-9 rounded-lg border border-white/[0.12] flex items-center justify-center text-white/60 group-hover:border-white/30 group-hover:text-white transition-colors">
+            <GraduationCap size={15} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-white">Learn by building</p>
+            <p className="text-xs text-white/45 mt-0.5">Hands-on missions checked by the simulator, with an AI tutor that hints instead of answering.</p>
+          </div>
+          <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-white/35 group-hover:text-white transition-colors flex-shrink-0">
+            Missions
+            <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+          </span>
+        </Link>
 
         {/* Error */}
         {!isLoading && error && (

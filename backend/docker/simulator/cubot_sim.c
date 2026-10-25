@@ -6,8 +6,11 @@
  *
  * stdout (one JSON object per line):
  *   {"type":"ready"}
- *   {"type":"serial","data":"H"}
- *   {"type":"pin","pin":13,"value":true}
+ *   {"type":"serial","data":"H","t":12}
+ *   {"type":"pin","pin":13,"value":true,"t":1000}
+ *   {"type":"tick","t":100}                        every 100 ms of simulated time
+ *
+ * "t" is simulated time in milliseconds since reset.
  *
  * stdin (one JSON object per line):
  *   {"type":"serial_input","data":"text\n"}        bytes for the UART receiver
@@ -41,6 +44,7 @@
 #define VREF_MV 5000
 #define INPUT_POLL_INTERVAL 2000
 #define LINE_MAX 4096
+#define TICK_MS 100
 
 static volatile int running = 1;
 
@@ -51,6 +55,12 @@ static void sig_handler(int sig) {
 
 static uint8_t prev_portb = 0;
 static uint8_t prev_portd = 0;
+static avr_t *sim = NULL;
+
+static unsigned long long sim_ms(void) {
+    if (!sim || !sim->frequency) return 0;
+    return (unsigned long long)(sim->cycle / (sim->frequency / 1000));
+}
 
 static int port_pin_to_arduino(char port, int pin) {
     switch (port) {
@@ -79,7 +89,7 @@ static int arduino_to_port_pin(int apin, char *port, int *bit) {
 }
 
 static void emit_pin(int arduino_pin, int value) {
-    printf("{\"type\":\"pin\",\"pin\":%d,\"value\":%s}\n", arduino_pin, value ? "true" : "false");
+    printf("{\"type\":\"pin\",\"pin\":%d,\"value\":%s,\"t\":%llu}\n", arduino_pin, value ? "true" : "false", sim_ms());
     fflush(stdout);
 }
 
@@ -99,21 +109,23 @@ static void uart_output_hook(struct avr_irq_t *irq, uint32_t value, void *param)
     (void)irq;
     (void)param;
     char c = (char)value;
+    char data[8];
     if (c == '"') {
-        printf("{\"type\":\"serial\",\"data\":\"\\\"\"}\n");
+        snprintf(data, sizeof(data), "\\\"");
     } else if (c == '\\') {
-        printf("{\"type\":\"serial\",\"data\":\"\\\\\"}\n");
+        snprintf(data, sizeof(data), "\\\\");
     } else if (c == '\n') {
-        printf("{\"type\":\"serial\",\"data\":\"\\n\"}\n");
+        snprintf(data, sizeof(data), "\\n");
     } else if (c == '\r') {
-        printf("{\"type\":\"serial\",\"data\":\"\\r\"}\n");
+        snprintf(data, sizeof(data), "\\r");
     } else if (c == '\t') {
-        printf("{\"type\":\"serial\",\"data\":\"\\t\"}\n");
+        snprintf(data, sizeof(data), "\\t");
     } else if (c >= 32 && c < 127) {
-        printf("{\"type\":\"serial\",\"data\":\"%c\"}\n", c);
+        snprintf(data, sizeof(data), "%c", c);
     } else {
-        printf("{\"type\":\"serial\",\"data\":\"\\u%04x\"}\n", (unsigned char)c);
+        snprintf(data, sizeof(data), "\\u%04x", (unsigned char)c);
     }
+    printf("{\"type\":\"serial\",\"data\":\"%s\",\"t\":%llu}\n", data, sim_ms());
     fflush(stdout);
 }
 
@@ -290,6 +302,7 @@ int main(int argc, char *argv[]) {
     }
 
     avr_init(avr);
+    sim = avr;
     avr->frequency = 16000000UL;
     avr->vcc = VREF_MV;
     avr->avcc = VREF_MV;
@@ -331,12 +344,18 @@ int main(int argc, char *argv[]) {
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
     unsigned long iterations = 0;
+    unsigned long long next_tick = TICK_MS;
     while (running) {
         int state = avr_run(avr);
         if (state == cpu_Done || state == cpu_Crashed) break;
         if (++iterations % INPUT_POLL_INTERVAL == 0) {
             pump_input(avr);
             throttle(avr, &start);
+            unsigned long long now = sim_ms();
+            if (now >= next_tick) {
+                printf("{\"type\":\"tick\",\"t\":%llu}\n", now);
+                next_tick = now - now % TICK_MS + TICK_MS;
+            }
         }
     }
 

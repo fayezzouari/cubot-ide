@@ -17,6 +17,8 @@ from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Iterable, Lis
 import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
+from bson import ObjectId
+from bson.errors import InvalidId
 
 from core.config import settings
 from core.database import get_collection
@@ -31,6 +33,7 @@ from models.chat import (
     ExecutionLogEntry,
 )
 from services import chat_threads
+from services.missions import catalog as mission_catalog
 from services.tools_definitions import FILE_TOOL_NAMES, get_tool_config
 from services.tools_functions import handle_tool_use, project_snapshot, result_for_model
 
@@ -363,7 +366,7 @@ class AIService:
     # ---------------------------------------------------------------- one turn
 
     async def _run_chat(self, project_id: str, request: ChatRequest, on_event: EventSink) -> Dict[str, Any]:
-        mode = "plan" if request.plan_mode else "build"
+        mode = "tutor" if request.tutor_mode else "plan" if request.plan_mode else "build"
         thread_id = request.thread_id
         if not thread_id or await chat_threads.get_thread(project_id, thread_id) is None:
             thread_id = await chat_threads.create_thread(project_id)
@@ -372,7 +375,7 @@ class AIService:
         history = self._history_messages(request.conversation_history)
         user_content = self._with_file_context(request.message, request.file_context)
 
-        if request.plan_mode:
+        if mode == "plan":
             if on_event:
                 await on_event({"type": "status", "text": "Planning"})
             snapshot = await project_snapshot(project_id, request.active_file_path)
@@ -385,6 +388,19 @@ class AIService:
             )
             file_operations: List[Dict[str, Any]] = []
             logs: List[Dict[str, Any]] = []
+        elif mode == "tutor":
+            can_compile = bool(request.compiler) and request.compiler in COMPILABLE and not request.workspace_id
+            snapshot = await project_snapshot(project_id, request.active_file_path)
+            mission = await self._project_mission(project_id)
+            system_prompt = self._build_tutor_system_prompt(
+                request.compiler, snapshot, request.active_file_path, mission, can_compile=can_compile,
+            )
+            messages = history + [{"role": "user", "content": [{"type": "text", "text": user_content}]}]
+            tool_config = get_tool_config(include_compile=can_compile, read_only=True)
+            text, file_operations, logs = await self._converse_with_tools(
+                messages, system_prompt, tool_config, project_id,
+                max_iterations=MAX_CHAT_ITERATIONS, workspace_id=None, on_event=on_event,
+            )
         else:
             has_sandbox = bool(request.workspace_id)
             can_compile = bool(request.compiler) and request.compiler in COMPILABLE and not has_sandbox
@@ -739,6 +755,58 @@ class AIService:
   reason unrelated to the code (tool error, missing toolchain), say the build was not verified. Do not
   work around a toolchain failure by creating files, renaming files or restructuring the project.
 - Do not add includes, files or features the user did not ask for unless the build needs them.
+"""
+
+    @staticmethod
+    async def _project_mission(project_id: str):
+        try:
+            doc = await get_collection("projects").find_one({"_id": ObjectId(project_id)}, {"mission_id": 1})
+        except (InvalidId, TypeError):
+            return None
+        mission_id = (doc or {}).get("mission_id")
+        return mission_catalog.get_mission(mission_id) if mission_id else None
+
+    def _build_tutor_system_prompt(
+        self, compiler: Optional[str], snapshot: str, active_path: Optional[str], mission, can_compile: bool,
+    ) -> str:
+        open_file = f"The learner has `{active_path}` open in the editor; its content is in the context.\n" if active_path else ""
+        compile_line = (
+            "- compile_project builds the learner's code. Use it to see real compiler errors before explaining them.\n"
+            if can_compile else ""
+        )
+        mission_block = ""
+        if mission:
+            checks = "\n".join(f"- {c.label}" for c in mission.checks)
+            hints = "\n".join(f"{i}. {h}" for i, h in enumerate(mission.hints, 1))
+            mission_block = f"""
+## The mission the learner is working on: {mission.title}
+Goal: {mission.goal}
+
+Brief shown to the learner:
+{mission.brief}
+
+The automatic checks:
+{checks}
+
+Graded hints, from gentle to almost-the-answer (for your reference; reveal them one level at a time):
+{hints}
+"""
+        return f"""You are {AGENT_NAME}, the tutor inside CuBot IDE. You teach embedded programming to learners who are writing the code themselves.
+{self._platform_line(compiler)}{open_file}{mission_block}
+## Project files (snapshot at the start of this turn)
+{snapshot}
+
+## How you teach
+- Never write the solution and never paste a complete sketch or function that solves the task. You cannot edit files, and you must not hand over code to copy either.
+- Start from what the learner has: read their code, name what already works, then point at the one most important problem.
+- Prefer a question or a nudge ("what does pinMode do to a pin?") over an answer. Escalate one level per request: concept, then where to look, then a one-line fragment. A fragment may show syntax (one call, one condition), never the whole logic.
+- Explain the why: the hardware or language concept behind the bug (pull-ups, ADC resolution, integer division, blocking delays).
+- Compiler errors: translate them into plain words and point at the line, but let the learner fix it.
+- If the learner asks you to just do it, explain briefly that this mode is for learning and that Vibe mode can write code for them.
+{compile_line}
+## Reply format
+- Short: 2 to 6 sentences or bullets. End with a question or a concrete next step when it helps.
+- Use backticks for code identifiers. No headings.
 """
 
     def _build_plan_system_prompt(self, compiler: Optional[str], snapshot: str) -> str:
