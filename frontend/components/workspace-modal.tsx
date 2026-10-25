@@ -4,9 +4,9 @@ import { Code2, Blocks, ArrowRight, Loader2, Box, ArrowLeft, CheckCircle2, Route
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/contexts/project-context';
 import { useEffect, useState } from 'react';
-import { compileService } from '@/lib/api';
+import { compileService, fileService } from '@/lib/api';
 import { fleetApi } from '@/lib/api/fleet';
-import type { ProjectType } from '@/lib/api/types';
+import { FileType, type ProjectType } from '@/lib/api/types';
 import {
   Dialog,
   DialogContent,
@@ -148,7 +148,7 @@ function stepsFor(type: WorkspaceType | null, projectType: 'embedded' | 'ros'): 
 
 export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalProps) {
   const router = useRouter();
-  const { createProject, createFile, loadProject } = useProject();
+  const { createProject, loadProject } = useProject();
   const [isCreating, setIsCreating] = useState(false);
   const [step, setStep] = useState<Step>('select');
   const [selectedType, setSelectedType] = useState<WorkspaceType | null>(null);
@@ -201,11 +201,19 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
         await fleetApi.initProject(project.id, selectedDimension);
       }
 
-      if (selectedType !== 'cad') await loadProject(project.id);
-
       if (selectedType === 'ide' && selectedProjectType !== 'ros') {
-        try { await createFile('main.ino', 'main.ino', STARTER_CODE, 'ino'); } catch {}
+        try {
+          await fileService.create({
+            project_id: project.id,
+            name: 'main.ino',
+            path: 'main.ino',
+            content: STARTER_CODE,
+            file_type: FileType.INO,
+          });
+        } catch {}
       }
+
+      if (selectedType !== 'cad') await loadProject(project.id);
 
       onOpenChange(false);
       router.push(`${WORKSPACE_ROUTES[selectedType]}?project=${project.id}`);

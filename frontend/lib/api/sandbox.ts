@@ -63,6 +63,14 @@ export interface SandboxFileContentResponse {
   content: string;
 }
 
+async function errorFrom(response: Response, fallback: string): Promise<Error> {
+  try {
+    const body = await response.json();
+    if (typeof body?.detail === 'string' && body.detail) return new Error(body.detail);
+  } catch {}
+  return new Error(fallback);
+}
+
 export const sandboxApi = {
   async createWorkspace(projectId: string, repositoryUrl?: string): Promise<SandboxWorkspace> {
     const response = await fetch(`${API_BASE}/sandbox/workspaces`, {
@@ -75,7 +83,7 @@ export const sandboxApi = {
         env_vars: {},
       }),
     });
-    if (!response.ok) throw new Error('Failed to create workspace');
+    if (!response.ok) throw await errorFrom(response, 'Failed to create workspace');
     return response.json();
   },
 
@@ -99,7 +107,7 @@ export const sandboxApi = {
       headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify({ project_id: projectId }),
     });
-    if (!response.ok) throw new Error('Failed to sync files');
+    if (!response.ok) throw await errorFrom(response, 'Failed to sync files');
     return response.json();
   },
 

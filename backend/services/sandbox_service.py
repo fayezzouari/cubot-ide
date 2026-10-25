@@ -90,7 +90,7 @@ class SandboxService:
         self._pods: Dict[str, str] = {}  # workspace_id -> pod name
         self._workspace_metadata: Dict[str, Dict[str, Any]] = {}
         # Per-workspace locks prevent duplicate pod creation when multiple
-        # coroutines (e.g. background provisioning task + terminal open) call
+        # coroutines (e.g. several terminal tabs opening at once) call
         # create_workspace for the same project simultaneously.
         self._workspace_locks: Dict[str, asyncio.Lock] = {}
         self._core: Optional[client.CoreV1Api] = None
@@ -103,7 +103,14 @@ class SandboxService:
                 config.load_incluster_config()
                 logger.info("✓ Kubernetes client using in-cluster config")
             except config.ConfigException:
-                config.load_kube_config()
+                try:
+                    config.load_kube_config()
+                except config.ConfigException as e:
+                    raise RuntimeError(
+                        "No Kubernetes cluster configured for ROS sandboxes. "
+                        "Point $KUBECONFIG (or ~/.kube/config) at a cluster and run "
+                        "`kubectl apply -f k8s/sandboxes.yaml`."
+                    ) from e
                 logger.info("✓ Kubernetes client using kubeconfig")
             self._core = client.CoreV1Api()
         return self._core
@@ -369,9 +376,8 @@ class SandboxService:
             )
 
         # ── Serialize per-project to prevent concurrent duplicate creation ────
-        # The background provisioning task (started at project-creation time) and
-        # the terminal's first createWorkspace call can race.  One of them will
-        # acquire the lock and complete setup; the other will fast-path out on
+        # Several terminal tabs opening at once can race.  One of them will
+        # acquire the lock and complete setup; the others will fast-path out on
         # the re-check below.
         lock = self._get_workspace_lock(workspace_id)
         async with lock:

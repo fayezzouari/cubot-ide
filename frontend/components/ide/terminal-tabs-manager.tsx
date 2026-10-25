@@ -97,17 +97,17 @@ export default function TerminalTabsManager({
   const rightSlot = (
     <>
       {isInitializing && (
-        <span className="text-xs text-[#ce9178] flex items-center gap-1.5 px-1">
+        <span className="text-[11px] text-white/40 flex items-center gap-1.5 px-1">
           <Loader2 size={12} className="animate-spin" />
           {activeTerminalState.initStage === 'creating' ? 'Creating…' : 'Syncing…'}
         </span>
       )}
       {activeTerminalState.workspaceId && (
         <span
-          className={`text-[10px] px-2 py-0.5 font-medium rounded-sm ${
+          className={`text-[10px] px-2 py-0.5 font-medium rounded-md ${
             activeTerminalState.isConnected
-              ? 'bg-[#0e639c] text-white'
-              : 'bg-[#3e3e42] text-[#858585]'
+              ? 'bg-white/[0.10] text-white/70'
+              : 'bg-white/[0.04] text-white/30'
           }`}
         >
           {activeTerminalState.isConnected ? 'Connected' : 'Disconnected'}
@@ -117,7 +117,7 @@ export default function TerminalTabsManager({
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white transition-colors"
+          className="h-6 w-6 text-white/30 hover:bg-white/[0.04] hover:text-white/70 transition-colors"
           onClick={() => activeRef?.resync()}
           disabled={isInitializing}
           title="Re-sync project files"
@@ -129,7 +129,7 @@ export default function TerminalTabsManager({
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white transition-colors"
+          className="h-6 w-6 text-white/30 hover:bg-white/[0.04] hover:text-white/70 transition-colors"
           onClick={() => activeRef?.reset()}
           disabled={isInitializing}
           title="Reset sandbox"
@@ -140,7 +140,7 @@ export default function TerminalTabsManager({
       <Button
         variant="ghost"
         size="icon"
-        className="h-6 w-6 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-[#f48771] transition-colors"
+        className="h-6 w-6 text-white/30 hover:bg-white/[0.04] hover:text-red-400/70 transition-colors"
         onClick={() => activeRef?.clear()}
         title="Clear terminal"
       >
@@ -160,7 +160,7 @@ export default function TerminalTabsManager({
         onSplit={handleSplit}
         rightSlot={rightSlot}
       />
-      <div className={`flex-1 flex min-h-0 ${splits.length > 0 ? 'divide-x divide-[#2d2d2d]' : ''}`}>
+      <div className={`flex-1 flex min-h-0 ${splits.length > 0 ? 'divide-x divide-white/[0.06]' : ''}`}>
         {/* Primary tab pane */}
         <div className="flex-1 min-w-0 relative">
           {tabs.map(tab => (
@@ -190,7 +190,7 @@ export default function TerminalTabsManager({
           <div className="flex-1 min-w-0 relative" key={splitId}>
             <button
               type="button"
-              className="absolute top-1 right-2 z-10 flex items-center text-[#cccccc] hover:text-[#f48771]"
+              className="absolute top-1 right-2 z-10 flex items-center text-white/30 hover:text-red-400/70"
               onClick={() => handleUnsplit(splitId)}
               title="Close split"
             >
