@@ -11,3 +11,4 @@ frontend/.next/
 frontend/.env.local
 frontend/.env.production
 nginx/certs/
+.DS_Store
