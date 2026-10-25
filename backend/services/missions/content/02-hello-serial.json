@@ -1,0 +1,40 @@
+{
+  "id": "hello-serial",
+  "order": 2,
+  "track": "Embedded basics",
+  "title": "Hello, Serial",
+  "summary": "Talk to your computer over the serial port.",
+  "difficulty": "beginner",
+  "concepts": ["Serial.begin", "Serial.println", "baud rate"],
+  "goal": "Print \"Hello, Cubot!\" once at startup, then print \"tick\" every second.",
+  "brief": "The serial port is how a board tells you what it is doing. It is your first debugging tool.\n\n1. Start the port in `setup()` with `Serial.begin(9600)`. 9600 is the **baud rate**: bits per second.\n2. Print `Hello, Cubot!` once with `Serial.println`.\n3. In `loop()`, print `tick` and wait one second.\n\nThe text is checked exactly, including the capital letters and the comma.",
+  "duration_ms": 3500,
+  "starter_files": [
+    {
+      "path": "main.ino",
+      "content": "void setup() {\n}\n\nvoid loop() {\n}\n"
+    }
+  ],
+  "scenario": [],
+  "checks": [
+    {
+      "id": "hello",
+      "label": "Prints \"Hello, Cubot!\" at startup",
+      "type": "serial_contains",
+      "text": "Hello, Cubot!",
+      "before_ms": 1000
+    },
+    {
+      "id": "ticks",
+      "label": "Keeps printing \"tick\"",
+      "type": "serial_contains",
+      "text": "tick",
+      "after_ms": 2000
+    }
+  ],
+  "hints": [
+    "Nothing is printed until the serial port has been started.",
+    "Serial.begin(9600); goes first in setup(). Serial.println(\"...\") prints a line.",
+    "setup(): Serial.begin(9600); Serial.println(\"Hello, Cubot!\");  loop(): Serial.println(\"tick\"); delay(1000);"
+  ]
+}
