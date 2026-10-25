@@ -10,6 +10,12 @@ export function resolveBrokerUrl(wsUrl: string | null | undefined): string {
   return raw;
 }
 
+export function resolveBrokerHost(host: string | null | undefined): string {
+  const raw = (host || '').trim();
+  if (raw) return raw;
+  return typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+}
+
 export function connectFleetMqtt(wsUrl: string | null | undefined, setup: (client: MqttClient) => void): () => void {
   if (typeof window === 'undefined') return () => {};
   let client: MqttClient | null = null;
