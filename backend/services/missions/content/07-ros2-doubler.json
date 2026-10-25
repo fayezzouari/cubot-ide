@@ -1,0 +1,101 @@
+{
+  "id": "ros2-doubler",
+  "order": 7,
+  "track": "ROS 2 basics",
+  "kind": "ros2",
+  "title": "Listen and reply",
+  "summary": "Subscribe to a topic and publish a result for every message.",
+  "difficulty": "beginner",
+  "concepts": [
+    "create_subscription",
+    "callbacks",
+    "std_msgs/Int32"
+  ],
+  "goal": "Every Int32 received on /numbers is doubled and published on /doubled.",
+  "brief": "A *subscriber* runs a callback each time a message arrives. Nodes often subscribe to one topic and publish on another.\n\n1. Subscribe to `/numbers` (`Int32`) with `self.create_subscription(Int32, '/numbers', self.on_number, 10)`.\n2. Create a publisher for `Int32` on `/doubled`.\n3. In `on_number(self, msg)`, publish a new `Int32` whose `data` is `msg.data * 2`.\n\nCheck sends 3, 7 and 21 on `/numbers` and expects 6, 14 and 42 on `/doubled`.",
+  "duration_ms": 6500,
+  "starter_files": [
+    {
+      "path": "doubler.py",
+      "content": "import rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg import Int32\n\n\nclass Doubler(Node):\n    def __init__(self):\n        super().__init__('doubler')\n\n\ndef main():\n    rclpy.init()\n    node = Doubler()\n    rclpy.spin(node)\n\n\nif __name__ == '__main__':\n    main()\n"
+    }
+  ],
+  "run": [
+    "python3 doubler.py"
+  ],
+  "scenario": [
+    {
+      "at_ms": 3000,
+      "action": "publish",
+      "topic": "/numbers",
+      "msg_type": "std_msgs/msg/Int32",
+      "data": {
+        "data": 3
+      }
+    },
+    {
+      "at_ms": 4000,
+      "action": "publish",
+      "topic": "/numbers",
+      "msg_type": "std_msgs/msg/Int32",
+      "data": {
+        "data": 7
+      }
+    },
+    {
+      "at_ms": 5000,
+      "action": "publish",
+      "topic": "/numbers",
+      "msg_type": "std_msgs/msg/Int32",
+      "data": {
+        "data": 21
+      }
+    }
+  ],
+  "checks": [
+    {
+      "id": "node",
+      "label": "A node named doubler is running",
+      "type": "node_running",
+      "name": "doubler"
+    },
+    {
+      "id": "three",
+      "label": "3 becomes 6",
+      "type": "topic_value",
+      "topic": "/doubled",
+      "msg_type": "std_msgs/msg/Int32",
+      "field": "data",
+      "equals": 6,
+      "after_ms": 3000,
+      "at_ms": 3900
+    },
+    {
+      "id": "seven",
+      "label": "7 becomes 14",
+      "type": "topic_value",
+      "topic": "/doubled",
+      "msg_type": "std_msgs/msg/Int32",
+      "field": "data",
+      "equals": 14,
+      "after_ms": 4000,
+      "at_ms": 4900
+    },
+    {
+      "id": "twenty-one",
+      "label": "21 becomes 42",
+      "type": "topic_value",
+      "topic": "/doubled",
+      "msg_type": "std_msgs/msg/Int32",
+      "field": "data",
+      "equals": 42,
+      "after_ms": 5000,
+      "at_ms": 5900
+    }
+  ],
+  "hints": [
+    "You need two things in __init__: a subscription on /numbers and a publisher on /doubled.",
+    "The subscription callback receives the message: def on_number(self, msg): ... and msg.data is the number.",
+    "out = Int32()\nout.data = msg.data * 2\nself.publisher.publish(out)"
+  ]
+}
