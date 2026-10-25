@@ -61,6 +61,7 @@ class SimulationService:
         on_serial: Callable[[str], Any],
         on_pin_change: Callable[[int, bool], Any],
         on_state_change: Callable[[SimulationState], Any],
+        on_event: Optional[Callable[[dict], Any]] = None,
     ) -> SimulationSession:
         """
         Start a new AVR simulation.
@@ -71,6 +72,7 @@ class SimulationService:
             on_serial: Callback for serial output characters
             on_pin_change: Callback for digital pin state changes (pin, value)
             on_state_change: Callback for simulation state transitions
+            on_event: Callback for every message from the simulator, as parsed JSON
         
         Returns:
             SimulationSession tracking the running simulation
@@ -83,8 +85,13 @@ class SimulationService:
         self._sessions[session_id] = session
 
         # Create temp directory and write hex file
-        temp_dir = tempfile.mkdtemp(prefix="cubot_sim_")
+        workdir = os.environ.get("COMPILE_WORKDIR")
+        temp_dir = tempfile.mkdtemp(prefix="cubot_sim_", dir=workdir if workdir and os.path.isdir(workdir) else None)
+        os.chmod(temp_dir, 0o755)
         session.temp_dir = temp_dir
+        host_dir = temp_dir
+        if workdir and temp_dir.startswith(workdir):
+            host_dir = temp_dir.replace(workdir, os.environ.get("COMPILE_WORKDIR_HOST", workdir), 1)
 
         hex_path = os.path.join(temp_dir, "firmware.hex")
         with open(hex_path, "w") as f:
@@ -100,7 +107,7 @@ class SimulationService:
                 "--rm",
                 "-i",
                 "--name", f"cubot_sim_{session_id[:12]}",
-                "-v", f"{temp_dir}:/sim:ro",
+                "-v", f"{host_dir}:/sim:ro",
                 "--network", "none",
                 "-m", "256m",
                 "--cpus", "0.5",
@@ -136,6 +143,9 @@ class SimulationService:
                         except json.JSONDecodeError:
                             # Plain text from simavr, treat as debug
                             continue
+
+                        if on_event:
+                            await on_event(msg)
 
                         msg_type = msg.get("type")
 
