@@ -147,6 +147,19 @@ function loadNodes(raw: { id: string; type: string; position?: { x: number; y: n
   });
 }
 
+function missionDocument(m: Mission, steps = m.starter) {
+  const graph = buildTemplateGraph(steps);
+  return {
+    name: `Mission: ${m.title}`,
+    nodes: graph.nodes,
+    edges: graph.edges,
+    poses: missionPoses(m),
+    scene: m.scene,
+    layout: m.layout,
+    mission: m.id,
+  };
+}
+
 function BlocksIDE() {
   const { data: session } = useSession();
   const { currentProject, loadProject } = useProject();
@@ -258,6 +271,19 @@ function BlocksIDE() {
       .then((programs) => {
         const latest = [...programs].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0];
         baseline.current = 'pending';
+        const params = new URLSearchParams(window.location.search);
+        const requested = MISSION_BY_ID[params.get('mission') ?? ''];
+        if (params.has('mission')) {
+          params.delete('mission');
+          window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
+        }
+        if (requested && latest?.settings?.mission !== requested.id) {
+          setProgramId(latest?.id ?? null);
+          applyDocument(missionDocument(requested));
+          setMissionProgress(saveMissionStatus(requested.id, 'started'));
+          setSaveState('dirty');
+          return;
+        }
         if (!latest) {
           setSaveState('dirty');
           setGalleryOpen(true);
@@ -663,16 +689,7 @@ function BlocksIDE() {
 
   const startMission = (m: Mission, steps = m.starter) => {
     if (running) stop();
-    const graph = buildTemplateGraph(steps);
-    applyDocument({
-      name: `Mission: ${m.title}`,
-      nodes: graph.nodes,
-      edges: graph.edges,
-      poses: missionPoses(m),
-      scene: m.scene,
-      layout: m.layout,
-      mission: m.id,
-    });
+    applyDocument(missionDocument(m, steps));
     setMissionsOpen(false);
     setLogs([]);
     setTelemetry([]);
