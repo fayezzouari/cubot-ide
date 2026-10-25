@@ -224,7 +224,7 @@ MIT License`,
 };
 
 // Chat mode: Build lets the agent change files; Plan drafts steps the user runs one by one.
-export type ChatMode = 'build' | 'plan';
+export type ChatMode = 'build' | 'plan' | 'tutor';
 
 export interface ExecutionLog {
   command: string;
