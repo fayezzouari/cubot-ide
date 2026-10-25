@@ -29,13 +29,14 @@ interface MissionPanelProps {
   onToggleCollapsed: () => void;
 }
 
-type Phase = 'idle' | 'saving' | 'compiling' | 'simulating';
+type Phase = 'idle' | 'saving' | 'compiling' | 'simulating' | 'sandbox';
 
 const PHASE_LABEL: Record<Phase, string> = {
   idle: 'Check',
   saving: 'Saving…',
   compiling: 'Compiling…',
   simulating: 'Running checks…',
+  sandbox: 'Running checks…',
 };
 
 export default function MissionPanel({
@@ -77,6 +78,7 @@ export default function MissionPanel({
   };
 
   const passed = run?.passed ?? mission?.status === 'passed';
+  const isRos = mission?.kind === 'ros2';
 
   const handleCheck = useCallback(async () => {
     if (phase !== 'idle') return;
@@ -87,6 +89,11 @@ export default function MissionPanel({
       if (hasUnsavedChanges) {
         setPhase('saving');
         await onSave();
+      }
+      if (isRos) {
+        setPhase('sandbox');
+        setRun(await missionService.checkInSandbox(missionId, projectId));
+        return;
       }
       setPhase('compiling');
       const mainFile = files.find(f => f.name.endsWith('.ino')) ?? files[0];
@@ -111,7 +118,7 @@ export default function MissionPanel({
     } finally {
       setPhase('idle');
     }
-  }, [phase, hasUnsavedChanges, onSave, files, projectId, missionId]);
+  }, [phase, hasUnsavedChanges, onSave, isRos, files, projectId, missionId]);
 
   const askAboutFailure = () => {
     if (compileErrors.length > 0) {
@@ -120,7 +127,8 @@ export default function MissionPanel({
     }
     const failed = run?.results.filter(r => !r.passed) ?? [];
     const lines = failed.map(r => `- ${r.label}: ${r.detail}`).join('\n');
-    onAskTutor(`My mission check failed:\n${lines}\n\nWhat should I look at? Give me a hint, not the answer.`);
+    const output = isRos && run?.serial ? `\n\nMy node printed:\n\`\`\`\n${run.serial.slice(-1500)}\n\`\`\`` : '';
+    onAskTutor(`My mission check failed:\n${lines}${output}\n\nWhat should I look at? Give me a hint, not the answer.`);
   };
 
   if (loadError) {
@@ -234,12 +242,18 @@ export default function MissionPanel({
                   <Loader2 size={12} className="animate-spin" />
                   {phase === 'simulating'
                     ? `Running your sketch in the simulator for ${(mission.duration_ms / 1000).toFixed(1)} s…`
-                    : PHASE_LABEL[phase]}
+                    : phase === 'sandbox'
+                      ? `Running your nodes in the ROS 2 sandbox for ${(mission.duration_ms / 1000).toFixed(1)} s… The first check also starts the sandbox, which can take a minute.`
+                      : PHASE_LABEL[phase]}
                 </div>
               )}
 
               {!busy && !run && compileErrors.length === 0 && (
-                <p className="text-[12px] text-white/35">Press Check to compile your sketch and run it against the mission.</p>
+                <p className="text-[12px] text-white/35">
+                  {isRos
+                    ? 'Press Check to run your nodes in the ROS 2 sandbox against the mission.'
+                    : 'Press Check to compile your sketch and run it against the mission.'}
+                </p>
               )}
 
               {compileErrors.length > 0 && (
@@ -258,7 +272,9 @@ export default function MissionPanel({
                       <CheckCircle2 size={16} className="text-green-400 flex-shrink-0" />
                       <div className="flex-1">
                         <p className="text-[12.5px] font-medium text-green-300">Mission passed</p>
-                        <p className="text-[11px] text-white/45">Every check passed in the simulator.</p>
+                        <p className="text-[11px] text-white/45">
+                          {isRos ? 'Every check passed in the ROS 2 sandbox.' : 'Every check passed in the simulator.'}
+                        </p>
                       </div>
                       {nextMission ? (
                         <button
@@ -305,7 +321,9 @@ export default function MissionPanel({
 
                   {run.serial && (
                     <div>
-                      <p className="font-mono text-[10px] uppercase tracking-wider text-white/35 mb-1">Serial output</p>
+                      <p className="font-mono text-[10px] uppercase tracking-wider text-white/35 mb-1">
+                        {isRos ? 'Node output' : 'Serial output'}
+                      </p>
                       <pre className="rounded-md bg-black border border-white/[0.06] px-3 py-2 font-mono text-[11px] leading-relaxed text-white/55 whitespace-pre-wrap max-h-32 overflow-y-auto">
                         {run.serial}
                       </pre>
