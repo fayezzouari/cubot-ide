@@ -50,6 +50,7 @@ All of it lives in `frontend/lib/blocks/`:
 | `codegen.ts` | Python program and Arduino firmware generators, and the serial protocol. |
 | `serial.ts` | Web Serial link with one command in flight at a time and an ack for each. |
 | `templates.ts` | Use-case programs written in a compact nested form, laid out automatically on the canvas. |
+| `missions.ts` | Missions: their cells, objectives, hints and solutions, and the grader. |
 
 The simulation runs entirely in the browser, so each user gets their own cell.
 The backend only stores programs: `/api/blocks/programs` now also persists
@@ -250,6 +251,24 @@ classroom prompt.
 * **Kinematics lab** — compare `Move joint` against `Move to XYZ`, read joint values in the Cell panel, and check them with the FK/IK code in the exported Python.
 * **Industrial automation course** — machine tending and OEE templates for I/O handshakes, interlocks, alarms and MQTT/IIoT integration.
 * **Computer vision** — replace `inspect_part()` in the exported Python with a trained classifier, keeping the robot logic unchanged.
+
+## Missions
+
+**Missions** (top bar) are challenges with a cell already built for them. Starting one loads its environment, poses and scene and leaves only the Start block on the canvas: the learner adds the blocks. Every run is graded against the simulation, and the **Mission** tab shows each objective as passed or failed with the reason. It also lists the blocks the mission needs (click one to add it), gives hints one at a time, and can load the reference solution once all the hints are shown. Progress is kept in the browser, and the mission id is saved with the program, so reopening the project resumes the mission.
+
+| Level | Mission | Cell | Practises |
+| --- | --- | --- | --- |
+| Easy | First pick | One-slot tray, one bin | Pick and place, poses |
+| Easy | Checkpoint tour | Three pedestals | Move to pose, sequencing |
+| Easy | Unload the conveyor | Conveyor, tote | Waiting on DI0, conveyor control |
+| Intermediate | Tray colour sorter | 2 × 3 tray, three colour bins | Loops, offsets, wrist camera, if/else |
+| Intermediate | Tower builder | Conveyor, table | Variables, ΔY offsets |
+| Intermediate | Tend the CNC | Raw-parts tray, CNC machine, output bin | I/O handshake, interlock |
+| Hard | Quality gate | Conveyor, three colour bins, reject bin | Vision, nested decisions, MQTT |
+| Hard | Two-layer pallet | Conveyor, pallet, fence | Pallet slot block, status light |
+| Hard | Two-lane rush | Two conveyors, three bins | Named cameras, while loops, 100 s time limit |
+
+Missions live in `frontend/lib/blocks/missions.ts`. Each one has a layout, a scene, the objectives (bin contents, sorting, pallet layers, tower height, visited poses, outputs, MQTT messages, time), hints and a solution. Objectives only count when the program reaches its end.
 
 ## Taking a program to hardware
 
