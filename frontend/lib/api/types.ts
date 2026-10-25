@@ -71,6 +71,7 @@ export interface ProjectResponse {
   target_compiler: string;
   project_type: ProjectType;
   user_id?: string;
+  mission_id?: string | null;
   created_at: string;
   updated_at: string;
   file_count: number;
@@ -137,6 +138,7 @@ export interface ChatRequest {
   compiler?: string;
   conversation_history?: Array<{ role: string; content: string }>;
   plan_mode?: boolean;
+  tutor_mode?: boolean;
   enable_websearch?: boolean;
   /** Sandbox workspace (ROS projects) the agent may run commands in. */
   workspace_id?: string;
@@ -228,7 +230,7 @@ export interface ChatMessageInDB {
   timestamp: string;
   file_context: FileContext[];
   file_operations: FileOperation[];
-  mode?: 'build' | 'plan' | null;
+  mode?: 'build' | 'plan' | 'tutor' | null;
   thread_id?: string | null;
 }
 
@@ -264,4 +266,55 @@ export interface WiringRequest {
 export interface WiringResponse {
   guide: WiringGuideDTO;
   llm_generated: boolean;
+}
+
+export type MissionStatus = 'new' | 'started' | 'passed';
+
+export interface MissionSummary {
+  id: string;
+  order: number;
+  track: string;
+  title: string;
+  summary: string;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  concepts: string[];
+  status: MissionStatus;
+  project_id?: string | null;
+}
+
+export interface MissionCheck {
+  id: string;
+  label: string;
+  type: 'pin_toggles' | 'pin_state' | 'serial_contains';
+}
+
+export interface Mission extends MissionSummary {
+  brief: string;
+  goal: string;
+  duration_ms: number;
+  starter_files: Array<{ path: string; content: string }>;
+  checks: MissionCheck[];
+  hints: string[];
+}
+
+export interface MissionCheckResult {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface MissionRun {
+  mission_id: string;
+  passed: boolean;
+  results: MissionCheckResult[];
+  serial: string;
+  duration_ms: number;
+  sim_clock: boolean;
+  error?: string | null;
+}
+
+export interface MissionStart {
+  project_id: string;
+  created: boolean;
 }
