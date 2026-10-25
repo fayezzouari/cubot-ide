@@ -351,7 +351,7 @@ export default function VscodeFileExplorer({
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <aside className="w-full h-full border-r border-white/[0.06] flex flex-col bg-black">
+    <aside className="w-full h-full border-r border-white/[0.06] flex flex-col bg-[#0e0e0e]">
       {/* Header */}
       <div
         className="flex items-center justify-between px-3 border-b border-white/[0.06] shrink-0"

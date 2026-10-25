@@ -86,7 +86,7 @@ export default function EditorPanel({
 
       {/* Tab bar */}
       {currentFileName && (
-        <div className="h-9 border-b border-white/[0.06] flex items-center justify-between px-3 bg-black flex-shrink-0">
+        <div className="h-9 border-b border-white/[0.06] flex items-center justify-between px-3 bg-[#0e0e0e] flex-shrink-0">
           <div className="flex items-center gap-1.5">
             <File size={12} className="text-white/25 flex-shrink-0" />
             <span className="text-xs font-mono text-white/60">
