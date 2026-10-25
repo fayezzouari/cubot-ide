@@ -22,6 +22,7 @@ interface Props {
   onCreate: () => void;
   onModeChange: (mode: BrokerMode) => void;
   onDispatchToggle: (active: boolean) => void;
+  onAutoAssignChange: (auto: boolean) => void;
   vehicles: Record<string, Vehicle>;
 }
 
@@ -47,6 +48,7 @@ export function CoordinatorPanel({
   onCreate,
   onModeChange,
   onDispatchToggle,
+  onAutoAssignChange,
   vehicles,
 }: Props) {
   const now = useNow(1000);
@@ -106,11 +108,34 @@ export function CoordinatorPanel({
                   ? 'border border-white/[0.1] text-white/70 hover:bg-white/[0.06]'
                   : 'bg-emerald-600 text-white hover:bg-emerald-500'
               }`}
-              title={broker.dispatch_active ? 'Stop dispatch' : 'Start dispatch'}
+              title={broker.dispatch_active ? 'Stop dispatch' : broker.auto_assign ? 'Start dispatch' : 'Send the assigned tasks to the robots'}
             >
               {broker.dispatch_active ? <Pause size={12} /> : <Play size={12} />}
-              {broker.dispatch_active ? 'Stop' : 'Start'}
+              {broker.dispatch_active ? 'Stop' : broker.auto_assign ? 'Start' : 'Execute'}
             </button>
+          </div>
+
+          <div>
+            <div className={`${labelCls} mb-1.5`}>Assignment</div>
+            <div className="inline-flex rounded-md border border-white/[0.08] p-0.5">
+              {([true, false] as const).map((auto) => (
+                <button
+                  key={String(auto)}
+                  onClick={() => auto !== broker.auto_assign && onAutoAssignChange(auto)}
+                  title={auto ? 'The coordinator assigns open tasks to the nearest eligible robot' : 'Robots run only the tasks you assign'}
+                  className={`rounded px-2 py-1 text-[11px] transition-colors ${
+                    broker.auto_assign === auto ? 'bg-white/[0.08] text-white' : 'text-white/45 hover:text-white/75'
+                  }`}
+                >
+                  {auto ? 'Auto' : 'Manual'}
+                </button>
+              ))}
+            </div>
+            {!broker.auto_assign && (
+              <p className="mt-1.5 text-[10px] leading-relaxed text-white/45">
+                Assign tasks in the Tasks panel, then press Execute. Each robot runs its tasks by priority.
+              </p>
+            )}
           </div>
 
           <div>
@@ -124,6 +149,10 @@ export function CoordinatorPanel({
                     {UAGV_ROOT}/v{VDA_MAJOR}/&lt;manufacturer&gt;/&lt;serial&gt;/state
                   </code>
                   .
+                </p>
+                <p>
+                  Robots that report <code className="font-mono text-white/80">mapId</code>{' '}
+                  <code className="font-mono text-white/80">{broker.project_id}</code> are added on first connection.
                 </p>
                 <p>Expected serials:</p>
                 <ul className="space-y-0.5">
