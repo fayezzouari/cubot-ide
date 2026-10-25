@@ -101,6 +101,7 @@ function Workspace({ projectId }: { projectId: string }) {
     applyAssignment,
     saveEnvironment,
     toggleObstacle,
+    refreshRobots,
   } = useProjectData(projectId);
 
   const [running, setRunning] = useState(false);
@@ -160,6 +161,26 @@ function Workspace({ projectId }: { projectId: string }) {
   const droneSim = useDroneSimulation(drones, tasks, droneRoutes, running && !isLive, simSpeed, onDroneSequenceTaskComplete);
 
   const { liveById, connectedIds: liveConnectedSerials } = useLiveTelemetry(broker, isLive);
+
+  const unknownSerialTries = useRef<Record<string, number>>({});
+  const robotRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isLive || robotRefreshTimer.current) return;
+    const known = new Set(robots.map((r) => r.serial_number));
+    const unknown = Object.keys(liveById).filter((s) => !known.has(s) && (unknownSerialTries.current[s] ?? 0) < 3);
+    if (!unknown.length) return;
+    for (const s of unknown) unknownSerialTries.current[s] = (unknownSerialTries.current[s] ?? 0) + 1;
+    robotRefreshTimer.current = setTimeout(() => {
+      robotRefreshTimer.current = null;
+      void refreshRobots();
+    }, 1500);
+  }, [isLive, robots, liveById, refreshRobots]);
+  useEffect(
+    () => () => {
+      if (robotRefreshTimer.current) clearTimeout(robotRefreshTimer.current);
+    },
+    [],
+  );
   const { vehicles: vdaVehicles } = useUagvFlow(isLive ? broker : null);
   const { liveById: liveDroneById, connectedIds: liveDroneConnectedSerials } = useUavFlow(broker, isLive);
 
@@ -273,6 +294,17 @@ function Workspace({ projectId }: { projectId: string }) {
         setBroker(await fleetApi.updateBroker(projectId, { mode }));
       } catch (err) {
         toast.error(`Could not switch mode: ${errorMessage(err)}`);
+      }
+    },
+    [projectId],
+  );
+
+  const handleAutoAssignChange = useCallback(
+    async (auto_assign: boolean) => {
+      try {
+        setBroker(await fleetApi.updateBroker(projectId, { auto_assign }));
+      } catch (err) {
+        toast.error(`Could not change assignment: ${errorMessage(err)}`);
       }
     },
     [projectId],
@@ -501,9 +533,15 @@ function Workspace({ projectId }: { projectId: string }) {
                 variant="outline"
                 className={`h-8 text-xs ${broker.dispatch_active ? 'border-emerald-400/50 text-emerald-200' : ''}`}
                 onClick={() => void handleDispatchToggle(!broker.dispatch_active)}
-                title={broker.dispatch_active ? 'Stop coordinator dispatch' : 'Start coordinator dispatch'}
+                title={
+                  broker.dispatch_active
+                    ? 'Stop coordinator dispatch'
+                    : broker.auto_assign
+                      ? 'Start coordinator dispatch'
+                      : 'Send the assigned tasks to the robots'
+                }
               >
-                <Radio size={14} /> {broker.dispatch_active ? 'Dispatching' : 'Dispatch off'}
+                <Radio size={14} /> {broker.dispatch_active ? 'Dispatching' : broker.auto_assign ? 'Dispatch off' : 'Execute'}
               </Button>
             )}
             {!isLive && (
@@ -736,6 +774,7 @@ function Workspace({ projectId }: { projectId: string }) {
                     onCreate={() => void handleCreateBroker()}
                     onModeChange={(m) => void handleModeChange(m)}
                     onDispatchToggle={(a) => void handleDispatchToggle(a)}
+                    onAutoAssignChange={(a) => void handleAutoAssignChange(a)}
                     vehicles={vdaVehicles}
                   />
                 )}
