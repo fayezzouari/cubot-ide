@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     FLEET_MQTT_WS_URL: str = "ws://localhost:9011"
     FLEET_MQTT_HOST: str = "localhost"
     FLEET_MQTT_PORT: int = 1893
+    FLEET_MQTT_PUBLIC_HOST: str = ""
+    FLEET_MQTT_PUBLIC_PORT: int = 1893
     FLEET_POLL_INTERVAL_S: float = 3.0
     FLEET_TICK_INTERVAL_S: float = 2.0
     FLEET_MANUFACTURER: str = "cubot"

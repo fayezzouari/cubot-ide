@@ -30,4 +30,7 @@ class BrokerOut(BaseModel):
     auto_assign: bool = True
     topic_prefix: str
     ws_url: str
+    mqtt_host: str = ""
+    mqtt_port: int
+    manufacturer: str
     created_at: datetime

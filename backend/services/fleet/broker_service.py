@@ -27,6 +27,9 @@ def _out(doc: dict) -> BrokerOut:
         auto_assign=doc.get("auto_assign", True),
         topic_prefix=f"{ROOT}/{bid}",
         ws_url=settings.FLEET_MQTT_WS_URL,
+        mqtt_host=settings.FLEET_MQTT_PUBLIC_HOST,
+        mqtt_port=settings.FLEET_MQTT_PUBLIC_PORT,
+        manufacturer=settings.FLEET_MANUFACTURER,
         created_at=doc["created_at"],
     )
 

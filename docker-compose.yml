@@ -52,6 +52,7 @@ services:
       - CAD_WORKER_URL=http://cad-worker:8100
       - CAD_STORAGE_DIR=/data/cad
       - FLEET_MQTT_WS_URL=wss://${DOMAIN:-localhost}/mqtt
+      - FLEET_MQTT_PUBLIC_HOST=${DOMAIN:-localhost}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     group_add:

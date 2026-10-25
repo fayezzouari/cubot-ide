@@ -95,6 +95,9 @@ export interface Broker {
   auto_assign: boolean;
   topic_prefix: string;
   ws_url: string;
+  mqtt_host: string;
+  mqtt_port: number;
+  manufacturer: string;
   created_at: string;
 }
 
