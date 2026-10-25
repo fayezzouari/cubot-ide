@@ -1,0 +1,33 @@
+{
+  "id": "serial-commands",
+  "order": 5,
+  "track": "Embedded basics",
+  "title": "Serial commands",
+  "summary": "Control the board by typing commands.",
+  "difficulty": "intermediate",
+  "concepts": ["Serial.available", "readStringUntil", "string parsing"],
+  "goal": "Typing \"on\" turns the LED on pin 13 on and replies \"LED ON\"; typing \"off\" turns it off and replies \"LED OFF\".",
+  "brief": "Serial works both ways: you can send text to the board too. Each command arrives as a line ending in `\\n`.\n\n1. In `loop()`, check `Serial.available()` to see if bytes have arrived.\n2. Read one line with `Serial.readStringUntil('\\n')` and `trim()` it.\n3. `on` turns the LED on and prints `LED ON`. `off` turns it off and prints `LED OFF`.\n\nThe check types `on` at 1 s and `off` at 2.5 s.",
+  "duration_ms": 4000,
+  "starter_files": [
+    {
+      "path": "main.ino",
+      "content": "const int LED_PIN = 13;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(LED_PIN, OUTPUT);\n}\n\nvoid loop() {\n}\n"
+    }
+  ],
+  "scenario": [
+    { "at_ms": 1000, "action": "serial", "data": "on\n" },
+    { "at_ms": 2500, "action": "serial", "data": "off\n" }
+  ],
+  "checks": [
+    { "id": "on-led", "label": "\"on\" turns the LED on", "type": "pin_state", "pin": 13, "at_ms": 2200, "value": true },
+    { "id": "on-reply", "label": "Replies \"LED ON\"", "type": "serial_contains", "text": "LED ON", "after_ms": 1000, "before_ms": 2500 },
+    { "id": "off-led", "label": "\"off\" turns the LED off", "type": "pin_state", "pin": 13, "at_ms": 3700, "value": false },
+    { "id": "off-reply", "label": "Replies \"LED OFF\"", "type": "serial_contains", "text": "LED OFF", "after_ms": 2500 }
+  ],
+  "hints": [
+    "Only read when Serial.available() > 0, otherwise you wait for text that is not there.",
+    "String cmd = Serial.readStringUntil('\\n'); cmd.trim(); then compare with cmd == \"on\".",
+    "if (Serial.available() > 0) { String cmd = Serial.readStringUntil('\\n'); cmd.trim(); if (cmd == \"on\") { digitalWrite(LED_PIN, HIGH); Serial.println(\"LED ON\"); } else if (cmd == \"off\") { digitalWrite(LED_PIN, LOW); Serial.println(\"LED OFF\"); } }"
+  ]
+}
