@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Broker, Robot } from '../types';
-import { CELL_SIZE_M, UAGV_ROOT, VDA_MAJOR } from '../constants';
+import { CELL_SIZE_M, TELEMETRY_FLUSH_MS, UAGV_ROOT, VDA_MAJOR } from '../constants';
 import { connectFleetMqtt, parsePayload } from '../mqtt';
 import { useFreshIds } from './useFreshIds';
 
@@ -16,6 +16,7 @@ export interface LiveRobotState {
 
 export function useLiveTelemetry(broker: Broker | null, enabled: boolean) {
   const [byId, setById] = useState<Record<string, LiveRobotState>>({});
+  const pendingRef = useRef<Record<string, LiveRobotState>>({});
   const wsUrl = broker?.ws_url;
   const active = broker !== null && enabled;
 
@@ -31,19 +32,24 @@ export function useLiveTelemetry(broker: Broker | null, enabled: boolean) {
         const serial = d.serialNumber;
         const pos = d.agvPosition as { x?: number; y?: number; theta?: number } | undefined;
         if (typeof serial !== 'string' || !pos) return;
-        setById((prev) => ({
-          ...prev,
-          [serial]: {
-            x: (pos.x ?? 0) / CELL_SIZE_M,
-            y: (pos.y ?? 0) / CELL_SIZE_M,
-            heading: pos.theta ?? 0,
-            status: d.driving ? 'moving' : 'idle',
-            lastSeen: Date.now(),
-          },
-        }));
+        pendingRef.current[serial] = {
+          x: (pos.x ?? 0) / CELL_SIZE_M,
+          y: (pos.y ?? 0) / CELL_SIZE_M,
+          heading: pos.theta ?? 0,
+          status: d.driving ? 'moving' : 'idle',
+          lastSeen: Date.now(),
+        };
       });
     });
+    const flush = setInterval(() => {
+      const batch = pendingRef.current;
+      if (!Object.keys(batch).length) return;
+      pendingRef.current = {};
+      setById((prev) => ({ ...prev, ...batch }));
+    }, TELEMETRY_FLUSH_MS);
     return () => {
+      clearInterval(flush);
+      pendingRef.current = {};
       dispose();
       setById({});
     };
