@@ -126,12 +126,15 @@ def get_tool_config(
     include_sandbox: bool = False,
     include_websearch: bool = False,
     include_compile: bool = False,
+    read_only: bool = False,
 ) -> Dict[str, Any]:
     """Assemble the tool list for one agent run."""
     tools = []
     if include_websearch:
         tools.append(SEARCH_WEB_TOOL)
-    tools.extend([LIST_FILES_TOOL, READ_FILE_TOOL, CREATE_FILE_TOOL, EDIT_FILE_TOOL, UPDATE_FILE_TOOL])
+    tools.extend([LIST_FILES_TOOL, READ_FILE_TOOL])
+    if not read_only:
+        tools.extend([CREATE_FILE_TOOL, EDIT_FILE_TOOL, UPDATE_FILE_TOOL])
     if include_compile:
         tools.append(COMPILE_PROJECT_TOOL)
     if include_sandbox:
