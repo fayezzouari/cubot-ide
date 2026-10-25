@@ -8,7 +8,7 @@ import {
   Atom,
   ChevronDown,
   Download,
-  Home,
+  ArrowLeft,
   Loader2,
   Magnet,
   Maximize,
@@ -474,11 +474,19 @@ export default function CadPageContent() {
 
   return (
     <div className="h-screen flex flex-col bg-black text-white font-sans">
-      <header className="h-11 border-b border-white/[0.06] flex items-center gap-3 px-3 shrink-0">
-        <Link href="/dashboard" className="flex items-center gap-2 group">
-          <img src="/cubot.svg" alt="CuBot" className="w-7 h-7 object-contain" />
-          <span className="text-sm font-semibold text-white/80 group-hover:text-white">CuBot</span>
+      <header className="h-11 border-b border-white/[0.06] flex items-center gap-3 px-3 shrink-0 bg-[#0e0e0e]">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-1.5 h-7 pl-1.5 pr-2.5 text-xs text-white/50 hover:text-white hover:bg-white/[0.06] rounded-lg transition-all"
+        >
+          <ArrowLeft size={13} />
+          Dashboard
         </Link>
+        <span className="w-px h-4 bg-white/[0.08]" />
+        <div className="flex items-center gap-2">
+          <img src="/cubot.svg" alt="CuBot" className="w-7 h-7 object-contain" />
+          <span className="text-sm font-semibold text-white/80">CuBot</span>
+        </div>
         <span className="text-white/15">/</span>
         <span className="text-[11px] font-mono text-white/35">CAD Studio</span>
         <span className="text-white/15">/</span>
@@ -535,9 +543,6 @@ export default function CadPageContent() {
               </>
             )}
           </div>
-          <Link href="/dashboard" className="p-1.5 rounded-md text-white/35 hover:text-white hover:bg-white/[0.06]" title="Dashboard">
-            <Home size={13} />
-          </Link>
         </div>
       </header>
 
