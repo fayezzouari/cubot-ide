@@ -76,16 +76,16 @@ export interface BackgroundPresetDef {
 export const BACKGROUND_PRESETS: BackgroundPresetDef[] = [
   {
     id: 'warehouse',
-    label: 'Graphite',
-    swatch: '#161616',
+    label: 'Grey',
+    swatch: '#6e7075',
     texture: 'none',
-    surface: '#111111',
-    accent: '#1f1f1f',
-    grid: '#1e1e1e',
-    border: '#3a3a3a',
-    obstacle: '#3b3b3b',
-    wall: '#1a1a1a',
-    fog: '#080808',
+    surface: '#64666b',
+    accent: '#72747a',
+    grid: '#75777d',
+    border: '#9b9da3',
+    obstacle: '#3c3e43',
+    wall: '#505257',
+    fog: '#4a4c50',
   },
   {
     id: 'blueprint',
@@ -197,3 +197,4 @@ export const EDGE_ACTIVE_MS = 850;
 export const FEED_LIMIT = 40;
 
 export const STALE_MS = 4000;
+export const TELEMETRY_FLUSH_MS = 100;
