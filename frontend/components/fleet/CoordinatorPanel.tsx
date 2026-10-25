@@ -5,10 +5,11 @@ import { BatteryMedium, Loader2, Pause, Play, Radio } from 'lucide-react';
 import type { Broker, BrokerMode, Robot, Task } from '@/lib/fleet/types';
 import type { BrokerStatus, LocMsg } from '@/lib/fleet/hooks/useBrokerTopics';
 import type { Vehicle } from '@/lib/fleet/hooks/useUagvFlow';
-import { FLEET_COLORS, STALE_MS, TASK_STATUS_COLOR, UAGV_ROOT, VDA_MAJOR } from '@/lib/fleet/constants';
+import { FLEET_COLORS, STALE_MS, TASK_STATUS_COLOR } from '@/lib/fleet/constants';
 import { resolveBrokerUrl } from '@/lib/fleet/mqtt';
 import { PanelShell } from './PanelShell';
 import { ModeToggle } from './ModeToggle';
+import { BrokerConnection } from './BrokerConnection';
 import { labelCls } from './theme';
 
 interface Props {
@@ -96,6 +97,8 @@ export function CoordinatorPanel({
             )}
           </div>
 
+          <BrokerConnection broker={broker} />
+
           <div className="flex items-center justify-between rounded-md border border-white/[0.08] bg-white/[0.02] p-2">
             <span className="inline-flex items-center gap-1.5 text-[11px] text-white/60">
               <span className={`inline-block h-1.5 w-1.5 rounded-full ${broker.dispatch_active ? 'animate-pulse bg-emerald-400' : 'bg-white/25'}`} />
@@ -143,13 +146,6 @@ export function CoordinatorPanel({
             <ModeToggle mode={broker.mode} onChange={onModeChange} />
             {broker.mode === 'live' && (
               <div className="mt-2 space-y-1 rounded-md border border-orange-400/25 bg-orange-400/[0.05] p-2 text-[10px] leading-relaxed text-white/55">
-                <p>
-                  Robots must publish VDA 5050 state to{' '}
-                  <code className="font-mono text-white/80">
-                    {UAGV_ROOT}/v{VDA_MAJOR}/&lt;manufacturer&gt;/&lt;serial&gt;/state
-                  </code>
-                  .
-                </p>
                 <p>
                   Robots that report <code className="font-mono text-white/80">mapId</code>{' '}
                   <code className="font-mono text-white/80">{broker.project_id}</code> are added on first connection.
