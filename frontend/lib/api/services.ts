@@ -175,4 +175,7 @@ export const missionService = {
 
   check: (missionId: string, hex: string, projectId?: string) =>
     apiClient.post<MissionRun>(`/missions/${missionId}/check`, { hex, project_id: projectId }),
+
+  checkInSandbox: (missionId: string, projectId: string) =>
+    apiClient.post<MissionRun>(`/missions/${missionId}/check`, { project_id: projectId }),
 };

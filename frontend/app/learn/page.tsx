@@ -63,8 +63,9 @@ export default function LearnPage() {
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Missions</h1>
           <p className="text-sm text-white/45 max-w-xl leading-relaxed">
-            Short hands-on challenges. Write the code, press Check, and the simulator runs your sketch against
-            real inputs to see if it works. Stuck? Ask the Tutor for a hint.
+            Short hands-on challenges. Write the code, press Check, and CuBot runs it against real inputs to see
+            if it works: Arduino sketches in the simulator, ROS 2 nodes in your own sandbox. Stuck? Ask the Tutor
+            for a hint.
           </p>
 
           {!isLoading && missions.length > 0 && (

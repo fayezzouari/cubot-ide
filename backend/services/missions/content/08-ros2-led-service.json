@@ -1,0 +1,101 @@
+{
+  "id": "ros2-led-service",
+  "order": 8,
+  "track": "ROS 2 basics",
+  "kind": "ros2",
+  "title": "Switch it with a service",
+  "summary": "Offer a service that turns a virtual LED on and off.",
+  "difficulty": "intermediate",
+  "concepts": [
+    "create_service",
+    "std_srvs/SetBool",
+    "request / response"
+  ],
+  "goal": "The /set_led service switches the LED, answers with \"LED ON\" or \"LED OFF\", and /led_state reports the new state.",
+  "brief": "Topics stream data. **Services** are for requests that need an answer, like \"turn the LED on\".\n\n1. Create the service with `self.create_service(SetBool, '/set_led', self.on_set_led)`.\n2. `on_set_led(self, request, response)` gets `request.data` (`True` or `False`). Store it in `self.led_on`.\n3. Fill the response: `success = True` and `message = 'LED ON'` or `'LED OFF'`, then `return response`.\n4. Publish the new state as a `Bool` on `/led_state` every time it changes.\n\nCheck calls `/set_led` with `true`, then with `false`.",
+  "duration_ms": 6000,
+  "starter_files": [
+    {
+      "path": "led_server.py",
+      "content": "import rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg import Bool\nfrom std_srvs.srv import SetBool\n\n\nclass LedServer(Node):\n    def __init__(self):\n        super().__init__('led_server')\n        self.led_on = False\n\n\ndef main():\n    rclpy.init()\n    node = LedServer()\n    rclpy.spin(node)\n\n\nif __name__ == '__main__':\n    main()\n"
+    }
+  ],
+  "run": [
+    "python3 led_server.py"
+  ],
+  "scenario": [
+    {
+      "at_ms": 2500,
+      "action": "call",
+      "id": "on",
+      "service": "/set_led",
+      "srv_type": "std_srvs/srv/SetBool",
+      "request": {
+        "data": true
+      }
+    },
+    {
+      "at_ms": 4000,
+      "action": "call",
+      "id": "off",
+      "service": "/set_led",
+      "srv_type": "std_srvs/srv/SetBool",
+      "request": {
+        "data": false
+      }
+    }
+  ],
+  "checks": [
+    {
+      "id": "on-success",
+      "label": "Turning on succeeds",
+      "type": "service_response",
+      "call": "on",
+      "field": "success",
+      "equals": true
+    },
+    {
+      "id": "on-message",
+      "label": "Answers \"LED ON\"",
+      "type": "service_response",
+      "call": "on",
+      "field": "message",
+      "equals": "LED ON"
+    },
+    {
+      "id": "off-message",
+      "label": "Answers \"LED OFF\"",
+      "type": "service_response",
+      "call": "off",
+      "field": "message",
+      "equals": "LED OFF"
+    },
+    {
+      "id": "state-on",
+      "label": "/led_state reports on",
+      "type": "topic_value",
+      "topic": "/led_state",
+      "msg_type": "std_msgs/msg/Bool",
+      "field": "data",
+      "equals": true,
+      "after_ms": 2500,
+      "at_ms": 3900
+    },
+    {
+      "id": "state-off",
+      "label": "/led_state reports off",
+      "type": "topic_value",
+      "topic": "/led_state",
+      "msg_type": "std_msgs/msg/Bool",
+      "field": "data",
+      "equals": false,
+      "after_ms": 4000,
+      "at_ms": 5800
+    }
+  ],
+  "hints": [
+    "A service callback takes (self, request, response) and must return the response.",
+    "Create self.state_pub = self.create_publisher(Bool, '/led_state', 10) in __init__ and publish from the service callback.",
+    "self.led_on = request.data\nresponse.success = True\nresponse.message = 'LED ON' if self.led_on else 'LED OFF'\nstate = Bool()\nstate.data = self.led_on\nself.state_pub.publish(state)\nreturn response"
+  ]
+}

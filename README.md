@@ -292,6 +292,7 @@ For ROS projects, CuBot IDE runs a ROS Humble pod per project on a Kubernetes cl
 **Terminal Access**
 - xterm.js terminal connected to an interactive shell in the pod
 - Run ROS nodes, `colcon build`, `ros2 launch`, etc. from the browser
+- New sandboxes start with only the project's files in `/root/project`; create your own workspace from the terminal (e.g. `ros2 pkg create --build-type ament_python my_pkg` under `src/`), and files you add under `src/` are pulled into the IDE
 - Full Linux environment with ROS pre-installed
 
 **File Sync**

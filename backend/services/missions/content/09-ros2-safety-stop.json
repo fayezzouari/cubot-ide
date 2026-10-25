@@ -1,0 +1,104 @@
+{
+  "id": "ros2-safety-stop",
+  "order": 9,
+  "track": "ROS 2 basics",
+  "kind": "ros2",
+  "title": "Safety stop",
+  "summary": "Drive forward, and stop when an obstacle gets close.",
+  "difficulty": "intermediate",
+  "concepts": [
+    "geometry_msgs/Twist",
+    "sensor_msgs/Range",
+    "/cmd_vel"
+  ],
+  "goal": "For each /distance reading, publish a Twist on /cmd_vel: 0.2 m/s forward when the range is above 0.5 m, 0 when it is closer.",
+  "brief": "Mobile robots are driven by `geometry_msgs/Twist` messages on `/cmd_vel`: `linear.x` is the forward speed in m/s and `angular.z` the turn rate.\n\nA distance sensor publishes `sensor_msgs/Range` on `/distance`; the reading is in `msg.range` (metres).\n\n1. Subscribe to `/distance` and create a `Twist` publisher on `/cmd_vel`.\n2. For every reading, publish a `Twist` with `linear.x = CRUISE_SPEED` when `msg.range > SAFE_DISTANCE`, otherwise `0.0`.\n\nCheck sends 2.0 m, then 0.3 m, then 1.5 m, and reads your `/cmd_vel` after each one.",
+  "duration_ms": 7800,
+  "starter_files": [
+    {
+      "path": "safety_stop.py",
+      "content": "import rclpy\nfrom rclpy.node import Node\nfrom geometry_msgs.msg import Twist\nfrom sensor_msgs.msg import Range\n\nSAFE_DISTANCE = 0.5\nCRUISE_SPEED = 0.2\n\n\nclass SafetyStop(Node):\n    def __init__(self):\n        super().__init__('safety_stop')\n\n\ndef main():\n    rclpy.init()\n    node = SafetyStop()\n    rclpy.spin(node)\n\n\nif __name__ == '__main__':\n    main()\n"
+    }
+  ],
+  "run": [
+    "python3 safety_stop.py"
+  ],
+  "scenario": [
+    {
+      "at_ms": 3000,
+      "action": "publish",
+      "topic": "/distance",
+      "msg_type": "sensor_msgs/msg/Range",
+      "data": {
+        "range": 2.0
+      }
+    },
+    {
+      "at_ms": 4500,
+      "action": "publish",
+      "topic": "/distance",
+      "msg_type": "sensor_msgs/msg/Range",
+      "data": {
+        "range": 0.3
+      }
+    },
+    {
+      "at_ms": 6000,
+      "action": "publish",
+      "topic": "/distance",
+      "msg_type": "sensor_msgs/msg/Range",
+      "data": {
+        "range": 1.5
+      }
+    }
+  ],
+  "checks": [
+    {
+      "id": "node",
+      "label": "A node named safety_stop is running",
+      "type": "node_running",
+      "name": "safety_stop"
+    },
+    {
+      "id": "clear",
+      "label": "Drives at 0.2 m/s when the path is clear",
+      "type": "topic_value",
+      "topic": "/cmd_vel",
+      "msg_type": "geometry_msgs/msg/Twist",
+      "field": "linear.x",
+      "equals": 0.2,
+      "tolerance": 0.01,
+      "after_ms": 3000,
+      "at_ms": 4400
+    },
+    {
+      "id": "blocked",
+      "label": "Stops at 0.3 m",
+      "type": "topic_value",
+      "topic": "/cmd_vel",
+      "msg_type": "geometry_msgs/msg/Twist",
+      "field": "linear.x",
+      "equals": 0.0,
+      "tolerance": 0.01,
+      "after_ms": 4500,
+      "at_ms": 5900
+    },
+    {
+      "id": "resume",
+      "label": "Drives again once the obstacle is gone",
+      "type": "topic_value",
+      "topic": "/cmd_vel",
+      "msg_type": "geometry_msgs/msg/Twist",
+      "field": "linear.x",
+      "equals": 0.2,
+      "tolerance": 0.01,
+      "after_ms": 6000,
+      "at_ms": 7400
+    }
+  ],
+  "hints": [
+    "Do the work in the /distance callback: read msg.range, decide a speed, publish one Twist.",
+    "cmd = Twist() starts with every speed at 0.0, so you only need to set cmd.linear.x.",
+    "cmd = Twist()\ncmd.linear.x = CRUISE_SPEED if msg.range > SAFE_DISTANCE else 0.0\nself.cmd_pub.publish(cmd)"
+  ]
+}

@@ -1071,6 +1071,23 @@ export default function IDEPage() {
     />
   ) : null;
 
+  const editorArea = missionPanel && isMissionCollapsed ? (
+    <div className="h-full flex flex-col">
+      <div className="flex-1 min-h-0">{editorPanel}</div>
+      <div className="h-10 shrink-0">{missionPanel}</div>
+    </div>
+  ) : missionPanel ? (
+    <ResizablePanelGroup direction="vertical">
+      <ResizablePanel defaultSize={58} minSize={25}>
+        {editorPanel}
+      </ResizablePanel>
+      <ResizableHandle withHandle className="h-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
+      <ResizablePanel defaultSize={42} minSize={15}>
+        {missionPanel}
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  ) : editorPanel;
+
   return (
     <div className="h-screen flex flex-col bg-black text-foreground overflow-hidden">
       <TopBar
@@ -1134,25 +1151,14 @@ export default function IDEPage() {
             {currentProject?.project_type === 'ros' ? (
               <ResizablePanelGroup direction="vertical">
                 {/* Editor */}
-                <ResizablePanel defaultSize={65} minSize={30}>
-                  <EditorPanel
-                    currentFileName={currentFileName}
-                    currentProjectName={currentProject?.name ?? null}
-                    hasUnsavedChanges={hasUnsavedChanges}
-                    isSaving={isSaving}
-                    onSave={handleSaveFile}
-                    currentFileContent={currentFileContent}
-                    editedContent={editedContent}
-                    onChange={handleContentChange}
-                    getLanguageFromFileName={getLanguageFromFileName}
-                    onAddSelectionToChat={handleAddSelectionToChat}
-                  />
+                <ResizablePanel defaultSize={missionPanel ? 72 : 65} minSize={30}>
+                  {editorArea}
                 </ResizablePanel>
 
                 <ResizableHandle withHandle className="h-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
 
                 {/* Sandbox Terminal - ROS Projects Only */}
-                <ResizablePanel defaultSize={35} minSize={20}>
+                <ResizablePanel defaultSize={missionPanel ? 28 : 35} minSize={15}>
                   <TerminalTabsManager
                     workspaceId={activeWorkspaceId ?? undefined}
                     onWorkspaceCreate={handleWorkspaceCreate}
@@ -1160,24 +1166,8 @@ export default function IDEPage() {
                   />
                 </ResizablePanel>
               </ResizablePanelGroup>
-            ) : missionPanel && isMissionCollapsed ? (
-              <div className="h-full flex flex-col">
-                <div className="flex-1 min-h-0">{editorPanel}</div>
-                <div className="h-10 shrink-0">{missionPanel}</div>
-              </div>
-            ) : missionPanel ? (
-              <ResizablePanelGroup direction="vertical">
-                <ResizablePanel defaultSize={58} minSize={25}>
-                  {editorPanel}
-                </ResizablePanel>
-                <ResizableHandle withHandle className="h-px bg-white/[0.06] hover:bg-white/20 transition-colors" />
-                <ResizablePanel defaultSize={42} minSize={15}>
-                  {missionPanel}
-                </ResizablePanel>
-              </ResizablePanelGroup>
             ) : (
-              /* Non-ROS Projects - Editor Only */
-              editorPanel
+              editorArea
             )}
           </ResizablePanel>
 

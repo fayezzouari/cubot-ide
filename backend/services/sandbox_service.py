@@ -440,144 +440,6 @@ class SandboxService:
         self._workspace_metadata[workspace_id] = workspace.model_dump()
         return await self._sync_and_finalize_workspace(workspace, workspace_id, project_id)
 
-    @staticmethod
-    def _ros_package_name(project_name: str) -> str:
-        """Derive a valid ROS 2 / Python package name from a project name.
-
-        Rules: lowercase, any non-alphanumeric char → underscore,
-        collapse consecutive underscores, strip leading/trailing underscores.
-        """
-        name = project_name.lower().strip()
-        name = re.sub(r'[^a-z0-9]+', '_', name)
-        name = name.strip('_')
-        return name or "ros_project"
-
-    async def _setup_ros_workspace(self, pod_name: str, pkg_name: str) -> None:
-        """
-        Initialize the ROS 2 workspace inside the pod after creation.
-
-        Creates a full ament_python package structure under src/<pkg_name>/:
-          package.xml, setup.py, setup.cfg, resource/<pkg_name>, <pkg_name>/__init__.py
-
-        File contents are streamed over stdin to avoid any shell-quoting issues.
-
-        rosdep update is intentionally omitted (slow network call).
-        """
-        logger.info(f"Setting up ROS workspace for package '{pkg_name}'...")
-
-        pkg_dir = f"{PROJECT_BASE_DIR}/src/{pkg_name}"
-        py_dir = f"{pkg_dir}/{pkg_name}"
-        resource_dir = f"{pkg_dir}/resource"
-
-        # ── File contents (real Python newlines — no shell quoting needed) ──
-
-        package_xml = (
-            f'<?xml version="1.0"?>\n'
-            f'<package format="3">\n'
-            f'  <name>{pkg_name}</name>\n'
-            f'  <version>0.0.1</version>\n'
-            f'  <description>{pkg_name} ROS 2 package</description>\n'
-            f'  <maintainer email="user@example.com">user</maintainer>\n'
-            f'  <license>Apache-2.0</license>\n'
-            f'  <exec_depend>rclpy</exec_depend>\n'
-            f'  <export>\n'
-            f'    <build_type>ament_python</build_type>\n'
-            f'  </export>\n'
-            f'</package>\n'
-        )
-
-        setup_py = (
-            f"from setuptools import setup\n\n"
-            f"package_name = '{pkg_name}'\n\n"
-            f"setup(\n"
-            f"    name=package_name,\n"
-            f"    version='0.0.1',\n"
-            f"    packages=[package_name],\n"
-            f"    data_files=[\n"
-            f"        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),\n"
-            f"        ('share/' + package_name, ['package.xml']),\n"
-            f"    ],\n"
-            f"    install_requires=['setuptools'],\n"
-            f"    zip_safe=True,\n"
-            f"    entry_points={{\n"
-            f"        'console_scripts': [],\n"
-            f"    }},\n"
-            f")\n"
-        )
-
-        setup_cfg = (
-            f"[develop]\n"
-            f"script_dir=$base/lib/{pkg_name}\n"
-            f"[install]\n"
-            f"install_scripts=$base/lib/{pkg_name}\n"
-        )
-
-        try:
-            # 1. Create dirs and marker files (shell rc files are patched by the pod bootstrap)
-            result = await self._exec(
-                pod_name,
-                'mkdir -p "$1" "$2" && touch "$2/$3" "$1/__init__.py"',
-                py_dir,
-                resource_dir,
-                pkg_name,
-            )
-            if result.exit_code != 0:
-                logger.warning(
-                    f"ROS scaffold returned non-zero ({result.exit_code}): "
-                    f"{result.stderr[:300]}"
-                )
-
-            # 2. Upload file contents directly — zero quoting issues
-            await self._write_file(pod_name, f"{pkg_dir}/package.xml", package_xml.encode("utf-8"))
-            await self._write_file(pod_name, f"{pkg_dir}/setup.py", setup_py.encode("utf-8"))
-            await self._write_file(pod_name, f"{pkg_dir}/setup.cfg", setup_cfg.encode("utf-8"))
-
-            logger.info(f"✓ ROS package '{pkg_name}' scaffold created")
-        except Exception as e:
-            logger.warning(f"ROS workspace setup failed (non-fatal): {e}")
-
-    async def _build_ros_workspace(self, pod_name: str, pkg_name: str) -> None:
-        """
-        Run `colcon build` inside the pod to compile the freshly scaffolded
-        ROS 2 package and make it importable in every subsequent terminal session.
-
-        Also appends `source install/setup.bash` to /root/.bashrc so that
-        new PTY shells have the overlay sourced automatically.
-
-        This step is best-effort: failures are logged but never raised.
-        """
-        logger.info("Building ROS 2 workspace with colcon…")
-
-        install_setup = f"{PROJECT_BASE_DIR}/install/setup.bash"
-
-        build_sh = (
-            "set -e\n"
-            # Install colcon if missing (apt path; pip fallback not needed for Humble)
-            "command -v colcon > /dev/null 2>&1 \\\n"
-            "  || (apt-get update -qq && apt-get install -y -q python3-colcon-common-extensions)\n"
-            f"cd {PROJECT_BASE_DIR}\n"
-            "source /opt/ros/humble/setup.bash\n"
-            "colcon build\n"
-            # Patch .bashrc so future PTY sessions have the local overlay sourced
-            f'if [ -f "{install_setup}" ]; then\n'
-            f'  grep -qF "{install_setup}" /root/.bashrc \\\n'
-            f'    || printf "\\n# ROS 2 local workspace overlay\\n'
-            f'[ -f {install_setup} ] && source {install_setup}\\n" >> /root/.bashrc\n'
-            "fi\n"
-        )
-
-        try:
-            result = await self._exec(pod_name, build_sh, timeout=180)
-            if result.exit_code != 0:
-                logger.warning(
-                    f"colcon build returned non-zero ({result.exit_code}): "
-                    f"{(result.stderr or result.stdout)[:300]}"
-                )
-            else:
-                logger.info("✓ colcon build succeeded; workspace overlay sourced in .bashrc")
-        except Exception as e:
-            logger.warning(f"colcon build failed (non-fatal): {e}")
-
     async def _create_new_pod(
         self,
         workspace_id: str,
@@ -586,11 +448,6 @@ class SandboxService:
     ) -> SandboxWorkspaceResponse:
         """Create a new ROS Humble sandbox pod."""
         logger.info(f"Creating new ROS Humble sandbox pod for project: {project_id}")
-
-        # Derive ROS package name from project name
-        project = await project_service.get_project(project_id)
-        pkg_name = self._ros_package_name(project.name) if project else "ros_project"
-        logger.info(f"ROS package name: '{pkg_name}'")
 
         manifest = self._build_pod_manifest(pod_name, project_id)
         try:
@@ -622,23 +479,12 @@ class SandboxService:
             "project_id": project_id,
             "state": WorkspaceState.RUNNING.value,
             "sandbox_id": pod_name,
-            "pkg_name": pkg_name,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files_synced": 0,
             "sync_status": "none",
         }
         await project_service.update_sandbox_id(project_id, pod_name)
         logger.info(f"Saved sandbox pod {pod_name} to project {project_id}")
-
-        # Set up the ROS package scaffold (fast).  This runs while the
-        # per-workspace lock is still held, so no other coroutine can attempt
-        # to create a duplicate pod before we finish.
-        await self._setup_ros_workspace(pod_name, pkg_name)
-
-        # Kick off `colcon build` as a fire-and-forget asyncio task so the lock
-        # is released promptly.  The build can take several minutes; the terminal
-        # PTY will be usable while it runs in the background.
-        asyncio.create_task(self._build_ros_workspace(pod_name, pkg_name))
 
         # Finalize: sync project files and update metadata with sync status.
         # Still inside the lock, but finalize is fast (file upload).
@@ -650,24 +496,11 @@ class SandboxService:
         project_id: str
     ) -> Dict[str, Any]:
         """
-        Sync project files from MongoDB into the pod filesystem.
-
-        Files are placed inside the ROS package Python module directory:
-          src/<pkg_name>/<pkg_name>/<file>
-        so they are importable by the package and picked up by colcon.
-
-        Falls back to PROJECT_BASE_DIR if no pkg_name is recorded (legacy/non-ROS).
+        Sync project files from MongoDB into the pod filesystem under PROJECT_BASE_DIR.
         """
         pod_name = self._pods.get(workspace_id)
         if not pod_name:
             return {"files_synced": 0, "errors": ["Sandbox not found"]}
-
-        # Determine sync root: package python module dir if available
-        pkg_name = self._workspace_metadata.get(workspace_id, {}).get("pkg_name")
-        if pkg_name:
-            sync_root = f"{PROJECT_BASE_DIR}/src/{pkg_name}/{pkg_name}"
-        else:
-            sync_root = PROJECT_BASE_DIR
 
         # Fetch project files from MongoDB
         try:
@@ -692,14 +525,8 @@ class SandboxService:
                 if not file_name:
                     continue
 
-                # Build directory path relative to sync_root
-                if file_path and file_path not in ("/", "."):
-                    full_dir = f"{sync_root}/{file_path.strip('/')}"
-                else:
-                    full_dir = sync_root
-
                 # Write file to pod (parent directories are created as needed)
-                full_file_path = f"{full_dir}/{file_name}"
+                full_file_path = self._project_path(file_path, file_name)
                 await self._write_file(pod_name, full_file_path, content.encode("utf-8"))
                 synced += 1
                 logger.debug(f"Synced file: {full_file_path}")
@@ -711,7 +538,7 @@ class SandboxService:
 
         logger.info(
             f"Synced {synced}/{len(files)} files for project {project_id} "
-            f"into {sync_root} (pod {pod_name})"
+            f"into {PROJECT_BASE_DIR} (pod {pod_name})"
         )
         return {"files_synced": synced, "errors": errors}
 
@@ -797,6 +624,19 @@ class SandboxService:
         if workspace_metadata:
             return SandboxWorkspaceResponse(**workspace_metadata)
         return None
+
+    async def ensure_pod(self, project_id: str) -> str:
+        workspace = await self.create_workspace(SandboxWorkspaceCreate(project_id=project_id))
+        pod_name = self._pods.get(workspace.workspace_id)
+        if not pod_name:
+            raise RuntimeError("The sandbox did not start")
+        return pod_name
+
+    async def write_pod_file(self, pod_name: str, path: str, content: bytes) -> None:
+        await self._write_file(pod_name, path, content)
+
+    async def run_in_pod(self, pod_name: str, script: str, *args: str, timeout: int = 30) -> ExecResult:
+        return await self._exec(pod_name, script, *args, timeout=timeout)
 
     def _get_workspace_by_project(self, project_id: str) -> Optional[str]:
         """Find workspace ID by project ID"""

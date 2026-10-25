@@ -277,6 +277,7 @@ export interface MissionSummary {
   title: string;
   summary: string;
   difficulty: 'beginner' | 'intermediate' | 'advanced';
+  kind: 'arduino' | 'ros2';
   concepts: string[];
   status: MissionStatus;
   project_id?: string | null;
@@ -285,7 +286,14 @@ export interface MissionSummary {
 export interface MissionCheck {
   id: string;
   label: string;
-  type: 'pin_toggles' | 'pin_state' | 'serial_contains';
+  type:
+    | 'pin_toggles'
+    | 'pin_state'
+    | 'serial_contains'
+    | 'topic_published'
+    | 'topic_value'
+    | 'service_response'
+    | 'node_running';
 }
 
 export interface Mission extends MissionSummary {
@@ -293,6 +301,7 @@ export interface Mission extends MissionSummary {
   goal: string;
   duration_ms: number;
   starter_files: Array<{ path: string; content: string }>;
+  run: string[];
   checks: MissionCheck[];
   hints: string[];
 }

@@ -107,7 +107,8 @@ async def _find_file(project_id: str, path: str):
         dir_part, name_part = "", path
 
     collection = get_collection("files")
-    doc = await collection.find_one({"project_id": project_id, "path": dir_part, "name": name_part})
+    dir_paths = [dir_part] if dir_part else ["", "/", "."]
+    doc = await collection.find_one({"project_id": project_id, "path": {"$in": dir_paths}, "name": name_part})
     if doc:
         return FileResponse(
             id=str(doc["_id"]),
