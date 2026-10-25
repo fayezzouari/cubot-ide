@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Play, Settings, Home, TerminalSquare, Cpu, Usb } from 'lucide-react';
+import { Play, ArrowLeft, TerminalSquare, Cpu, Usb } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 
@@ -9,6 +9,8 @@ interface TopBarProps {
   projectId: string | null;
   isArduinoProject: boolean;
   projectType: string | null;
+  backHref: string;
+  backLabel: string;
   onOpenCompile: () => void;
   onOpenSerial: () => void;
   onOpenUpload: () => void;
@@ -18,6 +20,8 @@ export default function TopBar({
   projectId,
   isArduinoProject,
   projectType,
+  backHref,
+  backLabel,
   onOpenCompile,
   onOpenSerial,
   onOpenUpload,
@@ -25,13 +29,23 @@ export default function TopBar({
   const { data: session, status } = useSession();
   
   return (
-    <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-black flex-shrink-0">
+    <header className="h-11 border-b border-white/[0.06] flex items-center justify-between px-4 bg-[#0e0e0e] flex-shrink-0">
       {/* Left: Logo */}
       <div className="flex items-center gap-3">
-        <Link href="/" className="flex items-center gap-2 group">
-          <img src="/cubot.svg" alt="CuBot" className="w-6 h-6 object-contain" />
-          <span className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">CuBot</span>
+        <Link
+          href={backHref}
+          className="inline-flex items-center gap-1.5 h-7 pl-1.5 pr-2.5 text-xs text-white/50 hover:text-white hover:bg-white/[0.06] rounded-lg transition-all"
+        >
+          <ArrowLeft size={13} />
+          {backLabel}
         </Link>
+
+        <span className="w-px h-4 bg-white/[0.08]" />
+
+        <div className="flex items-center gap-2">
+          <img src="/cubot.svg" alt="CuBot" className="w-6 h-6 object-contain" />
+          <span className="text-sm font-semibold text-white/80">CuBot</span>
+        </div>
 
         <span className="text-white/[0.12]">·</span>
 
@@ -80,14 +94,6 @@ export default function TopBar({
 
         <span className="w-px h-4 bg-white/[0.08] mx-1" />
 
-
-        <Link
-          href="/dashboard"
-          className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/[0.06] rounded-lg transition-all"
-          title="Back to Dashboard"
-        >
-          <Home size={13} />
-        </Link>
         <>
           {status === 'authenticated' && (
             <>
