@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Broker, Drone } from '../types';
-import { UAV_MAJOR, UAV_ROOT } from '../constants';
+import { TELEMETRY_FLUSH_MS, UAV_MAJOR, UAV_ROOT } from '../constants';
 import { connectFleetMqtt, parsePayload } from '../mqtt';
 import { useFreshIds } from './useFreshIds';
 
@@ -22,6 +22,7 @@ function flightStatus(value: unknown): Drone['status'] {
 
 export function useUavFlow(broker: Broker | null, enabled: boolean) {
   const [byId, setById] = useState<Record<string, LiveDroneState>>({});
+  const pendingRef = useRef<Record<string, LiveDroneState>>({});
   const wsUrl = broker?.ws_url;
   const active = broker !== null && enabled;
 
@@ -37,19 +38,24 @@ export function useUavFlow(broker: Broker | null, enabled: boolean) {
         const serial = d.serialNumber;
         const pos = d.agvPosition as { x?: number; y?: number; z?: number } | undefined;
         if (typeof serial !== 'string' || !pos) return;
-        setById((prev) => ({
-          ...prev,
-          [serial]: {
-            x: pos.x ?? 0,
-            y: pos.y ?? 0,
-            z: pos.z ?? 0,
-            status: flightStatus(d.flightStatus),
-            lastSeen: Date.now(),
-          },
-        }));
+        pendingRef.current[serial] = {
+          x: pos.x ?? 0,
+          y: pos.y ?? 0,
+          z: pos.z ?? 0,
+          status: flightStatus(d.flightStatus),
+          lastSeen: Date.now(),
+        };
       });
     });
+    const flush = setInterval(() => {
+      const batch = pendingRef.current;
+      if (!Object.keys(batch).length) return;
+      pendingRef.current = {};
+      setById((prev) => ({ ...prev, ...batch }));
+    }, TELEMETRY_FLUSH_MS);
     return () => {
+      clearInterval(flush);
+      pendingRef.current = {};
       dispose();
       setById({});
     };
