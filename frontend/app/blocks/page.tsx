@@ -43,6 +43,7 @@ import {
   Save,
   SkipForward,
   Square,
+  Target,
   Usb,
   Wand2,
 } from 'lucide-react';
@@ -60,6 +61,18 @@ import { Interpreter, type LogEntry, type TelemetryEntry } from '@/lib/blocks/in
 import { BLOCK_BY_TYPE, CATEGORY_BY_ID, defaultData, migrateLegacyNode, nodeHeight } from '@/lib/blocks/registry';
 import { SerialLink } from '@/lib/blocks/serial';
 import { buildTemplateGraph, type Template } from '@/lib/blocks/templates';
+import {
+  gradeMission,
+  loadMissionProgress,
+  MISSION_BY_ID,
+  missionPoses,
+  MISSIONS,
+  saveMissionStatus,
+  VisitRecorder,
+  type Mission,
+  type MissionStatus,
+  type ObjectiveResult,
+} from '@/lib/blocks/missions';
 import type { Pose, ProgramDocument, SceneConfig } from '@/lib/blocks/types';
 import { useWorldLoop } from '@/lib/blocks/useWorld';
 import { DEFAULT_POSES, DEFAULT_SCENE, World } from '@/lib/blocks/workcell';
@@ -82,6 +95,7 @@ import {
   type StationKind,
 } from '@/lib/blocks/layout';
 import { BlocksCanvasContext, FlowNode } from '@/components/blocks/FlowNode';
+import { FlowEdge } from '@/components/blocks/FlowEdge';
 import { BlockPalette } from '@/components/blocks/BlockPalette';
 import { Inspector } from '@/components/blocks/Inspector';
 import { PosesPanel } from '@/components/blocks/PosesPanel';
@@ -90,15 +104,18 @@ import { EnvironmentPanel } from '@/components/blocks/EnvironmentPanel';
 import { SensorsPanel } from '@/components/blocks/SensorsPanel';
 import { ConsolePanel } from '@/components/blocks/ConsolePanel';
 import { TemplateGallery } from '@/components/blocks/TemplateGallery';
+import { MissionGallery } from '@/components/blocks/MissionGallery';
+import { MissionPanel } from '@/components/blocks/MissionPanel';
 import { CodeDialog, type CodeFile } from '@/components/blocks/CodeDialog';
 import { BLOCKS_THEME } from '@/components/blocks/theme';
 
 const WorkcellView = dynamic(() => import('@/components/blocks/WorkcellView'), { ssr: false });
 
 const nodeTypes = Object.fromEntries(Object.keys(BLOCK_BY_TYPE).map((t) => [t, FlowNode]));
+const edgeTypes = { flow: FlowEdge };
 
 type RunState = 'idle' | 'running' | 'paused';
-type SideTab = 'properties' | 'cell' | 'environment' | 'sensors' | 'poses';
+type SideTab = 'mission' | 'properties' | 'cell' | 'environment' | 'sensors' | 'poses';
 
 const EDGE_COLORS: Record<string, string> = { true: '#4ade80', false: '#f87171', body: '#a78bfa' };
 
@@ -162,6 +179,12 @@ function BlocksIDE() {
   const [codeOpen, setCodeOpen] = useState(false);
   const [serial, setSerial] = useState<SerialLink | null>(null);
   const [serialLog, setSerialLog] = useState<{ dir: 'tx' | 'rx'; line: string }[]>([]);
+  const [missionId, setMissionId] = useState<string | null>(null);
+  const [missionResults, setMissionResults] = useState<ObjectiveResult[] | null>(null);
+  const [missionsOpen, setMissionsOpen] = useState(false);
+  const [missionProgress, setMissionProgress] = useState<Record<string, MissionStatus>>({});
+  const mission = missionId ? (MISSION_BY_ID[missionId] ?? null) : null;
+  const nextMission = mission ? (MISSIONS[MISSIONS.indexOf(mission) + 1] ?? null) : null;
 
   const interpreterRef = useRef<Interpreter | null>(null);
   const logId = useRef(0);
@@ -201,6 +224,7 @@ function BlocksIDE() {
       layout?: CellLayout | null;
       vision?: VisionConfig;
       trail?: boolean;
+      mission?: string | null;
     }) => {
       const nextVision = doc.vision ?? structuredClone(DEFAULT_VISION);
       setVision(nextVision);
@@ -214,6 +238,10 @@ function BlocksIDE() {
       setStationId(null);
       setProgramName(doc.name);
       setSelectedId(null);
+      const nextMission = doc.mission && MISSION_BY_ID[doc.mission] ? doc.mission : null;
+      setMissionId(nextMission);
+      setMissionResults(null);
+      setSideTab((tab) => (nextMission ? 'mission' : tab === 'mission' ? 'properties' : tab));
       world.layout = nextLayout;
       world.reset(doc.scene);
       world.trailEnabled = !!doc.trail;
@@ -244,6 +272,7 @@ function BlocksIDE() {
           scene: latest.settings?.scene ?? DEFAULT_SCENE,
           layout: parseLayout(latest.settings?.layout),
           vision: parseVision(latest.settings?.vision),
+          mission: latest.settings?.mission,
         });
         setSaveState('saved');
       })
@@ -261,9 +290,9 @@ function BlocksIDE() {
         nodes: serializeNodes(nodes),
         edges: serializeEdges(edges),
         poses,
-        settings: { scene, layout, vision },
+        settings: { scene, layout, vision, ...(missionId ? { mission: missionId } : {}) },
       }),
-    [programName, nodes, edges, poses, scene, layout, vision],
+    [programName, nodes, edges, poses, scene, layout, vision, missionId],
   );
 
   const save = useCallback(async () => {
@@ -376,8 +405,7 @@ function BlocksIDE() {
         const live = activeNodeId !== null && e.target === activeNodeId;
         return {
           ...e,
-          type: 'smoothstep',
-          pathOptions: { borderRadius: 16 },
+          type: 'flow',
           animated: live,
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
           style: { stroke: color, strokeWidth: live ? 2.5 : 1.75 },
@@ -399,10 +427,19 @@ function BlocksIDE() {
       setLogs([]);
       setTelemetry([]);
       setVariables({});
+      setMissionResults(null);
+      const recorder = new VisitRecorder(mission, poses);
+      const published: { topic: string }[] = [];
       const interp = new Interpreter(world, compiled, poses, {
-        onActive: setActiveNodeId,
+        onActive: (id) => {
+          setActiveNodeId(id);
+          recorder.sample(world);
+        },
         onLog: appendLog,
-        onTelemetry: (t) => setTelemetry((list) => [...list.slice(-499), { ...t, id: ++logId.current }]),
+        onTelemetry: (t) => {
+          published.push(t);
+          setTelemetry((list) => [...list.slice(-499), { ...t, id: ++logId.current }]);
+        },
         onVariables: setVariables,
       });
       interp.stepping = stepMode;
@@ -422,11 +459,24 @@ function BlocksIDE() {
       if (result.status === 'fault') {
         toast.error(result.message);
         if (result.nodeId) setSelectedId(result.nodeId);
+      }
+      if (mission) {
+        recorder.sample(world);
+        const graded = gradeMission(mission, world, poses, { result, time: world.time, telemetry: published, visits: recorder.visits });
+        setMissionResults(graded);
+        setSideTab('mission');
+        const done = graded.filter((g) => g.passed).length;
+        if (done === graded.length) {
+          setMissionProgress(saveMissionStatus(mission.id, 'passed'));
+          toast.success(`Mission complete: ${mission.title}`);
+        } else if (result.status !== 'stopped') {
+          toast.info(`${done} of ${graded.length} objectives met — see the Mission tab`);
+        }
       } else if (result.status === 'done') {
         toast.success('Program finished');
       }
     },
-    [running, compiled, errorCount, world, scene, simSpeed, poses, appendLog],
+    [running, compiled, errorCount, world, scene, simSpeed, poses, appendLog, mission],
   );
 
   const stop = useCallback(() => {
@@ -611,6 +661,34 @@ function BlocksIDE() {
     toast.success(`Loaded “${t.title}” — press Run`);
   };
 
+  const startMission = (m: Mission, steps = m.starter) => {
+    if (running) stop();
+    const graph = buildTemplateGraph(steps);
+    applyDocument({
+      name: `Mission: ${m.title}`,
+      nodes: graph.nodes,
+      edges: graph.edges,
+      poses: missionPoses(m),
+      scene: m.scene,
+      layout: m.layout,
+      mission: m.id,
+    });
+    setMissionsOpen(false);
+    setLogs([]);
+    setTelemetry([]);
+    setMissionProgress(saveMissionStatus(m.id, 'started'));
+  };
+
+  const leaveMission = () => {
+    setMissionId(null);
+    setMissionResults(null);
+    setSideTab('properties');
+  };
+
+  useEffect(() => {
+    setMissionProgress(loadMissionProgress());
+  }, []);
+
   const projectFile = (): ProgramDocument & { nodes: unknown; edges: unknown } => ({
     version: 2,
     name: programName,
@@ -710,6 +788,9 @@ function BlocksIDE() {
         <div className="ml-4 flex items-center gap-1">
           <Button size="sm" variant="ghost" className="h-8 text-xs text-white/70" onClick={() => setGalleryOpen(true)}>
             <LayoutTemplate size={14} /> Templates
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 text-xs text-white/70" onClick={() => setMissionsOpen(true)}>
+            <Target size={14} /> Missions
           </Button>
           <Button size="sm" variant="ghost" className="h-8 text-xs text-white/70" onClick={() => setCodeOpen(true)}>
             <Code2 size={14} /> Export
@@ -840,6 +921,7 @@ function BlocksIDE() {
                       }}
                       onPaneClick={() => setSelectedId(null)}
                       nodeTypes={nodeTypes}
+                      edgeTypes={edgeTypes}
                       nodesDraggable={!running}
                       nodesConnectable={!running}
                       elementsSelectable
@@ -930,6 +1012,7 @@ function BlocksIDE() {
                   <div className="flex h-8 shrink-0 items-center gap-1 border-b border-t border-white/[0.08] px-2">
                     {(
                       [
+                        ...(mission ? ([['mission', 'Mission']] as const) : []),
                         ['properties', 'Properties'],
                         ['cell', 'Cell & I/O'],
                         ['environment', 'Environment'],
@@ -947,6 +1030,24 @@ function BlocksIDE() {
                     ))}
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto">
+                    {sideTab === 'mission' && mission && (
+                      <MissionPanel
+                        mission={mission}
+                        next={nextMission}
+                        results={missionResults}
+                        passed={missionProgress[mission.id] === 'passed'}
+                        running={running}
+                        onCheck={() => void run()}
+                        onRestart={() => startMission(mission)}
+                        onSolution={() => startMission(mission, mission.solution)}
+                        onExit={leaveMission}
+                        onNext={() => nextMission && startMission(nextMission)}
+                        onAddBlock={(t) => {
+                          addBlock(t);
+                          setSideTab('mission');
+                        }}
+                      />
+                    )}
                     {sideTab === 'properties' && (
                       <Inspector
                         node={selectedNode}
@@ -1011,6 +1112,7 @@ function BlocksIDE() {
       </div>
 
       <TemplateGallery open={galleryOpen} onOpenChange={setGalleryOpen} onLoad={loadTemplate} />
+      <MissionGallery open={missionsOpen} onOpenChange={setMissionsOpen} progress={missionProgress} activeId={missionId} onStart={startMission} />
       {codeOpen && (
         <CodeDialog
           open={codeOpen}

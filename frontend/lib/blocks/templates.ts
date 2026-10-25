@@ -10,7 +10,7 @@ import { ENVIRONMENT_PRESETS, type CellLayout } from './layout';
 import type { SceneConfig } from './types';
 import { DEFAULT_SCENE } from './workcell';
 
-type Step =
+export type Step =
   | { t: string; d?: Record<string, unknown> }
   | { if: string; then: Step[]; else?: Step[] }
   | { repeat: number | string; var?: string; body: Step[] }

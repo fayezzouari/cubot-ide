@@ -103,6 +103,7 @@ export interface ProgramSettings {
   layout?: CellLayout;
   // Camera colour detection settings (vision.ts); defaults when omitted.
   vision?: VisionConfig;
+  mission?: string;
 }
 
 export interface ProgramDocument {
