@@ -8,6 +8,8 @@ from bson import ObjectId
 
 from core.config import settings
 from services.fleet import db
+from services.fleet.ownership import touch
+from services.fleet.robot_service import robot_doc
 from services.fleet.coordinator import sequence
 from services.fleet.coordinator import topics as legacy_topics
 from services.fleet.coordinator.eta import make_eta
@@ -41,6 +43,7 @@ class Vda5050Coordinator:
         self._hdr: dict[tuple[str, str], int] = {}
         self._last_assignment: dict[str, str | None] = {}
         self._completed: set[str] = set()
+        self._known: set[str] = set()
         self._orders = OrderStore()
         self._lock = asyncio.Lock()
         self._stopped = False
@@ -102,11 +105,33 @@ class Vda5050Coordinator:
             self._pos_cell[serial] = self._cell_of(
                 state.agvPosition.x, state.agvPosition.y
             )
+            if serial not in self._known and state.agvPosition.mapId == self.project_id:
+                await self._register(serial, state)
         if state.batteryState:
             self._battery[serial] = state.batteryState.batteryCharge
         for action_state in state.actionStates:
             if action_state.actionStatus == protocol.ActionStatus.FINISHED:
                 await self._complete_task(action_state.actionId)
+
+    async def _register(self, serial: str, state: State) -> None:
+        col, row = self._pos_cell[serial]
+        doc = robot_doc(
+            self.project_id,
+            name=serial,
+            serial=serial,
+            manufacturer=self._mfr.get(serial, settings.FLEET_MANUFACTURER),
+            position={"x": float(col), "y": float(row), "z": 0.0},
+            heading=state.agvPosition.theta,
+            speed=self._facts.get(serial, {}).get("max_speed") or 1.0,
+        )
+        res = await db.robots().update_one(
+            {"project_id": self.project_id, "serial_number": serial},
+            {"$setOnInsert": doc},
+            upsert=True,
+        )
+        self._known.add(serial)
+        if res.upserted_id is not None:
+            await touch(self.project_id)
 
     async def _complete_task(self, action_id: str) -> None:
         if action_id in self._completed:
@@ -198,20 +223,24 @@ class Vda5050Coordinator:
             ]
             greedy_tasks = [t for t in tasks if t.get("sequence_index") is None]
 
-            sched = schedule(
-                [{"id": r["id"], "position": r["position"], "speed": r["speed"],
-                  "category_id": r["category_id"]} for r in greedy_robots],
-                greedy_tasks,
-                make_eta(grid),
-            )
-
             queues: dict[str, list[dict]] = {r["id"]: [] for r in greedy_robots}
-            task_cell = {t["id"]: t["cell"] for t in greedy_tasks}
-            task_meta = {t["id"]: t for t in greedy_tasks}
-            for res in sched:
-                rid, tid = res["robot_id"], res["task_id"]
-                if rid and tid in task_cell:
-                    queues[rid].append({**task_meta[tid], "cell": task_cell[tid]})
+            if broker.get("auto_assign", True):
+                sched = schedule(
+                    [{"id": r["id"], "position": r["position"], "speed": r["speed"],
+                      "category_id": r["category_id"]} for r in greedy_robots],
+                    greedy_tasks,
+                    make_eta(grid),
+                )
+                task_meta = {t["id"]: t for t in greedy_tasks}
+                for res in sched:
+                    rid, tid = res["robot_id"], res["task_id"]
+                    if rid and tid in task_meta:
+                        queues[rid].append(task_meta[tid])
+            else:
+                sched = []
+                for t in sorted(greedy_tasks, key=lambda t: -t["priority"]):
+                    if t.get("assigned_robot_id") in queues:
+                        queues[t["assigned_robot_id"]].append(t)
 
             if broker.get("mode") == "live":
                 now = time.time()
@@ -401,6 +430,8 @@ class Vda5050Coordinator:
                 "sequence_cursor": r.get("sequence_cursor", 0),
             })
 
+        self._known = {r["serial"] for r in robots}
+
         tasks = []
         async for t in db.tasks().find(
             {
@@ -408,7 +439,7 @@ class Vda5050Coordinator:
                 "status": {"$ne": "done"},
                 "vehicle_kind": {"$ne": "aerial"},
             }
-        ):
+        ).sort("created_at", 1):
             p = t.get("position", {}) or {}
             cell = (int(round(p.get("x", 0.0))), int(round(p.get("y", 0.0))))
             tasks.append({
