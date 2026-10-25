@@ -79,10 +79,14 @@ async def main() -> None:
     p.add_argument("--host", default="localhost")
     p.add_argument("--port", type=int, default=1893)
     p.add_argument("--manufacturer", default=DEFAULT_MANUFACTURER)
-    p.add_argument("--serial", required=True, help="the robot id shown in the Fleet workspace")
+    p.add_argument("--serial", required=True, help="the robot serial shown in the Fleet workspace")
+    p.add_argument("--project", help="Fleet project id; the robot is added to it on first connection if missing")
+    p.add_argument("--start", type=float, nargs=2, default=(0.0, 0.0), metavar=("X", "Y"),
+                   help="start position in metres")
     args = p.parse_args()
 
     robot = MockRobot()
+    robot.x, robot.y = args.start
 
     def get_state() -> State:
         s = robot.state()
@@ -101,6 +105,7 @@ async def main() -> None:
         mqtt_port=args.port,
         manufacturer=args.manufacturer,
         serial=args.serial,
+        project_id=args.project,
         get_state=get_state,
         get_factsheet=get_factsheet,
     )
