@@ -75,11 +75,12 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
         fastScrollSensitivity: 10,
         fastScrollModifier: 'alt',
         theme: {
-          background: '#1e1e1e',
-          foreground: '#cccccc',
-          cursor: '#4ec9b0',
-          selectionBackground: '#264f78',
-          black: '#1e1e1e',
+          background: '#0e0e0e',
+          foreground: '#d4d4d4',
+          cursor: '#ffffff',
+          cursorAccent: '#0e0e0e',
+          selectionBackground: 'rgba(255, 255, 255, 0.15)',
+          black: '#0e0e0e',
           red: '#cd3131',
           green: '#0dbc79',
           yellow: '#e5e510',
@@ -238,6 +239,11 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
     const projectId = currentProject?.id;
     if (!projectId) return null;
 
+    const toastId = `sandbox-setup-${projectId}`;
+    toast.loading('Setting up ROS sandbox…', {
+      id: toastId,
+      description: 'The first start can take a few minutes.',
+    });
     setInitStage('creating');
     xtermRef.current?.write('\x1b[33mCreating sandbox environment…\x1b[0m\r\n');
 
@@ -257,11 +263,15 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
         );
       }
 
+      toast.success('ROS sandbox ready', { id: toastId, description: undefined });
       setInitStage('ready');
       return wsId;
     } catch (error) {
-      xtermRef.current?.write(`\r\n\x1b[31mFailed to create sandbox: ${error}\x1b[0m\r\n`);
-      toast.error('Failed to create sandbox');
+      xtermRef.current?.write(`\r\n\x1b[31mFailed to create sandbox: ${error instanceof Error ? error.message : error}\x1b[0m\r\n`);
+      toast.error('Failed to set up ROS sandbox', {
+        id: toastId,
+        description: error instanceof Error ? error.message : undefined,
+      });
       return null;
     } finally {
       setInitStage('idle');
@@ -332,7 +342,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
       // Notify parent so it can pull any new sandbox files back into the project
       onSyncComplete?.(currentWorkspaceId);
     } catch (error) {
-      xtermRef.current?.write(`\x1b[31mSync failed: ${error}\x1b[0m\r\n`);
+      xtermRef.current?.write(`\x1b[31mSync failed: ${error instanceof Error ? error.message : error}\x1b[0m\r\n`);
       toast.error('File sync failed');
     } finally {
       setInitStage('idle');
@@ -363,27 +373,27 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
 
   if (!isRosProject) {
     return (
-      <div className="h-full flex items-center justify-center bg-[#1e1e1e] text-[#858585] font-mono text-sm">
+      <div className="h-full flex items-center justify-center bg-[#0e0e0e] text-white/30 font-mono text-xs">
         Terminal available for ROS projects only
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#1e1e1e] font-mono">
+    <div className="h-full flex flex-col bg-[#0e0e0e] font-mono">
       {showHeader && (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] bg-[#252526] flex-shrink-0">
+        <div className="flex items-center justify-between px-3 h-9 border-b border-white/[0.06] bg-black flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm text-[#cccccc]">Sandbox Terminal</span>
+              <span className="text-xs text-white/60">Sandbox Terminal</span>
             </div>
             {currentWorkspaceId && (
               <>
-                <div className="h-4 w-px bg-[#3e3e42]" />
-                <span className="text-xs text-[#858585]">{currentWorkspaceId.slice(0, 12)}…</span>
+                <div className="h-4 w-px bg-white/[0.06]" />
+                <span className="text-[11px] text-white/25">{currentWorkspaceId.slice(0, 12)}…</span>
                 <span
-                  className={`text-[10px] px-2 py-0.5 font-medium rounded-sm ${
-                    isConnected ? 'bg-[#0e639c] text-white' : 'bg-[#3e3e42] text-[#858585]'
+                  className={`text-[10px] px-2 py-0.5 font-medium rounded-md ${
+                    isConnected ? 'bg-white/[0.10] text-white/70' : 'bg-white/[0.04] text-white/30'
                   }`}
                 >
                   {isConnected ? 'Connected' : 'Disconnected'}
@@ -393,22 +403,22 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
           </div>
           <div className="flex items-center gap-1">
             {isInitializing && (
-              <span className="text-xs text-[#ce9178] flex items-center gap-1.5 px-2 py-1">
+              <span className="text-[11px] text-white/40 flex items-center gap-1.5 px-2 py-1">
                 <Loader2 size={12} className="animate-spin" />
                 {initStage === 'creating' ? 'Creating…' : 'Syncing…'}
               </span>
             )}
             {currentWorkspaceId && currentProject?.id && (
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white transition-colors" onClick={resyncFiles} disabled={isInitializing} title="Re-sync project files">
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-white/30 hover:bg-white/[0.04] hover:text-white/70 transition-colors" onClick={resyncFiles} disabled={isInitializing} title="Re-sync project files">
                 <FolderSync size={14} />
               </Button>
             )}
             {currentWorkspaceId && (
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white transition-colors" onClick={resetSandbox} disabled={isInitializing} title="Reset sandbox">
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-white/30 hover:bg-white/[0.04] hover:text-white/70 transition-colors" onClick={resetSandbox} disabled={isInitializing} title="Reset sandbox">
                 <RefreshCw size={14} />
               </Button>
             )}
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-[#cccccc] hover:bg-[#2a2d2e] hover:text-[#f48771] transition-colors" onClick={clearTerminal} title="Clear terminal">
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-white/30 hover:bg-white/[0.04] hover:text-red-400/70 transition-colors" onClick={clearTerminal} title="Clear terminal">
               <Trash2 size={14} />
             </Button>
           </div>
