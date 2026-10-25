@@ -25,6 +25,8 @@ import type {
   MissionRun,
   MissionStart,
   MissionSummary,
+  UserActivity,
+  UserProfile,
 } from './types';
 
 // File Service
@@ -178,4 +180,12 @@ export const missionService = {
 
   checkInSandbox: (missionId: string, projectId: string) =>
     apiClient.post<MissionRun>(`/missions/${missionId}/check`, { project_id: projectId }),
+};
+
+export const userService = {
+  me: () =>
+    apiClient.get<UserProfile>('/users/me'),
+
+  activity: () =>
+    apiClient.get<UserActivity>('/users/me/activity'),
 };

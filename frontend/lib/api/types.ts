@@ -82,6 +82,7 @@ export interface ProjectCreate {
   description?: string;
   target_compiler: CompilerType;
   project_type?: ProjectType;
+  mission_id?: string;
 }
 
 export interface ProjectUpdate {
@@ -326,4 +327,37 @@ export interface MissionRun {
 export interface MissionStart {
   project_id: string;
   created: boolean;
+}
+
+export interface UserProfile {
+  id: string;
+  google_id: string;
+  email: string;
+  name: string;
+  picture?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActivityCategory {
+  name: string;
+  kind: 'track' | 'platform';
+  count: number;
+  total?: number | null;
+}
+
+export interface ActivityEvent {
+  kind: 'project_created' | 'mission_started' | 'mission_passed';
+  title: string;
+  at: string;
+  project_id?: string | null;
+  mission_id?: string | null;
+}
+
+export interface UserActivity {
+  projects: { total: number; missions: number };
+  lessons: { passed: number; in_progress: number; total: number; attempts: number };
+  categories: ActivityCategory[];
+  concepts: string[];
+  events: ActivityEvent[];
 }

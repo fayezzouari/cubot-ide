@@ -288,7 +288,7 @@ export default function MissionPanel({
                         </button>
                       ) : (
                         <Link
-                          href="/learn"
+                          href="/dashboard/learn"
                           className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-white/50 hover:text-white transition-colors"
                         >
                           All missions <ArrowRight size={11} />

@@ -58,7 +58,7 @@ export default function Header() {
         {/* CTA */}
         {status === 'authenticated' ? (
           <div className="flex items-center gap-2 flex-shrink-0">
-            {pathname !== '/dashboard' && (
+            {!pathname.startsWith('/dashboard') && (
               <Link
                 href="/dashboard"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-white hover:bg-white/[0.06] font-medium text-xs rounded-lg transition-all group"

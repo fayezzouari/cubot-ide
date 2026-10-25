@@ -1094,7 +1094,7 @@ export default function IDEPage() {
         projectId={currentProject?.id ?? null}
         isArduinoProject={currentProject?.target_compiler === 'arduino'}
         projectType={currentProject?.project_type ?? null}
-        backHref={missionId ? '/learn' : '/dashboard'}
+        backHref={missionId ? '/dashboard/learn' : '/dashboard'}
         backLabel={missionId ? 'Missions' : 'Dashboard'}
         onOpenCompile={handleOpenCompileModal}
         onOpenSerial={handleOpenSerialModal}
