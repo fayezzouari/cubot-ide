@@ -14,12 +14,12 @@ created from the dashboard like a Code, Blocks or CAD project and opens at
 
 | Thing | What it is |
 |---|---|
-| **Environment** | A grid of cells, 2D (width × height) or 3D (width × height × depth for altitude layers). It holds the obstacles and a floor preset (`warehouse`, `blueprint`, `concrete`, `hazard`, `sand`). New projects start with a 30 × 30 2D grid. Positions are grid cells: `x` is the column, `y` the row, `z` the altitude layer. |
+| **Environment** | A grid of cells, 2D (width × height) or 3D (width × height × depth for altitude layers). It holds the obstacles and a floor preset (`warehouse`, `blueprint`, `concrete`, `hazard`, `sand`). New projects start with a 30 × 30 2D grid; the Environment panel resizes it. Positions are grid cells: `x` is the column, `y` the row, `z` the altitude layer. |
 | **Robot** | A ground vehicle (AGV/AMR) with a position, heading, speed, colour, optional category, a VDA 5050 `serial_number` and `manufacturer`, and a sequence mode. |
 | **Drone** | An aerial vehicle. Same idea as a robot, with altitude, and addressed on the `uav/v1/...` topics. |
 | **Task** | A place a vehicle has to go: position, priority (0–10), optional deadline, the categories allowed to do it, and whether it is a ground or aerial task. Status is `pending`, `assigned` or `done`. |
 | **Category** | A specialisation label such as "picker" or "forklift". A robot with no category is a generalist; a task with no categories accepts anyone; otherwise the robot's category must be one of the task's. |
-| **Broker** | The project's MQTT broker record: its `mode` (`simulated` or `live`), whether dispatch is active, the legacy topic prefix (`fleet/<brokerId>`) and the WebSocket URL the browser connects to. |
+| **Broker** | The project's MQTT broker record: its `mode` (`simulated` or `live`), whether dispatch is active, whether the coordinator assigns tasks itself (`auto_assign`), the legacy topic prefix (`fleet/<brokerId>`) and the WebSocket URL the browser connects to. |
 
 The canvas renders the same scene in 2D (SVG) or 3D (react-three-fiber),
 chosen by the environment's dimension.
@@ -66,6 +66,21 @@ deadline*, counting the ETA along that vehicle's queue. If the nearest vehicle
 would be late, a farther one that can make it is chosen. A task is never
 inserted ahead of higher-priority work, so it can never make that work late.
 
+### Manual assignment
+
+Set **Assignment** to **Manual** in the Coordinator panel (`auto_assign: false`
+on the broker) to plan the work yourself. The coordinator then never changes
+`assigned_robot_id`:
+
+1. Press **Stop** so nothing is dispatched while you plan.
+2. Pick a robot for each task in the Tasks panel. Unassigned tasks stay
+   pending.
+3. Press **Execute** (the dispatch button). Each robot gets one order with its
+   assigned open tasks, highest priority first, oldest first on ties.
+
+Changing an assignment while dispatching re-plans that robot on the next tick.
+Sequences work the same in both modes.
+
 ## Simulated vs live
 
 The broker record's `mode` decides where positions come from:
@@ -79,7 +94,9 @@ The broker record's `mode` decides where positions come from:
 
 `dispatch_active` is independent of the mode. Turning it off stops the
 coordinator from scheduling and publishing orders for that broker and cancels
-orders in flight, without losing any robot or task state.
+orders in flight, without losing any robot or task state. Switching a broker to
+live turns dispatch off, so connected vehicles stay put until you press
+**Start** (or **Execute** with manual assignment).
 
 ## Fleet coordinator
 
@@ -152,7 +169,7 @@ two functions:
 
 ```bash
 pip install ./sdk/cubot-sdk
-python sdk/cubot-sdk/examples/mock_robot.py --host localhost --port 1893 --serial <robot id>
+python sdk/cubot-sdk/examples/mock_robot.py --host localhost --port 1893 --serial BOT-1 --project <project id> --start 2 3
 ```
 
 To link a fleet:
@@ -161,12 +178,110 @@ To link a fleet:
 2. Point the client at the broker's plain MQTT TCP port: `1893` on the host in
    local development (`fleet-broker:1883` inside Docker), not the browser's
    WebSocket URL.
-3. Use the vehicle id shown in the Fleet workspace as the VDA 5050
-   `serialNumber`, and keep the manufacturer `cubot` unless the vehicle record
-   says otherwise.
+3. Give each robot a unique `serialNumber` and pass the project id as
+   `project_id` to `Vda5050Client`. The SDK sends it as `agvPosition.mapId`.
+   On the first `state` from an unknown serial with that `mapId`, the
+   coordinator adds the robot to the project (name and serial = the serial,
+   position = the reported cell) and the workspace shows it within a couple of
+   seconds. A robot that already exists in the workspace is matched by its
+   serial (`AMR-0001`, …) instead.
+4. Report positions in map metres: `x = col * FLEET_CELL_SIZE_M`,
+   `y = row * FLEET_CELL_SIZE_M`, with (0, 0) at the corner cell of the grid.
+
+Deleting an auto-added robot while it is still publishing adds it again on the
+next tick. Stop its client first.
 
 `examples/mock_robot.py` and `examples/mock_drone.py` are complete reference
 vehicles. See `sdk/cubot-sdk/README.md` for the full API.
+
+## Blender simulation
+
+`backend/services/fleet/coordinator/tools/blender_sim.py` turns Blender into a
+VDA 5050 ground fleet. Every robot of a project becomes an `AGV_<serial>`
+object that announces `ONLINE`, follows the coordinator's orders, waits 2 s on
+each `HARD` action (pick, drop, category) and publishes `state` at 5 Hz. The
+coordinator handles it as real hardware, and the Fleet workspace draws the
+Blender positions in live mode.
+
+Blender 4 or newer is required, with `paho-mqtt` installed in Blender's own
+Python:
+
+```bash
+/Applications/Blender.app/Contents/Resources/<version>/python/bin/python3.* -m pip install paho-mqtt
+```
+
+1. Start the broker and the coordinator (`docker compose up -d`, or see
+   [Running locally](#running-locally)).
+2. In the Fleet workspace, open a 2D project and add the grid, the obstacles,
+   the robots and the tasks. In the Coordinator panel, set the broker to
+   **live** and keep dispatch running. In simulated mode the browser publishes
+   state for the same serials and the robots jump between the two sources.
+3. Export the project. The project id is the `project` query parameter of the
+   workspace URL. Without an id, the script lists the fleet projects.
+
+   ```bash
+   # Docker stack: MongoDB is reachable only from the containers
+   docker exec -i cubot-backend .venv/bin/python - <project id> \
+     < backend/services/fleet/coordinator/tools/blender_export.py > fleet.json
+
+   # Local backend
+   cd backend && uv run python -m services.fleet.coordinator.tools.blender_export <project id> -o ../fleet.json
+   ```
+
+   The file holds the grid size, the obstacle cells and each robot's serial,
+   start cell, heading, speed and colour. Cell size and origin default to
+   `FLEET_CELL_SIZE_M` and `FLEET_MAP_ORIGIN_X/Y`. Export again after you
+   change robots or obstacles.
+
+4. Start Blender:
+
+   ```bash
+   /Applications/Blender.app/Contents/MacOS/Blender \
+     --python backend/services/fleet/coordinator/tools/blender_sim.py -- \
+     --fleet fleet.json --connect
+   ```
+
+   Blender builds the floor, the obstacles and one AGV per robot at its start
+   cell, then connects to `localhost:1893`. It retries until the broker
+   answers.
+
+| Flag | Default | |
+|---|---|---|
+| `--fleet` | | Fleet file from step 3 |
+| `--robots N` | | Spawn `AMR-0001` to `AMR-000N` at random positions. With `--fleet`, they replace the file's robots on the project's grid and register in that project |
+| `--project ID` | | With `--robots`: add the spawned robots to that project on first connection |
+| `--host` | `$FLEET_MQTT_HOST` or `localhost` | Broker host |
+| `--port` | `$FLEET_MQTT_PORT` or `1893` | Broker TCP port, not the WebSocket port |
+| `--connect` | off | Connect at startup |
+
+The **Cubot Fleet** tab in the 3D viewport sidebar (**N**) has the same
+actions: load a fleet file, spawn random robots, connect or disconnect,
+send a test order without a broker, clear the trails, and switch single robots
+offline. The simulation runs on Blender UI timers, so background mode (`-b`)
+loads the scene but does not move the robots.
+
+To watch the traffic:
+
+```bash
+mosquitto_sub -h localhost -p 1893 -t 'uagv/#' -v
+```
+
+Blender logs to the terminal it was started from, with the prefix
+`[blender_sim]`.
+
+Blender X is the VDA 5050 `x` in metres (`x = origin + col * cell size`) and
+Blender Y is the negated `y`, so Blender's top view matches the workspace with
+row 0 at the top. The sim converts positions and headings in both directions.
+
+| Symptom | Cause |
+|---|---|
+| Panel shows `paho-mqtt: NOT INSTALLED` | paho is not installed in Blender's Python. |
+| No `MQTT connected` line | The broker is not running or port 1893 is used by another stack. |
+| `order for unknown robot cubot/AMR-000X` | The robot was added after the export. Export again and load the fleet. |
+| `targets mapId ... skipping node` | The fleet file is from another project. |
+| Robots are online but get no orders | The broker is not in live mode, dispatch is stopped, the coordinator is not running, or no open task fits the robots' categories. |
+| Robots drive through walls | The fleet file is out of date, or the cell size or origin differs from the coordinator settings. |
+| A robot switched offline still gets orders | Blender only stops its state messages. The coordinator still counts it as connected and Blender drops its orders. |
 
 ## API
 
@@ -177,7 +292,7 @@ route returns 404 if the project does not exist or belongs to someone else.
 |---|---|---|
 | GET | `/projects/{project}` | Project summary (name, dimension, robot and task counts). Creates the default 2D environment if there is none. |
 | POST | `/projects/{project}/init` | `{dimension: "2d" \| "3d"}`: create or reset the environment and the default broker |
-| GET / PUT | `/projects/{project}/environment` | Grid, obstacles, floor preset |
+| GET / PUT | `/projects/{project}/environment` | Grid, obstacles, floor preset. Changing `width`/`height`/`depth` crops or pads the obstacles and returns 400 if a vehicle or open task would end up outside. |
 | GET / POST | `/projects/{project}/robots` | List / add robots |
 | PUT (or PATCH) / DELETE | `/projects/{project}/robots/{robot}` | Update / remove a robot |
 | POST | `/projects/{project}/robots/{robot}/sequence/{start,advance,complete,stop}` | Sequence control |
@@ -187,7 +302,7 @@ route returns 404 if the project does not exist or belongs to someone else.
 | POST | `/projects/{project}/tasks/reassign`, `/tasks/reassign-drones` | Greedy assignment |
 | GET / POST | `/projects/{project}/categories` | List / add categories |
 | PUT (or PATCH) / DELETE | `/projects/{project}/categories/{category}` | Update / remove a category |
-| GET / POST / PUT (or PATCH) / DELETE | `/projects/{project}/broker` | The broker record (`mode`, `dispatch_active`) |
+| GET / POST / PUT (or PATCH) / DELETE | `/projects/{project}/broker` | The broker record (`mode`, `dispatch_active`, `auto_assign`) |
 | POST | `/planning/run` | One path with a chosen algorithm, plus explored cells |
 | POST | `/planning/routes` | Cooperative routes for several robots |
 | POST | `/planning/drone-route` | A 3D route for a drone |
