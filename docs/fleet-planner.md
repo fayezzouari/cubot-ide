@@ -345,6 +345,8 @@ proxies to `fleet-broker:9001`.
 | `FLEET_MQTT_HOST` | `localhost` | Broker host for the coordinator (`fleet-broker` in docker-compose) |
 | `FLEET_MQTT_PORT` | `1893` | Broker TCP port (`1883` inside docker-compose) |
 | `FLEET_MQTT_WS_URL` | `ws://localhost:9011` | WebSocket URL the API puts on the broker record (`wss://${DOMAIN}/mqtt` in docker-compose) |
+| `FLEET_MQTT_PUBLIC_HOST` | unset | Broker host shown in the Coordinator panel for robots to connect to; unset falls back to the app's hostname (`${DOMAIN}` in docker-compose) |
+| `FLEET_MQTT_PUBLIC_PORT` | `1893` | Broker TCP port shown in the Coordinator panel |
 | `NEXT_PUBLIC_FLEET_MQTT_URL` | unset | Frontend fallback when the broker record has no `ws_url` (build argument in docker-compose) |
 | `FLEET_POLL_INTERVAL_S` | 3.0 | How often the coordinator looks for new or removed brokers |
 | `FLEET_TICK_INTERVAL_S` | 2.0 | Scheduler tick |
