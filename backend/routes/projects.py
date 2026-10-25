@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from typing import List
 
 from core.auth import CurrentUser
@@ -11,29 +11,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-async def _provision_ros_sandbox(project_id: str) -> None:
-    """Background task: create & fully initialise a sandbox pod for a ROS project."""
-    from services.sandbox_service import sandbox_service
-    from schemas.sandbox import SandboxWorkspaceCreate
-    try:
-        logger.info(f"[bg] Provisioning ROS sandbox for project {project_id}…")
-        await sandbox_service.create_workspace(SandboxWorkspaceCreate(project_id=project_id))
-        logger.info(f"[bg] Sandbox ready for project {project_id}")
-    except Exception as exc:
-        logger.error(
-            f"[bg] Sandbox provisioning failed for project {project_id}: {exc}",
-            exc_info=True,
-        )
-
-
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(project_data: ProjectCreate, background_tasks: BackgroundTasks, current_user: CurrentUser):
-    """Create a new project. For ROS projects, a sandbox is provisioned in the background."""
+async def create_project(project_data: ProjectCreate, current_user: CurrentUser):
+    """Create a new project. ROS sandboxes are provisioned when the IDE opens."""
     project = await project_service.create_project(project_data, user_id=current_user["sub"])
-
-    if project.project_type == "ros":
-        background_tasks.add_task(_provision_ros_sandbox, project.id)
-
     return project
 
 
