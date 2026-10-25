@@ -2,6 +2,8 @@ from fastapi import APIRouter, status
 
 from core.auth import CurrentUser
 from models.user import UserSync, UserResponse
+from schemas.activity import UserActivity
+from services import activity_service
 from services.user_service import user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -32,3 +34,9 @@ async def get_me(current_user: CurrentUser):
         )
         return await user_service.sync_user(data)
     return user
+
+
+@router.get("/me/activity", response_model=UserActivity)
+async def get_my_activity(current_user: CurrentUser):
+    """Projects built, lessons passed and categories tackled by the current user."""
+    return await activity_service.for_user(current_user["sub"])
