@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { Broker, FlowDir, Vda5050Type } from '../types';
-import { LOGGED_VDA_TYPES, TYPE_META, UAGV_ROOT, VDA_LOG_LIMIT } from '../constants';
+import { LOGGED_VDA_TYPES, TELEMETRY_FLUSH_MS, TYPE_META, UAGV_ROOT, VDA_LOG_LIMIT } from '../constants';
 import { connectFleetMqtt, parsePayload } from '../mqtt';
 
 const TYPES = Object.keys(TYPE_META) as Vda5050Type[];
@@ -67,6 +67,10 @@ export function useUagvFlow(broker: Broker | null): UagvFlow {
 
   const activityRef = useRef<Activity>({});
   const logId = useRef(0);
+  const vehiclesRef = useRef<Record<string, Vehicle>>({});
+  const countsRef = useRef<Record<Vda5050Type, number>>(emptyCounts());
+  const logRef = useRef<LogEntry[]>([]);
+  const dirtyRef = useRef(false);
   const wsUrl = broker?.ws_url;
   const hasBroker = broker !== null;
 
@@ -100,9 +104,11 @@ export function useUagvFlow(broker: Broker | null): UagvFlow {
         else a.up = now;
         activityRef.current[serial] = a;
 
-        setCounts((c) => ({ ...c, [type]: c[type] + 1 }));
+        countsRef.current[type] += 1;
+        dirtyRef.current = true;
 
-        setVehicles((prev) => {
+        {
+          const prev = vehiclesRef.current;
           const v: Vehicle = { ...(prev[serial] ?? blankVehicle(serial, manufacturer)) };
           v.manufacturer = manufacturer;
           v.lastType = type;
@@ -134,17 +140,26 @@ export function useUagvFlow(broker: Broker | null): UagvFlow {
           } else if (type === 'factsheet') {
             v.hasFactsheet = true;
           }
-          return { ...prev, [serial]: v };
-        });
+          vehiclesRef.current = { ...prev, [serial]: v };
+        }
 
         if (LOGGED_VDA_TYPES.includes(type)) {
           const entry: LogEntry = { id: logId.current++, serial, type, dir: meta.dir, ts: now, detail: describe(type, p) };
-          setLog((l) => [entry, ...l].slice(0, VDA_LOG_LIMIT));
+          logRef.current = [entry, ...logRef.current].slice(0, VDA_LOG_LIMIT);
         }
       });
     });
 
+    const flush = setInterval(() => {
+      if (!dirtyRef.current) return;
+      dirtyRef.current = false;
+      setVehicles(vehiclesRef.current);
+      setCounts({ ...countsRef.current });
+      setLog(logRef.current);
+    }, TELEMETRY_FLUSH_MS);
+
     return () => {
+      clearInterval(flush);
       dispose();
       setConnected(false);
     };

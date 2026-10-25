@@ -59,7 +59,8 @@ def get_state() -> State:
 client = Vda5050Client(
     "localhost",
     mqtt_port=1893,
-    serial="<robot id from the Fleet workspace>",
+    serial="AMR-0001",
+    project_id="<Fleet project id>",
     get_state=get_state,
 )
 
@@ -107,8 +108,11 @@ client = UavClient("localhost", mqtt_port=1893, serial="<drone id>", get_state=g
    WebSocket URL. In local development that is the `fleet-broker` service on
    `localhost:1893` (see the root `docker-compose.yml`); inside the Docker
    network it is `fleet-broker:1883`.
-3. Use the vehicle id shown in the Fleet workspace as the `serialNumber`
-   (the `serial` argument). The canvas and the fleet coordinator key telemetry
+3. Pass the Fleet project id as `project_id`. The client puts it in
+   `agvPosition.mapId`, and the fleet coordinator adds a robot with an unknown
+   serial to that project on its first `state` message. To drive a robot that
+   already exists in the workspace, use its serial (`AMR-0001`, …) as
+   `serial` and `serialNumber`. The canvas and the coordinator key telemetry
    and orders on it.
 4. Keep the default manufacturer, `cubot`, unless the vehicle record in the
    workspace says otherwise. The coordinator accepts telemetry from any
@@ -129,7 +133,7 @@ them with the id of a robot or drone from your workspace:
 
 ```bash
 docker run --rm -p 1893:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf
-python sdk/cubot-sdk/examples/mock_robot.py --host localhost --port 1893 --serial <robot id>
+python sdk/cubot-sdk/examples/mock_robot.py --host localhost --port 1893 --serial BOT-1 --project <project id> --start 2 3
 python sdk/cubot-sdk/examples/mock_drone.py --host localhost --port 1893 --serial <drone id>
 ```
 

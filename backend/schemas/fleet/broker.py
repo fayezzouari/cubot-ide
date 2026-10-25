@@ -17,6 +17,7 @@ class BrokerCreate(BaseModel):
 class BrokerUpdate(BaseModel):
     mode: BrokerMode | None = None
     dispatch_active: bool | None = None
+    auto_assign: bool | None = None
 
 
 class BrokerOut(BaseModel):
@@ -26,6 +27,7 @@ class BrokerOut(BaseModel):
     status: str
     mode: BrokerMode = DEFAULT_BROKER_MODE
     dispatch_active: bool = True
+    auto_assign: bool = True
     topic_prefix: str
     ws_url: str
     created_at: datetime

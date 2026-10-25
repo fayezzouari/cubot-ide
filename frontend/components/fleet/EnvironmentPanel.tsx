@@ -1,11 +1,19 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Box, Check, Image as ImageIcon, Square } from 'lucide-react';
 import type { Environment } from '@/lib/fleet/types';
 import type { EnvironmentUpdate } from '@/lib/api/fleet';
 import { BACKGROUND_PRESETS } from '@/lib/fleet/constants';
 import { PanelShell } from './PanelShell';
 import { labelCls } from './theme';
+
+const MAX_CELLS = 200;
+
+function clampCells(value: string): number {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(MAX_CELLS, Math.max(1, n)) : 1;
+}
 
 interface Props {
   environment: Environment;
@@ -14,6 +22,31 @@ interface Props {
 
 export function EnvironmentPanel({ environment, onSave }: Props) {
   const active = environment.background;
+  const is3d = environment.dimension === '3d';
+  const [size, setSize] = useState({ width: environment.width, height: environment.height, depth: environment.depth });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setSize({ width: environment.width, height: environment.height, depth: environment.depth });
+  }, [environment.width, environment.height, environment.depth]);
+
+  const dirty =
+    size.width !== environment.width || size.height !== environment.height || (is3d && size.depth !== environment.depth);
+
+  const applySize = async () => {
+    setSaving(true);
+    try {
+      await onSave(is3d ? size : { width: size.width, height: size.height });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fields: { key: keyof typeof size; label: string }[] = [
+    { key: 'width', label: 'W' },
+    { key: 'height', label: 'H' },
+    ...(is3d ? [{ key: 'depth' as const, label: 'D' }] : []),
+  ];
 
   return (
     <PanelShell title="Environment" icon={<ImageIcon size={12} />}>
@@ -29,6 +62,30 @@ export function EnvironmentPanel({ environment, onSave }: Props) {
               {environment.width} × {environment.height}
               {environment.dimension === '3d' ? ` × ${environment.depth}` : ''} cells
             </span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {fields.map(({ key, label }) => (
+              <label key={key} className="inline-flex items-center gap-1 font-mono text-[10px] text-white/40">
+                {label}
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_CELLS}
+                  value={size[key]}
+                  onChange={(e) => setSize((prev) => ({ ...prev, [key]: clampCells(e.target.value) }))}
+                  onKeyDown={(e) => e.key === 'Enter' && dirty && !saving && void applySize()}
+                  className="h-7 w-14 rounded border border-white/[0.1] bg-transparent px-1.5 text-[11px] text-white/80 focus:border-white/30 focus:outline-none"
+                />
+              </label>
+            ))}
+            <button
+              onClick={() => void applySize()}
+              disabled={!dirty || saving}
+              className="inline-flex h-7 items-center rounded-md bg-emerald-600 px-2 text-[11px] text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Resize the grid. Obstacles are kept; new cells are free."
+            >
+              {saving ? 'Resizing…' : 'Resize'}
+            </button>
           </div>
         </div>
         <div>

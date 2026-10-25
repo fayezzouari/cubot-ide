@@ -83,6 +83,13 @@ export function useProjectData(projectId: string) {
     setTasks(await fleetApi.listTasks(projectId));
   }, [projectId]);
 
+  const refreshRobots = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      setRobots(await fleetApi.listRobots(projectId));
+    } catch {}
+  }, [projectId]);
+
   const addRobot = useCallback(
     (body: RobotCreate) =>
       guarded('Could not add robot', async () => {
@@ -303,6 +310,7 @@ export function useProjectData(projectId: string) {
     loading,
     error,
     reload,
+    refreshRobots,
     addRobot,
     editRobot,
     removeRobot,

@@ -23,6 +23,7 @@ class Vda5050Client:
         *,
         serial: str,
         get_state: StateProvider,
+        project_id: str | None = None,
         manufacturer: str = DEFAULT_MANUFACTURER,
         get_factsheet: FactsheetProvider | None = None,
         mqtt_port: int = 1883,
@@ -34,6 +35,7 @@ class Vda5050Client:
         self._port = mqtt_port
         self.manufacturer = manufacturer
         self.serial = serial
+        self.project_id = project_id
         self.version = version
         self.get_state = get_state
         self.get_factsheet = get_factsheet
@@ -96,6 +98,8 @@ class Vda5050Client:
     async def _heartbeat_loop(self, client: aiomqtt.Client) -> None:
         while True:
             state = self.get_state()
+            if self.project_id and state.agvPosition and not state.agvPosition.mapId:
+                state.agvPosition.mapId = self.project_id
             await client.publish(self._topic("state"), self._serialize(state))
             await client.publish(
                 self._topic("visualization"),

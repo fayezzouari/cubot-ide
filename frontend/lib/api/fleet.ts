@@ -109,6 +109,7 @@ export interface EnvironmentUpdate {
 export interface BrokerUpdate {
   mode?: BrokerMode;
   dispatch_active?: boolean;
+  auto_assign?: boolean;
 }
 
 export type SequenceVehicle = 'robots' | 'drones';

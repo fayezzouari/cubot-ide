@@ -92,6 +92,7 @@ export interface Broker {
   status: string;
   mode: BrokerMode;
   dispatch_active: boolean;
+  auto_assign: boolean;
   topic_prefix: string;
   ws_url: string;
   created_at: string;

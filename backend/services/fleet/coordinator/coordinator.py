@@ -143,7 +143,7 @@ class Coordinator:
                         }),
                     )
 
-            if broker.get("mode") != "simulated":
+            if broker.get("mode") != "simulated" or not broker.get("auto_assign", True):
                 return
 
             results = schedule(robots, tasks, make_eta(grid))
