@@ -33,7 +33,7 @@ class ChatMessageInDB(ChatMessageBase):
     # operation, path, file_id, summary, added/removed line counts and previous_content
     # (null for created files) so the client can show a change card and revert it.
     file_operations: List[dict] = Field(default=[], description="Files created/edited by this message")
-    mode: Optional[str] = Field(default=None, description="'build' or 'plan'")
+    mode: Optional[str] = Field(default=None, description="'build', 'plan' or 'tutor'")
     thread_id: Optional[str] = None
 
     class Config:
@@ -66,6 +66,7 @@ class ChatRequest(BaseModel):
     compiler: Optional[str] = None
     conversation_history: Optional[List[dict]] = None
     plan_mode: bool = False
+    tutor_mode: bool = Field(default=False, description="Coach the user with hints instead of editing files")
     enable_websearch: bool = False
     workspace_id: Optional[str] = Field(default=None, description="Sandbox workspace for ROS projects")
     thread_id: Optional[str] = Field(default=None, description="Conversation to append to; omitted = new thread")
