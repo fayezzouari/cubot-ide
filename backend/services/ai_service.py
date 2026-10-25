@@ -791,8 +791,12 @@ The automatic checks:
 Graded hints, from gentle to almost-the-answer (for your reference; reveal them one level at a time):
 {hints}
 """
-        return f"""You are {AGENT_NAME}, the tutor inside CuBot IDE. You teach embedded programming to learners who are writing the code themselves.
-{self._platform_line(compiler)}{open_file}{mission_block}
+        platform = (
+            "Target platform: ROS 2 Humble with Python (rclpy). The checks run the learner's nodes in their sandbox.\n"
+            if mission and mission.kind == "ros2" else self._platform_line(compiler)
+        )
+        return f"""You are {AGENT_NAME}, the tutor inside CuBot IDE. You teach embedded and robotics programming to learners who are writing the code themselves.
+{platform}{open_file}{mission_block}
 ## Project files (snapshot at the start of this turn)
 {snapshot}
 
