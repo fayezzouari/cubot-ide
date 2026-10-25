@@ -1,0 +1,61 @@
+{
+  "id": "ros2-talker",
+  "order": 6,
+  "track": "ROS 2 basics",
+  "kind": "ros2",
+  "title": "Your first publisher",
+  "summary": "Write a ROS 2 node that publishes a greeting twice per second.",
+  "difficulty": "beginner",
+  "concepts": [
+    "Node",
+    "create_publisher",
+    "create_timer",
+    "std_msgs/String"
+  ],
+  "goal": "A node named talker publishes \"Hello ROS 2\" on /chatter at 2 Hz.",
+  "brief": "ROS 2 programs are made of **nodes** that talk over named **topics**. A node that sends messages is a *publisher*.\n\n`talker.py` already creates a node called `talker`. Make it speak:\n\n1. In `__init__`, create a publisher with `self.create_publisher(String, '/chatter', 10)`.\n2. Create a timer with `self.create_timer(0.5, self.tick)` so `tick` runs every 0.5 s.\n3. In `tick`, build a `String()`, set its `data` to `Hello ROS 2` and publish it.\n\nCheck runs `python3 talker.py` in your ROS 2 sandbox and listens on `/chatter`. The first check starts the sandbox, which can take a minute.",
+  "duration_ms": 6000,
+  "starter_files": [
+    {
+      "path": "talker.py",
+      "content": "import rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg import String\n\n\nclass Talker(Node):\n    def __init__(self):\n        super().__init__('talker')\n\n\ndef main():\n    rclpy.init()\n    node = Talker()\n    rclpy.spin(node)\n\n\nif __name__ == '__main__':\n    main()\n"
+    }
+  ],
+  "run": [
+    "python3 talker.py"
+  ],
+  "scenario": [],
+  "checks": [
+    {
+      "id": "node",
+      "label": "A node named talker is running",
+      "type": "node_running",
+      "name": "talker"
+    },
+    {
+      "id": "greeting",
+      "label": "Publishes \"Hello ROS 2\" on /chatter",
+      "type": "topic_published",
+      "topic": "/chatter",
+      "msg_type": "std_msgs/msg/String",
+      "field": "data",
+      "contains": "Hello ROS 2",
+      "min_count": 3
+    },
+    {
+      "id": "rate",
+      "label": "Publishes at 2 Hz",
+      "type": "topic_published",
+      "topic": "/chatter",
+      "msg_type": "std_msgs/msg/String",
+      "rate_hz": 2,
+      "tolerance": 0.25,
+      "min_count": 4
+    }
+  ],
+  "hints": [
+    "A publisher needs a message type, a topic name and a queue size. The timer decides how often you publish.",
+    "self.publisher = self.create_publisher(String, '/chatter', 10) and self.timer = self.create_timer(0.5, self.tick) both go in __init__.",
+    "def tick(self):\n    msg = String()\n    msg.data = 'Hello ROS 2'\n    self.publisher.publish(msg)"
+  ]
+}
