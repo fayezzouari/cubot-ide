@@ -56,6 +56,7 @@ export default function IDEPage() {
   const [isMissionCollapsed, setIsMissionCollapsed] = useState(false);
 
   const hasLoadedProjectRef = useRef(false);
+  const initializedProjectRef = useRef<string | null>(null);
 
   // Sandbox file tree state
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
@@ -326,6 +327,7 @@ export default function IDEPage() {
   const refreshThreads = async (projectId: string) => {
     try {
       const list = await chatService.listThreads(projectId);
+      if (initializedProjectRef.current !== projectId) return [];
       setThreads(list);
       return list;
     } catch (err) {
@@ -906,32 +908,40 @@ export default function IDEPage() {
 
   // Load project files from backend on mount or when project changes
   useEffect(() => {
-    if (currentProject?.files && currentProject.files.length > 0) {
+    if (currentProject) {
       const contents: Record<string, string> = {};
       currentProject.files.forEach(file => {
         contents[file.id] = file.content;
       });
       setFileContents(contents);
 
-      // On initial load, select first file or restore from localStorage
-      if (!isInitialized) {
-        // Restore last selected file from localStorage or select first file
-        const savedFileId = localStorage.getItem(`cubot-ide-selected-file-${currentProject.id}`);
+      if (initializedProjectRef.current !== currentProject.id) {
+        const projectId = currentProject.id;
+        initializedProjectRef.current = projectId;
+
+        const savedFileId = localStorage.getItem(`cubot-ide-selected-file-${projectId}`);
         const fileToSelect = savedFileId && currentProject.files.some(f => f.id === savedFileId)
           ? savedFileId
-          : currentProject.files[0]?.id;
+          : currentProject.files[0]?.id ?? null;
 
-        if (fileToSelect) {
-          setSelectedFile(fileToSelect);
-          setEditedContent(contents[fileToSelect] || '');
-        }
+        setSelectedFile(fileToSelect);
+        setEditedContent(fileToSelect ? contents[fileToSelect] || '' : '');
+        setHasUnsavedChanges(false);
+        setActiveWorkspaceId(null);
+        setSandboxEntries([]);
+        abortRef.current?.abort();
+        setMessages([]);
+        setThreads([]);
+        setActiveThreadId(null);
+        setCodeContexts([]);
 
         void (async () => {
-          const list = await refreshThreads(currentProject.id);
-          const saved = localStorage.getItem(threadStorageKey(currentProject.id));
+          const list = await refreshThreads(projectId);
+          if (initializedProjectRef.current !== projectId) return;
+          const saved = localStorage.getItem(threadStorageKey(projectId));
           const initial = list.find(t => t.id === saved)?.id ?? list[0]?.id ?? null;
           setActiveThreadId(initial);
-          if (initial) await loadChatHistory(currentProject.id, initial);
+          if (initial) await loadChatHistory(projectId, initial);
         })();
 
         setIsInitialized(true);
