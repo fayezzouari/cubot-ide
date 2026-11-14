@@ -70,6 +70,7 @@ export interface CadAssembly {
 export interface CadState {
   parts: CadPart[];
   assembly: CadAssembly;
+  running?: boolean;
 }
 
 export interface FaceInfo {
@@ -173,9 +174,9 @@ async function request(method: string, endpoint: string, body?: BodyInit, json =
 
 async function stream(endpoint: string, body: unknown, onEvent: (e: CadEvent) => void, signal?: AbortSignal) {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-    body: JSON.stringify(body),
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(await authHeaders()) },
+    body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
   if (!response.ok || !response.body) {
@@ -227,6 +228,11 @@ export const cadApi = {
     viewImage?: string | null,
   ) =>
     stream(`/cad/${projectId}/parts/${partId}/edit`, { instruction, face, view_image: viewImage ?? null }, onEvent, signal),
+
+  follow: (projectId: string, onEvent: (e: CadEvent) => void, signal?: AbortSignal) =>
+    stream(`/cad/${projectId}/events`, undefined, onEvent, signal),
+
+  stop: (projectId: string) => apiClient.post<void>(`/cad/${projectId}/stop`),
 
   setParams: (projectId: string, partId: string, params: Record<string, number | boolean>) =>
     apiClient.post<CadPart>(`/cad/${projectId}/parts/${partId}/params`, { params }),
