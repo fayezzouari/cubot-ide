@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { Plus, ArrowRight, Trash2, Code2, Cpu, Blocks, Box, Route, X, Loader2 } from 'lucide-react';
+import { Plus, ArrowRight, Trash2, Code2, Cpu, Blocks, Box, Route, Loader2 } from 'lucide-react';
 import WorkspaceModal from '@/components/workspace-modal';
 import { missionService, projectService, userService } from '@/lib/api';
 import type { MissionSummary, ProjectResponse, UserActivity } from '@/lib/api/types';
@@ -28,15 +28,45 @@ import {
 
 const PROJECT_LIMIT = 3;
 
+const focusRing = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-2';
+const solidButton = cn('inline-flex items-center justify-center gap-2 px-4 h-9 bg-ink hover:bg-white text-page font-semibold text-sm rounded-lg transition-colors cursor-pointer', focusRing);
+const quietButton = cn('inline-flex items-center justify-center gap-2 px-4 h-9 border border-line-strong hover:border-ink-3 hover:bg-raised text-ink font-medium text-sm rounded-lg transition-colors cursor-pointer', focusRing);
+const chip = 'px-2 py-0.5 rounded-full border border-line text-xs text-ink-2 whitespace-nowrap';
+const enter = 'animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both motion-reduce:animate-none';
+
+const WORKSPACES = {
+  ide: { id: 'ide', Icon: Code2, label: 'IDE', tint: 'text-ws-ide bg-ws-ide/10 border-ws-ide/25' },
+  blocks: { id: 'blocks', Icon: Blocks, label: 'Blocks', tint: 'text-ws-blocks bg-ws-blocks/10 border-ws-blocks/25' },
+  cad: { id: 'cad', Icon: Box, label: 'CAD', tint: 'text-ws-cad bg-ws-cad/10 border-ws-cad/25' },
+  fleet: { id: 'fleet', Icon: Route, label: 'Fleet', tint: 'text-ws-fleet bg-ws-fleet/10 border-ws-fleet/25' },
+} as const;
+
 const getWorkspace = (projectId: string) => {
   const ws = typeof window !== 'undefined'
     ? localStorage.getItem(`cubot-ide-project-workspace-${projectId}`) || 'ide'
     : 'ide';
-  if (ws === 'blocks') return { id: ws, Icon: Blocks, label: 'Blocks' };
-  if (ws === 'cad') return { id: ws, Icon: Box, label: 'CAD' };
-  if (ws === 'fleet') return { id: ws, Icon: Route, label: 'Fleet' };
-  return { id: 'ide', Icon: Code2, label: 'IDE' };
+  return WORKSPACES[ws as keyof typeof WORKSPACES] ?? WORKSPACES.ide;
 };
+
+function CountUp({ value }: { value: number }) {
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    if (value <= 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setShown(value);
+      return;
+    }
+    const start = performance.now();
+    let frame = requestAnimationFrame(function tick(now) {
+      const progress = Math.min((now - start) / 600, 1);
+      setShown(Math.round(value * (1 - Math.pow(1 - progress, 3))));
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+
+  return <>{shown}</>;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -76,11 +106,12 @@ export default function DashboardPage() {
       new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     ), [projects]);
 
+  const lastProject = sortedProjects[0];
+  const lastWorkspace = lastProject ? getWorkspace(lastProject.id) : null;
   const nextLesson = missions.find(m => m.status !== 'passed');
   const trackLessons = nextLesson ? missions.filter(m => m.track === nextLesson.track) : [];
   const firstName = session?.user?.name?.split(' ')[0];
-  const now = new Date();
-  const today = `${now.toLocaleDateString('en-GB', { weekday: 'long' })} · ${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+  const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const handleNewProject = () => {
     if (sortedProjects.length >= PROJECT_LIMIT) {
@@ -126,91 +157,119 @@ export default function DashboardPage() {
   };
 
   const stats = [
-    { label: 'Projects', value: isLoading ? '—' : sortedProjects.length, detail: `of ${PROJECT_LIMIT} slots` },
-    { label: 'Lessons', value: activity?.lessons.passed ?? '—', detail: activity ? `of ${activity.lessons.total} passed` : '' },
-    { label: 'Categories', value: activity?.categories.length ?? '—', detail: activity?.categories.map(c => c.name).join(' · ') ?? '' },
-    {
-      label: 'Checks run',
-      value: activity?.lessons.attempts ?? '—',
-      detail: activity ? `${activity.lessons.in_progress} lesson${activity.lessons.in_progress === 1 ? '' : 's'} in progress` : '',
+    !isLoading && { label: `of ${PROJECT_LIMIT} projects`, value: sortedProjects.length },
+    activity && activity.lessons.total > 0 && { label: `of ${activity.lessons.total} lessons passed`, value: activity.lessons.passed },
+    activity && activity.lessons.in_progress > 0 && {
+      label: `lesson${activity.lessons.in_progress === 1 ? '' : 's'} in progress`,
+      value: activity.lessons.in_progress,
     },
-  ];
+    activity && activity.lessons.attempts > 0 && {
+      label: `check${activity.lessons.attempts === 1 ? '' : 's'} run`,
+      value: activity.lessons.attempts,
+    },
+    activity && activity.categories.length > 0 && {
+      label: activity.categories.length === 1 ? 'category' : 'categories',
+      value: activity.categories.length,
+      title: activity.categories.map(c => c.name).join(', '),
+    },
+  ].filter(Boolean) as { label: string; value: number; title?: string }[];
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10">
-        <div className="min-w-0">
-          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45 mb-3.5">{today}</p>
-          <h1 className="text-5xl lg:text-[56px] font-bold text-white tracking-[-0.04em] leading-none mb-3.5">
-            Hey{firstName ? ` ${firstName}` : ''}.
-          </h1>
-          <p className="text-base text-white/55">
-            {sortedProjects[0]
-              ? `${sortedProjects[0].name} was your last edit, ${formatLastEdit(sortedProjects[0].updated_at)}.`
-              : 'Start a project, or pick up a lesson below.'}
-          </p>
-        </div>
-        <button
-          onClick={handleNewProject}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-white/90 text-black font-semibold text-sm rounded-[10px] transition-all cursor-pointer flex-shrink-0 self-start sm:self-auto"
-        >
-          <Plus size={14} strokeWidth={2.4} />
-          New project
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-px rounded-xl overflow-hidden border border-white/[0.08] bg-white/[0.08] mb-12">
-        {stats.map(stat => (
-          <div key={stat.label} className="bg-black px-6 py-5 min-w-0">
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/45 mb-1.5">{stat.label}</p>
-            <div className="flex items-baseline gap-2 min-w-0">
-              <span className="text-4xl font-bold text-white tracking-[-0.03em] tabular-nums leading-10">{stat.value}</span>
-              <span className="font-mono text-xs text-white/45 truncate">{stat.detail}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {error && (
-        <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/5 mb-6">
-          <p className="text-xs text-red-400 font-mono">{error}</p>
+        <div className="p-4 rounded-xl border border-red-400/25 bg-red-400/5 mb-6">
+          <p className="text-sm text-red-300">{error}</p>
         </div>
       )}
 
-      <div className="flex flex-col xl:flex-row gap-10 xl:gap-14 xl:items-start">
+      {isLoading ? (
+        <div className="h-[264px] rounded-xl bg-surface animate-pulse mb-6" />
+      ) : (
+        <section className={cn('p-6 sm:p-8 mb-6 rounded-xl bg-raised border border-line-strong', enter)}>
+          <p className="text-sm text-ink-3 mb-6">{today}</p>
+          <h1 className="text-xl font-medium text-ink-2 tracking-tight">
+            Hey{firstName ? ` ${firstName}` : ''}, {lastProject ? 'pick up' : 'start your first project'}
+            {lastProject && (
+              <span className="block text-4xl sm:text-5xl font-bold text-ink tracking-tight leading-tight truncate mt-1">
+                {lastProject.name}
+              </span>
+            )}
+          </h1>
+          {lastProject && lastWorkspace ? (
+            <div className="flex flex-wrap items-center gap-1.5 mt-5">
+              <span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs whitespace-nowrap', lastWorkspace.tint)}>
+                <lastWorkspace.Icon size={12} />
+                {lastWorkspace.label}
+              </span>
+              {lastWorkspace.id !== 'fleet' && lastProject.target_compiler && (
+                <span className={cn(chip, 'font-mono')}>{lastProject.target_compiler}</span>
+              )}
+              {lastWorkspace.id !== 'fleet' && (
+                <span className={chip}>{lastProject.file_count ?? 0} file{lastProject.file_count === 1 ? '' : 's'}</span>
+              )}
+              <span className="text-sm text-ink-2 ml-1.5">edited {formatLastEdit(lastProject.updated_at)}</span>
+            </div>
+          ) : (
+            <p className="text-sm text-ink-2 mt-3">Write firmware, snap blocks, model a part or plan a fleet.</p>
+          )}
+          <div className="flex flex-wrap items-center gap-3 mt-8">
+            {lastProject && (
+              <button onClick={() => handleOpenProject(lastProject)} className={cn(solidButton, 'group')}>
+                Open project
+                <ArrowRight size={14} strokeWidth={2.4} className="group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            )}
+            <button onClick={handleNewProject} className={lastProject ? quietButton : solidButton}>
+              <Plus size={14} strokeWidth={2.4} />
+              New project
+            </button>
+          </div>
+        </section>
+      )}
+
+      {stats.length > 0 && (
+        <ul
+          style={{ animationDelay: '160ms' }}
+          className={cn('flex flex-wrap gap-x-8 gap-y-2 px-1 mb-10', enter)}
+        >
+          {stats.map(stat => (
+            <li key={stat.label} title={stat.title} className="flex items-baseline gap-2">
+              <span className="text-xl font-semibold text-ink tabular-nums"><CountUp value={stat.value} /></span>
+              <span className="text-sm text-ink-2">{stat.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div
+        style={{ animationDelay: '240ms' }}
+        className={cn('flex flex-col xl:flex-row gap-8 xl:gap-10 xl:items-start', enter)}
+      >
         <section className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white tracking-[-0.01em]">Projects</h2>
-            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/45">Recently edited</span>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="text-base font-semibold text-ink">Projects</h2>
+            <span className="text-sm text-ink-3">Most recent first</span>
           </div>
 
           {isLoading && (
-            <div className="rounded-xl border border-white/[0.08] divide-y divide-white/[0.08] overflow-hidden">
-              {[...Array(3)].map((_, i) => <div key={i} className="h-[78px] bg-black animate-pulse" />)}
+            <div className="rounded-xl border border-line divide-y divide-line overflow-hidden">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-[76px] bg-surface animate-pulse" />)}
             </div>
           )}
 
           {!isLoading && !error && sortedProjects.length === 0 && (
-            <div className="rounded-xl border border-white/[0.08] border-dashed p-16 text-center">
-              <div className="w-10 h-10 rounded-[10px] border border-white/[0.12] flex items-center justify-center mx-auto mb-4">
-                <Cpu size={16} className="text-white/40" />
+            <div className="rounded-xl border border-line bg-surface p-10 text-center">
+              <div className="w-10 h-10 rounded-lg border border-line-strong flex items-center justify-center mx-auto mb-3">
+                <Cpu size={16} className="text-ink-3" />
               </div>
-              <p className="text-sm font-medium text-white/70 mb-1">No projects yet</p>
-              <p className="text-xs text-white/40 mb-6">Create your first project to get started.</p>
-              <button
-                onClick={handleNewProject}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-white/90 text-black font-semibold text-xs rounded-lg transition-all cursor-pointer"
-              >
-                <Plus size={12} />
-                New project
-              </button>
+              <p className="text-sm text-ink-2">Your projects will be listed here.</p>
             </div>
           )}
 
           {!isLoading && sortedProjects.length > 0 && (
-            <div className="rounded-xl border border-white/[0.08] divide-y divide-white/[0.08] overflow-hidden">
+            <div className="rounded-xl border border-line divide-y divide-line overflow-hidden">
               {sortedProjects.map(project => {
-                const { id: workspace, Icon, label } = getWorkspace(project.id);
+                const { id: workspace, Icon, label, tint } = getWorkspace(project.id);
                 return (
                   <div
                     key={project.id}
@@ -223,36 +282,41 @@ export default function DashboardPage() {
                         handleOpenProject(project);
                       }
                     }}
-                    className="group flex items-center gap-4 px-5 py-[18px] bg-black hover:bg-[#0b0b0b] focus-visible:outline-none focus-visible:bg-[#0b0b0b] transition-colors cursor-pointer"
+                    className="group flex items-center gap-4 px-5 py-4 bg-surface hover:bg-raised focus-visible:outline-none focus-visible:bg-raised transition-colors cursor-pointer"
                   >
-                    <div className="w-10 h-10 flex-shrink-0 rounded-[10px] border border-white/[0.12] flex items-center justify-center text-white/80 group-hover:border-white/30 group-hover:text-white transition-colors">
+                    <div className={cn('w-10 h-10 flex-shrink-0 rounded-lg border flex items-center justify-center', tint)}>
                       <Icon size={16} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[15px] font-semibold text-white truncate leading-5">{project.name}</p>
-                      <p className="text-[13px] text-white/55 truncate mt-1">{project.description || 'No description'}</p>
+                      <p className="text-base font-semibold text-ink truncate leading-5">{project.name}</p>
+                      {project.description && (
+                        <p className="text-sm text-ink-2 truncate mt-1">{project.description}</p>
+                      )}
                     </div>
-                    <span className="hidden md:block w-20 flex-shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-white/90">{label}</span>
-                    <span className="hidden md:block w-20 flex-shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-white/55">
-                      {workspace === 'fleet' ? '—' : project.target_compiler || '—'}
-                    </span>
-                    <span className="hidden lg:block w-16 flex-shrink-0 font-mono text-xs text-white/55">
-                      {workspace === 'fleet' ? '—' : `${project.file_count ?? 0} file${project.file_count === 1 ? '' : 's'}`}
-                    </span>
-                    <span className="hidden sm:block w-20 flex-shrink-0 text-right font-mono text-xs text-white/55">{formatRelative(project.updated_at)}</span>
+                    <div className="hidden md:flex items-center gap-1.5 flex-shrink-0">
+                      <span className={chip}>{label}</span>
+                      {workspace !== 'fleet' && project.target_compiler && (
+                        <span className={cn(chip, 'font-mono')}>{project.target_compiler}</span>
+                      )}
+                      {workspace !== 'fleet' && (
+                        <span className={chip}>{project.file_count ?? 0} file{project.file_count === 1 ? '' : 's'}</span>
+                      )}
+                    </div>
+                    <span className="hidden sm:block w-20 flex-shrink-0 text-right text-sm text-ink-3 tabular-nums">{formatRelative(project.updated_at)}</span>
                     <div className="w-12 flex-shrink-0 flex items-center justify-end gap-1">
                       <button
                         title="Delete project"
+                        aria-label={`Delete ${project.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setProjectToDelete(project);
                         }}
                         onKeyDown={(e) => e.stopPropagation()}
-                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 rounded-md text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                        className={cn('opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 rounded-lg text-ink-3 hover:text-red-300 hover:bg-red-400/10 transition-all cursor-pointer', focusRing)}
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={14} />
                       </button>
-                      <ArrowRight size={14} className="text-white/45 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                      <ArrowRight size={14} className="text-ink-3 group-hover:text-ink group-hover:translate-x-0.5 transition-all" />
                     </div>
                   </div>
                 );
@@ -262,25 +326,22 @@ export default function DashboardPage() {
         </section>
 
         {missions.length > 0 && (
-          <aside className="xl:w-[340px] flex-shrink-0 xl:mt-10 rounded-xl border border-white/[0.08] bg-black p-6 flex flex-col gap-5">
+          <aside className="xl:w-[340px] flex-shrink-0 xl:mt-9 rounded-xl border border-line bg-surface p-6 flex flex-col gap-5">
             {nextLesson ? (
               <>
-                <div className={cn(
-                  'flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]',
-                  nextLesson.status === 'started' ? 'text-amber-300/80' : 'text-white/55',
-                )}>
-                  <span className={cn('w-1.5 h-1.5 rounded-full', nextLesson.status === 'started' ? 'bg-amber-300' : 'bg-white/60')} />
-                  {nextLesson.status === 'started' ? 'In progress' : 'Up next'}
+                <div className={cn('flex items-center gap-2 text-sm', nextLesson.status === 'started' ? 'text-busy' : 'text-ink-2')}>
+                  <span className={cn('w-1.5 h-1.5 rounded-full', nextLesson.status === 'started' ? 'bg-busy' : 'bg-ink-3')} />
+                  {nextLesson.status === 'started' ? 'Lesson in progress' : 'Next lesson'}
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-white tracking-[-0.02em] leading-7 mb-2">{nextLesson.title}</h3>
-                  <p className="text-sm text-white/55 leading-5">{nextLesson.summary}</p>
+                  <h3 className="text-xl font-semibold text-ink tracking-tight leading-7 mb-2">{nextLesson.title}</h3>
+                  <p className="text-sm text-ink-2 leading-5">{nextLesson.summary}</p>
                 </div>
                 <div className="flex flex-col gap-2.5">
-                  <div className="flex justify-between font-mono text-xs">
-                    <span className="text-white/55">{nextLesson.track}</span>
-                    <span className="text-white tabular-nums">
-                      {trackLessons.filter(m => m.status === 'passed').length} / {trackLessons.length}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-ink-2">{nextLesson.track}</span>
+                    <span className="text-ink tabular-nums">
+                      {trackLessons.filter(m => m.status === 'passed').length} of {trackLessons.length}
                     </span>
                   </div>
                   <div className="flex gap-1">
@@ -290,10 +351,10 @@ export default function DashboardPage() {
                         className={cn(
                           'flex-1 h-1 rounded-full',
                           m.status === 'passed'
-                            ? 'bg-green-400'
+                            ? 'bg-ok'
                             : m.id === nextLesson.id
-                              ? m.status === 'started' ? 'bg-amber-300/80' : 'bg-white/60'
-                              : 'bg-white/[0.12]',
+                              ? m.status === 'started' ? 'bg-busy' : 'bg-ink-3'
+                              : 'bg-line',
                         )}
                       />
                     ))}
@@ -303,22 +364,22 @@ export default function DashboardPage() {
                   <button
                     onClick={() => handleOpenLesson(nextLesson)}
                     disabled={openingLesson}
-                    className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-white/90 text-black font-semibold text-[13px] rounded-[10px] transition-all cursor-pointer disabled:opacity-60"
+                    className={cn(lastProject ? quietButton : solidButton, 'disabled:opacity-60')}
                   >
                     {nextLesson.status === 'started' ? 'Continue lesson' : 'Start lesson'}
-                    {openingLesson ? <Loader2 size={12} className="animate-spin" /> : <ArrowRight size={12} strokeWidth={2.4} />}
+                    {openingLesson && <Loader2 size={14} className="animate-spin" />}
                   </button>
-                  <Link href="/dashboard/learn" className="font-mono text-xs text-white/55 hover:text-white transition-colors">
-                    All lessons →
+                  <Link href="/dashboard/learn" className={cn('text-sm text-ink-2 hover:text-ink rounded-lg transition-colors', focusRing)}>
+                    All lessons
                   </Link>
                 </div>
               </>
             ) : (
               <>
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-green-400">All passed</p>
-                <p className="text-sm text-white/55">Every code lesson is done. Try the block programming track next.</p>
-                <Link href="/dashboard/learn" className="font-mono text-xs text-white/55 hover:text-white transition-colors">
-                  All lessons →
+                <p className="text-sm text-ok">All lessons passed</p>
+                <p className="text-sm text-ink-2">Every code lesson is done. Try the block programming track next.</p>
+                <Link href="/dashboard/learn" className={cn('text-sm text-ink-2 hover:text-ink rounded-lg transition-colors', focusRing)}>
+                  All lessons
                 </Link>
               </>
             )}
@@ -329,53 +390,38 @@ export default function DashboardPage() {
       <WorkspaceModal open={isModalOpen} onOpenChange={setIsModalOpen} />
 
       <AlertDialog open={!!projectToDelete} onOpenChange={(open) => { if (!open) setProjectToDelete(null); }}>
-        <AlertDialogContent className="bg-[#0a0a0a] border border-white/[0.08] rounded-xl shadow-2xl">
+        <AlertDialogContent className="bg-raised border border-line-strong rounded-xl shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-sm text-white">Delete project</AlertDialogTitle>
-            <AlertDialogDescription className="text-xs text-white/40">
-              Are you sure you want to delete &ldquo;{projectToDelete?.name}&rdquo;? This cannot be undone.
+            <AlertDialogTitle className="text-base font-semibold text-ink">Delete project</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm text-ink-2">
+              Delete &ldquo;{projectToDelete?.name}&rdquo;? This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="text-xs h-8 rounded-lg border-white/[0.08] bg-transparent text-white/60 hover:bg-white/[0.06]">
+            <AlertDialogCancel className="text-sm h-9 rounded-lg border-line-strong bg-transparent text-ink hover:bg-surface hover:text-ink">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteProject}
-              className="text-xs h-8 rounded-lg bg-red-500/90 hover:bg-red-500 text-white border-0"
+              className="text-sm h-9 rounded-lg bg-red-400/90 hover:bg-red-400 text-page font-semibold border-0"
             >
-              Delete
+              Delete project
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       <Dialog open={isLimitModalOpen} onOpenChange={setIsLimitModalOpen}>
-        <DialogContent className="max-w-sm bg-[#0e0e0e] border border-white/[0.08] rounded-xl p-0 gap-0 shadow-2xl overflow-hidden">
-          <div className="px-5 pt-5 pb-4 border-b border-white/[0.06] flex items-start justify-between gap-4">
-            <div>
-              <DialogTitle className="text-sm font-semibold text-white leading-none mb-1">Project limit reached</DialogTitle>
-              <p className="text-xs text-white/40">You&apos;ve reached the maximum of {PROJECT_LIMIT} projects.</p>
-            </div>
-            <button
-              onClick={() => setIsLimitModalOpen(false)}
-              className="p-1 text-white/20 hover:text-white/60 transition-colors cursor-pointer flex-shrink-0"
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <div className="p-5 space-y-4">
-            <p className="text-xs text-white/50 leading-relaxed">
-              Our project budget is not high enough for users to create a lot of projects.
-              Please cope with the provided limitations — thank you for your understanding!
-            </p>
-            <button
-              onClick={() => setIsLimitModalOpen(false)}
-              className="w-full inline-flex items-center justify-center px-4 py-2 bg-white hover:bg-white/90 text-black font-medium text-xs rounded-lg transition-all cursor-pointer"
-            >
-              Got it
-            </button>
-          </div>
+        <DialogContent className="max-w-sm bg-raised border border-line-strong rounded-xl p-6 gap-4 shadow-2xl">
+          <DialogTitle className="text-base font-semibold text-ink pr-8">
+            You have {PROJECT_LIMIT} of {PROJECT_LIMIT} projects
+          </DialogTitle>
+          <p className="text-sm text-ink-2 leading-relaxed">
+            Projects are capped at {PROJECT_LIMIT} to keep hosting costs covered. Delete one to start another.
+          </p>
+          <button onClick={() => setIsLimitModalOpen(false)} className={cn(solidButton, 'w-full')}>
+            Got it
+          </button>
         </DialogContent>
       </Dialog>
     </>

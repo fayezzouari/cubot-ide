@@ -235,16 +235,16 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
 
   return (
     <Dialog open={open} onOpenChange={nextOpen => { if (!nextOpen) resetModal(); onOpenChange(nextOpen); }}>
-      <DialogContent className="max-w-lg bg-[#0e0e0e] border border-white/[0.08] rounded-xl p-0 gap-0 shadow-2xl overflow-hidden">
+      <DialogContent className="max-w-lg bg-raised border border-line rounded-xl p-0 gap-0 shadow-2xl overflow-hidden">
 
         {/* Header */}
-        <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/[0.06]">
+        <DialogHeader className="px-5 pt-5 pb-4 border-b border-line">
           <div className="flex items-center justify-between">
             <div>
-              <DialogTitle className="text-sm font-semibold text-white leading-none">
+              <DialogTitle className="text-sm font-semibold text-ink leading-none">
                 {STEP_TITLES[step]}
               </DialogTitle>
-              <DialogDescription className="text-xs text-white/40 mt-0.5">
+              <DialogDescription className="text-xs text-ink-3 mt-0.5">
                 {STEP_DESCRIPTIONS[step]}
               </DialogDescription>
             </div>
@@ -256,7 +256,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                 const isActive = i === current;
                 return (
                   <span key={s} className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                    isActive ? 'bg-white' : isDone ? 'bg-white/40' : 'bg-white/[0.12]'
+                    isActive ? 'bg-ink' : isDone ? 'bg-white/40' : 'bg-white/[0.12]'
                   }`} />
                 );
               })}
@@ -274,18 +274,18 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                   key={opt.id}
                   onClick={() => handleSelectWorkspace(opt.id)}
                   disabled={isCreating}
-                  className="group flex flex-col gap-3 p-4 rounded-xl border border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03] text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  className="group flex flex-col gap-3 p-4 rounded-xl border border-line hover:border-white/[0.14] hover:bg-white/[0.03] text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  <div className="w-8 h-8 rounded-lg border border-white/[0.08] bg-white/[0.04] flex items-center justify-center">
-                    <Icon size={15} className="text-white/60 group-hover:text-white/90 transition-colors" />
+                  <div className="w-8 h-8 rounded-lg border border-line bg-white/[0.04] flex items-center justify-center">
+                    <Icon size={15} className="text-ink-2 group-hover:text-ink transition-colors" />
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-white/80 group-hover:text-white transition-colors leading-tight">
+                    <p className="text-xs font-semibold text-ink group-hover:text-ink transition-colors leading-tight">
                       {opt.label}
                     </p>
-                    <p className="text-[11px] text-white/30 mt-1 leading-relaxed">{opt.description}</p>
+                    <p className="text-xs text-ink-3 mt-1 leading-relaxed">{opt.description}</p>
                   </div>
-                  <div className="mt-auto flex items-center gap-1 text-[11px] text-white/25 group-hover:text-white/50 transition-colors">
+                  <div className="mt-auto flex items-center gap-1 text-xs text-ink-3 group-hover:text-ink-2 transition-colors">
                     Select <ArrowRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
                   </div>
                 </button>
@@ -307,16 +307,16 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                     disabled={isCreating}
                     className={`flex flex-col gap-2 p-4 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 ${
                       selected
-                        ? 'border-white/30 bg-white/[0.06]'
-                        : 'border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03]'
+                        ? 'border-white/30 bg-raised'
+                        : 'border-line hover:border-white/[0.14] hover:bg-white/[0.03]'
                     }`}
                   >
                     <div className="flex items-start justify-between">
-                      <p className="text-xs font-semibold text-white/80">{pt.label}</p>
-                      {selected && <CheckCircle2 size={13} className="text-white/60 flex-shrink-0" />}
+                      <p className="text-xs font-semibold text-ink">{pt.label}</p>
+                      {selected && <CheckCircle2 size={13} className="text-ink-2 flex-shrink-0" />}
                     </div>
-                    <p className="text-[11px] text-white/30 leading-relaxed">{pt.description}</p>
-                    <span className="text-[10px] font-medium text-white/25 px-1.5 py-0.5 rounded border border-white/[0.06] bg-white/[0.03] w-fit">
+                    <p className="text-xs text-ink-3 leading-relaxed">{pt.description}</p>
+                    <span className="text-xs font-medium text-ink-3 px-1.5 py-0.5 rounded border border-line bg-white/[0.03] w-fit">
                       {pt.badge}
                     </span>
                   </button>
@@ -327,7 +327,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
               <button
                 onClick={() => setStep('select')}
                 disabled={isCreating}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-line hover:border-white/20 hover:bg-white/[0.04] text-ink-3 hover:text-ink text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
               >
                 <ArrowLeft size={12} /> Back
               </button>
@@ -347,16 +347,16 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                     disabled={isCreating}
                     className={`flex flex-col gap-2 p-4 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 ${
                       selected
-                        ? 'border-white/30 bg-white/[0.06]'
-                        : 'border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03]'
+                        ? 'border-white/30 bg-raised'
+                        : 'border-line hover:border-white/[0.14] hover:bg-white/[0.03]'
                     }`}
                   >
                     <div className="flex items-start justify-between">
-                      <p className="text-xs font-semibold text-white/80">{d.label}</p>
-                      {selected && <CheckCircle2 size={13} className="text-white/60 flex-shrink-0" />}
+                      <p className="text-xs font-semibold text-ink">{d.label}</p>
+                      {selected && <CheckCircle2 size={13} className="text-ink-2 flex-shrink-0" />}
                     </div>
-                    <p className="text-[11px] text-white/30 leading-relaxed">{d.description}</p>
-                    <span className="text-[10px] font-medium text-white/25 px-1.5 py-0.5 rounded border border-white/[0.06] bg-white/[0.03] w-fit">
+                    <p className="text-xs text-ink-3 leading-relaxed">{d.description}</p>
+                    <span className="text-xs font-medium text-ink-3 px-1.5 py-0.5 rounded border border-line bg-white/[0.03] w-fit">
                       {d.badge}
                     </span>
                   </button>
@@ -367,7 +367,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
               <button
                 onClick={() => setStep('select')}
                 disabled={isCreating}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-line hover:border-white/20 hover:bg-white/[0.04] text-ink-3 hover:text-ink text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
               >
                 <ArrowLeft size={12} /> Back
               </button>
@@ -379,7 +379,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
         {step === 'name' && (
           <div className="p-4 space-y-4">
             <div className="space-y-1.5">
-              <label className="text-[11px] font-medium text-white/40 uppercase tracking-wider">Project name</label>
+              <label className="text-xs font-medium text-ink-3">Project name</label>
               <input
                 value={projectName}
                 onChange={e => setProjectName(e.target.value)}
@@ -391,14 +391,14 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                     else handleCreateProject();
                   }
                 }}
-                className="w-full bg-[#161616] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-blue-500/50 transition-colors"
+                className="w-full bg-surface border border-line rounded-lg px-3 py-2 text-xs text-ink placeholder:text-ink-3 focus:outline-none focus:border-ink-3 transition-colors"
               />
             </div>
             <div className="flex items-center justify-between pt-1">
               <button
                 onClick={() => setStep(selectedType === 'ide' ? 'projectType' : selectedType === 'fleet' ? 'dimension' : 'select')}
                 disabled={isCreating}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-line hover:border-white/20 hover:bg-white/[0.04] text-ink-3 hover:text-ink text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
               >
                 <ArrowLeft size={12} /> Back
               </button>
@@ -406,7 +406,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                 <button
                   onClick={() => setStep('compiler')}
                   disabled={isCreating || !projectName.trim()}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-ink hover:bg-white disabled:bg-white/20 text-page disabled:text-ink-3 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
                 >
                   Next <ArrowRight size={12} />
                 </button>
@@ -414,7 +414,7 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                 <button
                   onClick={handleCreateProject}
                   disabled={isCreating || !projectName.trim()}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-ink hover:bg-white disabled:bg-white/20 text-page disabled:text-ink-3 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
                 >
                   {isCreating ? <><Loader2 size={12} className="animate-spin" />Creating…</> : <>Create <ArrowRight size={12} /></>}
                 </button>
@@ -440,15 +440,15 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
                       unavailable
                         ? 'border-white/[0.04] opacity-40 cursor-not-allowed'
                         : selected
-                          ? 'border-white/30 bg-white/[0.06] cursor-pointer'
-                          : 'border-white/[0.06] hover:border-white/[0.14] hover:bg-white/[0.03] cursor-pointer'
+                          ? 'border-white/30 bg-raised cursor-pointer'
+                          : 'border-line hover:border-white/[0.14] hover:bg-white/[0.03] cursor-pointer'
                     }`}
                   >
                     <div>
-                      <p className="text-xs font-semibold text-white/80">{compiler.name}</p>
-                      <p className="text-[11px] text-white/30 mt-0.5">{compiler.description}</p>
+                      <p className="text-xs font-semibold text-ink">{compiler.name}</p>
+                      <p className="text-xs text-ink-3 mt-0.5">{compiler.description}</p>
                     </div>
-                    {selected && !unavailable && <CheckCircle2 size={14} className="text-white/60 flex-shrink-0" />}
+                    {selected && !unavailable && <CheckCircle2 size={14} className="text-ink-2 flex-shrink-0" />}
                   </button>
                 );
                 if (unavailable) {
@@ -469,14 +469,14 @@ export default function WorkspaceModal({ open, onOpenChange }: WorkspaceModalPro
               <button
                 onClick={() => setStep('name')}
                 disabled={isCreating}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04] text-white/40 hover:text-white text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-line hover:border-white/20 hover:bg-white/[0.04] text-ink-3 hover:text-ink text-xs font-medium rounded-lg transition-all cursor-pointer disabled:opacity-30"
               >
                 <ArrowLeft size={12} /> Back
               </button>
               <button
                 onClick={handleCreateProject}
                 disabled={isCreating}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-white hover:bg-white/90 disabled:bg-white/20 text-black disabled:text-white/30 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-ink hover:bg-white disabled:bg-white/20 text-page disabled:text-ink-3 text-xs font-medium rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed"
               >
                 {isCreating
                   ? <><Loader2 size={12} className="animate-spin" />Creating…</>
