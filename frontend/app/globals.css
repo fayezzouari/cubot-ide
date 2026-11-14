@@ -116,6 +116,24 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+@theme {
+  --color-page: #0e0e0e;
+  --color-well: #060606;
+  --color-surface: #161616;
+  --color-raised: #1e1e1e;
+  --color-line: #2a2a2a;
+  --color-line-strong: #404040;
+  --color-ink: #ededed;
+  --color-ink-2: #a8a8a8;
+  --color-ink-3: #878787;
+  --color-ws-ide: #93a4b5;
+  --color-ws-blocks: #b5a78c;
+  --color-ws-cad: #9bb0a1;
+  --color-ws-fleet: #ab9eb8;
+  --color-ok: #8fbf9a;
+  --color-busy: #cdb47a;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
