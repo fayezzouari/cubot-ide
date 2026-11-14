@@ -99,6 +99,8 @@ export default function CadPageContent() {
   const viewport = useRef<ViewportHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
+  const stopped = useRef(false);
+  const rejoin = useRef<() => Promise<void>>(async () => {});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   // Undo/redo of assembly edits (placement, colour, visibility, names, copies).
@@ -132,14 +134,23 @@ export default function CadPageContent() {
       setLoadError('Open CAD Studio from a project on the dashboard.');
       return;
     }
+    let left = false;
     cadApi
       .state(projectId)
-      .then((s) => {
+      .then(async (s) => {
+        if (left) return;
         setState(s);
         resetUndo();
-        return cadApi.messages(projectId).then((m) => setLog(m.map(toEntry)));
+        const messages = await cadApi.messages(projectId);
+        if (left) return;
+        setLog(messages.map(toEntry));
+        if (s.running) void rejoin.current();
       })
       .catch((e) => setLoadError(e?.message || 'Could not load the project'));
+    return () => {
+      left = true;
+      abort.current?.abort();
+    };
   }, [projectId, resetUndo]);
 
   const refreshHistory = useCallback(() => {
@@ -290,7 +301,12 @@ export default function CadPageContent() {
           setPlan((rows) => rows.map((r) => (r.id === (e.plan_id ?? e.part_id) ? { ...r, status: 'done', error: undefined } : r)));
           replacePart(e.part);
           if (e.instances?.length) {
-            setState((s) => (s ? { ...s, assembly: { ...s.assembly, instances: [...s.assembly.instances, ...e.instances!] } } : s));
+            setState((s) => {
+              if (!s) return s;
+              const known = new Set(s.assembly.instances.map((i) => i.id));
+              const fresh = e.instances!.filter((i) => !known.has(i.id));
+              return fresh.length ? { ...s, assembly: { ...s.assembly, instances: [...s.assembly.instances, ...fresh] } } : s;
+            });
           }
           break;
         case 'state':
@@ -339,36 +355,73 @@ export default function CadPageContent() {
     [replacePart, resetUndo, selectedPart?.name, projectId],
   );
 
+  const watch = useCallback(
+    async (start: (signal: AbortSignal) => Promise<void>) => {
+      if (!projectId) return;
+      setBusy(true);
+      stopped.current = false;
+      const controller = new AbortController();
+      abort.current = controller;
+      let next = start;
+      try {
+        for (;;) {
+          let failure: any = null;
+          try {
+            await next(controller.signal);
+          } catch (e) {
+            failure = e;
+          }
+          if (controller.signal.aborted) {
+            if (stopped.current) say('assistant', 'Stopped.');
+            return;
+          }
+          const running = await cadApi.state(projectId).then((s) => !!s.running, () => false);
+          if (!running) {
+            if (failure) say('error', failure?.message || 'Request failed');
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+          next = (signal) => {
+            setPlan([]);
+            setInterfaces(null);
+            return cadApi.follow(projectId, onEvent, signal);
+          };
+        }
+      } finally {
+        setBusy(false);
+        if (abort.current === controller) abort.current = null;
+      }
+    },
+    [projectId, onEvent, say],
+  );
+
+  rejoin.current = () => watch((signal) => cadApi.follow(projectId!, onEvent, signal));
+
+  const stop = useCallback(() => {
+    if (!projectId) return;
+    stopped.current = true;
+    cadApi.stop(projectId).catch(() => {}).finally(() => abort.current?.abort());
+  }, [projectId]);
+
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || busy || !projectId) return;
     setInput('');
-    setBusy(true);
     setPlan([]);
     setInterfaces(null);
-    const controller = new AbortController();
-    abort.current = controller;
     // The server saves and sends the conversation messages (user prompt,
     // result, review findings, errors) as `message` events.
     // The AI gets a screenshot of the viewport as the user sees it right now.
     const view = instances.length ? viewport.current?.capture() ?? null : null;
-    try {
-      if (selectedPart) {
-        const { start: _s, count: _c, ...faceRef } = face ?? ({} as FaceInfo);
-        await cadApi.edit(projectId, selectedPart.id, text, face ? faceRef : null, onEvent, controller.signal, view);
-      } else {
-        await cadApi.generate(projectId, text, onEvent, controller.signal, view);
-        setTimeout(() => viewport.current?.fit(), 300);
-      }
-      if (tab === 'history') refreshHistory();
-    } catch (e: any) {
-      if (e?.name !== 'AbortError') say('error', e?.message || 'Request failed');
-      else say('assistant', 'Stopped.');
-    } finally {
-      setBusy(false);
-      abort.current = null;
+    if (selectedPart) {
+      const { start: _s, count: _c, ...faceRef } = face ?? ({} as FaceInfo);
+      await watch((signal) => cadApi.edit(projectId, selectedPart.id, text, face ? faceRef : null, onEvent, signal, view));
+    } else {
+      await watch((signal) => cadApi.generate(projectId, text, onEvent, signal, view));
+      setTimeout(() => viewport.current?.fit(), 300);
     }
-  }, [input, busy, projectId, face, selectedPart, instances.length, onEvent, say, tab, refreshHistory]);
+    if (tab === 'history') refreshHistory();
+  }, [input, busy, projectId, face, selectedPart, instances.length, onEvent, watch, tab, refreshHistory]);
 
   // ── Part actions ────────────────────────────────────────────────────────
 
@@ -571,7 +624,7 @@ export default function CadPageContent() {
                 log={log}
                 onInput={setInput}
                 onSend={send}
-                onStop={() => abort.current?.abort()}
+                onStop={stop}
                 onClearFace={() => setFace(null)}
               />
             ) : tab === 'history' ? (
