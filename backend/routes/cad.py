@@ -21,7 +21,7 @@ from models.cad import (
     RevertRequest,
     SnapshotRequest,
 )
-from services.cad import llm, repository as repo, storage, studio
+from services.cad import jobs, llm, repository as repo, storage, studio
 from services.cad.studio import StudioError
 
 router = APIRouter(prefix="/cad", tags=["cad"])
@@ -70,7 +70,12 @@ async def get_file(key: str, name: str):
 async def get_state(project_id: str, user: CurrentUser):
     await _project(project_id, user)
     await studio.migrate_legacy(project_id, user.get("sub"))
-    return await studio.state(project_id)
+    return {**await studio.state(project_id), "running": jobs.current(project_id) is not None}
+
+
+def _idle(project_id: str) -> None:
+    if jobs.current(project_id):
+        raise HTTPException(status_code=409, detail="This project is already generating")
 
 
 @router.post("/{project_id}/generate")
@@ -78,15 +83,36 @@ async def generate(project_id: str, body: GenerateRequest, user: CurrentUser):
     """Plan the request into parts, build them in parallel and add them to the
     assembly. Streams progress as Server-Sent Events."""
     await _project(project_id, user)
-    return _sse(studio.generate(project_id, user.get("sub"), body.prompt,
-                                view_image=llm.decode_view_image(body.view_image)))
+    _idle(project_id)
+    job = jobs.start(project_id, studio.generate(project_id, user.get("sub"), body.prompt,
+                                                 view_image=llm.decode_view_image(body.view_image)))
+    return _sse(jobs.follow(job))
 
 
 @router.post("/{project_id}/parts/{part_id}/edit")
 async def edit_part(project_id: str, part_id: str, body: EditRequest, user: CurrentUser):
     await _project(project_id, user)
-    return _sse(studio.edit(project_id, part_id, body.instruction, body.face.model_dump() if body.face else None,
-                            view_image=llm.decode_view_image(body.view_image), owner=user.get("sub")))
+    _idle(project_id)
+    job = jobs.start(project_id, studio.edit(project_id, part_id, body.instruction,
+                                             body.face.model_dump() if body.face else None,
+                                             view_image=llm.decode_view_image(body.view_image),
+                                             owner=user.get("sub")))
+    return _sse(jobs.follow(job))
+
+
+@router.get("/{project_id}/events")
+async def follow_job(project_id: str, user: CurrentUser):
+    await _project(project_id, user)
+    job = jobs.current(project_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Nothing is generating")
+    return _sse(jobs.follow(job))
+
+
+@router.post("/{project_id}/stop", status_code=204)
+async def stop_job(project_id: str, user: CurrentUser):
+    await _project(project_id, user)
+    jobs.stop(project_id)
 
 
 @router.post("/{project_id}/parts/{part_id}/params")
