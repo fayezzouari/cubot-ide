@@ -10,28 +10,24 @@ export function buildSandboxFileTree(sandboxEntries: SandboxFileEntry[]): FileNo
   const tree: FileNode[] = [];
   const folderMap: Record<string, FileNode> = {};
   const sorted = [...sandboxEntries].sort((a, b) => a.path.localeCompare(b.path));
-  sorted.filter(e => e.type === 'dir').forEach(entry => {
-    const parts = entry.path.split('/');
-    const name = parts[parts.length - 1];
-    folderMap[entry.path] = { id: `sandbox-folder:${entry.path}`, name, type: 'folder', children: [] };
-  });
+  const folder = (path: string): FileNode => {
+    if (folderMap[path]) return folderMap[path];
+    const parts = path.split('/');
+    const node: FileNode = { id: `sandbox-folder:${path}`, name: parts[parts.length - 1], type: 'folder', children: [] };
+    folderMap[path] = node;
+    const parentPath = parts.slice(0, -1).join('/');
+    (parentPath ? folder(parentPath).children! : tree).push(node);
+    return node;
+  };
   sorted.forEach(entry => {
+    if (entry.type === 'dir') {
+      folder(entry.path);
+      return;
+    }
     const parts = entry.path.split('/');
     const parentPath = parts.slice(0, -1).join('/');
-    const name = parts[parts.length - 1];
-    const node: FileNode = entry.type === 'dir'
-      ? folderMap[entry.path]
-      : { id: `sandbox:${entry.path}`, name, type: 'file' };
-    if (!parentPath) {
-      tree.push(node);
-    } else {
-      const parent = folderMap[parentPath];
-      if (parent) {
-        parent.children!.push(node);
-      } else {
-        tree.push(node);
-      }
-    }
+    const node: FileNode = { id: `sandbox:${entry.path}`, name: parts[parts.length - 1], type: 'file' };
+    (parentPath ? folder(parentPath).children! : tree).push(node);
   });
   return tree;
 }
