@@ -6,19 +6,12 @@ import WorkflowSection from '@/components/workflow-section';
 import FeaturesSection from '@/components/features-section';
 import CTASection from '@/components/cta-section';
 import Footer from '@/components/footer';
+import TrackDivider from '@/components/track-divider';
 import PixelSnow from '@/components/PixelSnow';
 
 export default function Home() {
   return (
-    <main className="bg-black text-foreground font-sans relative">
-      {/* Dot grid */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0"
-        style={{
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)`,
-          backgroundSize: '48px 48px',
-        }}
-      />
+    <main className="bg-well text-ink font-sans relative">
 
       {/* Particle effect */}
       <div
@@ -52,9 +45,13 @@ export default function Home() {
         <Header />
         <HeroSection />
         <DemoSection />
+        <TrackDivider />
         <AboutSection />
+        <TrackDivider delay={-5} />
         <WorkflowSection />
+        <TrackDivider delay={-9} />
         <FeaturesSection />
+        <TrackDivider delay={-2} />
         <CTASection />
         <Footer />
       </div>
