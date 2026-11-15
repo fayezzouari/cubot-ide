@@ -85,7 +85,7 @@ export default function DemoSection() {
   const Mock = DEMO_MOCKS[current.id];
 
   return (
-    <section className="py-24 px-6">
+    <section id="about" className="py-24 px-6">
       <div className="max-w-6xl mx-auto grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2.3fr)] gap-10 lg:gap-12 items-center">
         <div>
           <h2 className="text-3xl md:text-4xl font-bold text-ink mb-4 tracking-tight">
