@@ -372,6 +372,23 @@ class AIService:
             thread_id = await chat_threads.create_thread(project_id)
         if on_event:
             await on_event({"type": "thread", "thread_id": thread_id})
+        await self._save_message(project_id, thread_id, MessageRole.USER, request.message, file_context=request.file_context, mode=mode)
+        await chat_threads.touch_thread(project_id, thread_id, first_message=request.message)
+        try:
+            text, file_operations, logs = await self._answer(project_id, request, mode, on_event)
+        except asyncio.CancelledError:
+            await self._save_message(project_id, thread_id, MessageRole.ASSISTANT, "Stopped.", mode=mode)
+            raise
+        except Exception as e:
+            await self._save_message(project_id, thread_id, MessageRole.ASSISTANT, f"This run failed: {e}", mode=mode)
+            raise
+        await self._save_message(project_id, thread_id, MessageRole.ASSISTANT, text, file_operations=file_operations, mode=mode)
+        await chat_threads.touch_thread(project_id, thread_id)
+        return {"message": text, "file_operations": file_operations, "execution_logs": logs, "thread_id": thread_id}
+
+    async def _answer(
+        self, project_id: str, request: ChatRequest, mode: str, on_event: EventSink,
+    ) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
         history = self._history_messages(request.conversation_history)
         user_content = self._with_file_context(request.message, request.file_context)
 
@@ -418,10 +435,7 @@ class AIService:
                 max_iterations=MAX_CHAT_ITERATIONS, workspace_id=request.workspace_id, on_event=on_event,
             )
 
-        await self._save_message(project_id, thread_id, MessageRole.USER, request.message, file_context=request.file_context, mode=mode)
-        await self._save_message(project_id, thread_id, MessageRole.ASSISTANT, text, file_operations=file_operations, mode=mode)
-        await chat_threads.touch_thread(project_id, thread_id, first_message=request.message)
-        return {"message": text, "file_operations": file_operations, "execution_logs": logs, "thread_id": thread_id}
+        return text, file_operations, logs
 
     @staticmethod
     def _history_messages(history: Optional[List[dict]]) -> List[Dict[str, Any]]:

@@ -20,15 +20,15 @@ export default function TerminalTabsHeader({
   rightSlot,
 }: TerminalTabsHeaderProps) {
   return (
-    <div className="flex items-center bg-black border-b border-white/[0.06] h-8 min-w-0 flex-shrink-0">
+    <div className="flex items-center bg-surface border-b border-line h-8 min-w-0 flex-shrink-0">
       <div className="flex items-center flex-1 min-w-0 overflow-x-auto">
         {tabs.map(tab => (
           <div
             key={tab.id}
-            className={`flex items-center px-3 h-full cursor-pointer text-[11px] font-mono border-r border-white/[0.06] shrink-0 transition-colors ${
+            className={`flex items-center px-3 h-full cursor-pointer text-[11px] font-mono border-r border-line shrink-0 transition-colors ${
               tab.id === activeTabId
-                ? 'bg-[#0e0e0e] text-white/70'
-                : 'text-white/30 hover:text-white/50 hover:bg-white/[0.03]'
+                ? 'bg-page text-ink'
+                : 'text-ink-3 hover:text-ink-2 hover:bg-raised'
             }`}
             onClick={() => onTabClick(tab.id)}
           >
@@ -64,7 +64,7 @@ export default function TerminalTabsHeader({
         </button>
       </div>
       {rightSlot && (
-        <div className="flex items-center gap-1 px-2 border-l border-white/[0.06] h-full flex-shrink-0">
+        <div className="flex items-center gap-1 px-2 border-l border-line h-full flex-shrink-0">
           {rightSlot}
         </div>
       )}

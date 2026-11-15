@@ -20,6 +20,8 @@ interface SandboxTerminalProps {
   onWorkspaceCreate?: (workspaceId: string) => void;
   /** Called after a project→sandbox sync completes so the parent can pull new sandbox files back. */
   onSyncComplete?: (workspaceId: string) => void;
+  /** Called once terminal output goes quiet, so the parent can pick up files a command created. */
+  onActivity?: () => void;
   /** Whether this terminal is the currently visible tab. Used to re-fit on reveal. */
   isActive?: boolean;
   /** When false, suppresses the built-in header (actions are owned by the parent). */
@@ -31,9 +33,15 @@ interface SandboxTerminalProps {
 type InitStage = 'idle' | 'creating' | 'syncing' | 'ready';
 
 const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(function SandboxTerminal(
-  { workspaceId: workspaceIdProp, onWorkspaceCreate, onSyncComplete, isActive, showHeader = true, onStateChange },
+  { workspaceId: workspaceIdProp, onWorkspaceCreate, onSyncComplete, onActivity, isActive, showHeader = true, onStateChange },
   ref,
 ) {
+  const onActivityRef = useRef(onActivity);
+  onActivityRef.current = onActivity;
+  const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (activityTimer.current) clearTimeout(activityTimer.current);
+  }, []);
   const { currentProject } = useProject();
   const { data: session } = useSession();
   const isRosProject = currentProject?.project_type === 'ros';
@@ -208,6 +216,8 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
         : (event.data as string);
       pendingChunks.push(chunk);
       if (rafId === null) rafId = requestAnimationFrame(flushWrites);
+      if (activityTimer.current) clearTimeout(activityTimer.current);
+      activityTimer.current = setTimeout(() => onActivityRef.current?.(), 1200);
     };
 
     ws.onclose = () => {
@@ -382,7 +392,7 @@ const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminalProps>(
   return (
     <div className="h-full flex flex-col bg-[#0e0e0e] font-mono">
       {showHeader && (
-        <div className="flex items-center justify-between px-3 h-9 border-b border-white/[0.06] bg-black flex-shrink-0">
+        <div className="flex items-center justify-between px-3 h-9 border-b border-line bg-surface flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-xs text-white/60">Sandbox Terminal</span>

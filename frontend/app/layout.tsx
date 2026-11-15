@@ -48,7 +48,7 @@ export default function RootLayout({
             <ProjectProvider>
               {children}
             </ProjectProvider>
-            <Toaster position="top-right" />
+            <Toaster position="top-right" closeButton />
             <Analytics />
           </SessionProvider>
         </ThemeProvider>
