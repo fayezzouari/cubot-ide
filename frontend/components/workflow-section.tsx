@@ -1,33 +1,38 @@
-'use client';
+import { ChevronRight } from 'lucide-react';
+import ShotCrop from '@/components/shot-crop';
 
 const steps = [
   {
     number: '01',
-    title: 'Write',
-    subtitle: 'Code or click — your choice',
-    description: 'Write embedded C/C++ in the full IDE with AI suggestions, or drag-and-drop visual blocks to program robot behaviors. No setup, no installs.',
-    tags: ['Monaco Editor', 'AI Chat', 'Block Builder'],
+    title: 'Design',
+    line: 'Describe a part and get a parametric assembly you can print.',
+    chips: ['CAD Designer', 'STL'],
+    tint: 'text-ws-cad',
+    shot: { src: '/cad-demo.png', zoom: 2, x: 72, y: 60 },
   },
   {
     number: '02',
-    title: 'Compile',
-    subtitle: 'Target any microcontroller',
-    description: 'One-click compilation via Docker-containerized toolchains. Get real-time build logs, AI-explained error messages, and ready-to-flash binaries.',
-    tags: ['Arduino', 'ESP32', 'TI ARM'],
+    title: 'Program',
+    line: 'Write C++ or ROS nodes with AI help, or snap blocks together.',
+    chips: ['Code IDE', 'Block Builder'],
+    tint: 'text-ws-ide',
+    shot: { src: '/jde-demo.png', zoom: 2.2, x: 30, y: 10 },
   },
   {
     number: '03',
     title: 'Simulate',
-    subtitle: 'Test without hardware',
-    description: 'Run your compiled code on a virtual microcontroller. Monitor GPIO states, ADC readings, UART output, and timing — all in real-time.',
-    tags: ['ATmega328P', 'Serial Monitor', 'GPIO Sim'],
+    line: 'Run firmware on a virtual board and programs in a 3D robot cell.',
+    chips: ['ATmega328P', '3D cell'],
+    tint: 'text-ws-blocks',
+    shot: { src: '/block-demo.png', zoom: 2.4, x: 100, y: 14 },
   },
   {
     number: '04',
     title: 'Deploy',
-    subtitle: 'Ship to real hardware',
-    description: 'Flash your HEX file directly to a connected Arduino board from the browser. Or export and use any standard programmer — the choice is yours.',
-    tags: ['HEX Export', 'OTA Upload', 'Serial Flash'],
+    line: 'Flash a board from the browser, or drive a real fleet over VDA 5050.',
+    chips: ['USB flash', 'MQTT'],
+    tint: 'text-ws-fleet',
+    shot: { src: '/fleet-demo.png', zoom: 1.8, x: 16, y: 50 },
   },
 ];
 
@@ -35,58 +40,43 @@ export default function WorkflowSection() {
   return (
     <section className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
-
-        <div className="mb-16">
+        <div className="mb-12 max-w-2xl">
           <h2 className="text-3xl md:text-4xl font-bold text-ink mb-4 tracking-tight">
-            From idea to hardware<br />in four steps.
+            From idea to hardware in four steps.
           </h2>
-          <p className="text-ink-3 text-sm max-w-md leading-relaxed">
-            A complete loop that takes you from writing the first line of code
-            to running firmware on a real microcontroller.
+          <p className="text-base text-ink-2 leading-relaxed">
+            One project carries you from the first sketch to a running robot.
           </p>
         </div>
 
-        {/* Steps */}
-        <div className="relative">
-          {/* Connector line */}
-          <div className="absolute left-[19px] top-6 bottom-6 w-px bg-line hidden md:block" style={{ left: '2.25rem' }} />
+        <ol className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          {steps.map(({ number, title, line, chips, tint, shot }, i) => (
+            <li key={number} className="relative">
+              {i < steps.length - 1 && (
+                <ChevronRight
+                  size={18}
+                  aria-hidden="true"
+                  className="hidden lg:block absolute -right-[19px] top-[22%] text-line-strong"
+                />
+              )}
 
-          <div className="space-y-3">
-            {steps.map(({ number, title, subtitle, description, tags }) => (
-              <div
-                key={number}
-                className="group grid md:grid-cols-[auto_1fr_auto] gap-6 items-start p-6 rounded-xl border border-line bg-surface hover:bg-raised hover:border-line-strong transition-all"
-              >
-                {/* Step number */}
-                <div className="w-9 h-9 rounded-lg border border-line bg-surface flex items-center justify-center flex-shrink-0 relative z-10">
-                  <span className="text-xs text-ink-3 group-hover:text-ink-2 transition-colors">{number}</span>
-                </div>
+              <ShotCrop {...shot} className="aspect-[16/10] rounded-xl border border-line-strong mb-5" />
 
-                {/* Content */}
-                <div>
-                  <div className="flex items-baseline gap-3 mb-1">
-                    <h3 className="text-sm font-semibold text-ink">{title}</h3>
-                    <span className="text-xs text-ink-3">{subtitle}</span>
-                  </div>
-                  <p className="text-xs text-ink-3 leading-relaxed max-w-lg">{description}</p>
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-1.5 md:justify-end">
-                  {tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-xs text-ink-3 border border-line px-2 py-0.5 rounded-lg whitespace-nowrap"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+              <div className="flex items-baseline gap-3 mb-2">
+                <span className={`text-3xl font-bold tracking-tight tabular-nums ${tint}`}>{number}</span>
+                <h3 className="text-lg font-semibold text-ink">{title}</h3>
               </div>
-            ))}
-          </div>
-        </div>
-
+              <p className="text-sm text-ink-2 leading-relaxed mb-4">{line}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {chips.map((chip) => (
+                  <span key={chip} className="text-xs text-ink-2 border border-line px-2 py-0.5 rounded-md">
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   );
