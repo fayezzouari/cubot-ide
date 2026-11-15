@@ -19,7 +19,7 @@ const demos = [
       'Flash HEX binaries to real hardware from the browser',
     ],
     badge: 'AI-assisted',
-    badgeColor: 'text-blue-400/60 border-blue-400/20',
+    badgeColor: 'text-ws-ide border-ws-ide/25',
   },
   {
     id: 'blocks',
@@ -35,7 +35,7 @@ const demos = [
       'Auto-save with persistent program history',
     ],
     badge: 'Visual',
-    badgeColor: 'text-green-400/60 border-green-400/20',
+    badgeColor: 'text-ws-cad border-ws-cad/25',
   },
   {
     id: 'cad',
@@ -51,7 +51,7 @@ const demos = [
       'Iterative design via conversation',
     ],
     badge: 'AI-generated',
-    badgeColor: 'text-purple-400/60 border-purple-400/20',
+    badgeColor: 'text-ws-fleet border-ws-fleet/25',
   },
 ];
 
@@ -60,31 +60,30 @@ export default function DemoSection() {
   const current = demos.find(d => d.id === active)!;
 
   return (
-    <section className="py-24 px-6 border-t border-white/[0.06]">
+    <section className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
 
         {/* Header */}
         <div className="mb-12">
-          <p className="text-xs font-mono text-white/30 mb-3 tracking-widest uppercase">In Action</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+          <h2 className="text-3xl md:text-4xl font-bold text-ink mb-4 tracking-tight">
             See it for yourself.
           </h2>
-          <p className="text-white/40 text-sm max-w-md leading-relaxed">
+          <p className="text-ink-3 text-sm max-w-md leading-relaxed">
             Switch between workspaces to see CuBot in action — from writing firmware
             to building 3D parts with a conversation.
           </p>
         </div>
 
         {/* Tab switcher */}
-        <div className="flex items-center gap-1 mb-8 p-1 rounded-xl border border-white/[0.06] bg-white/[0.02] w-fit">
+        <div className="flex items-center gap-1 mb-8 p-1 rounded-xl border border-line bg-surface w-fit">
           {demos.map(({ id, icon: Icon, label }) => (
             <button
               key={id}
               onClick={() => setActive(id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                 active === id
-                  ? 'bg-white text-black shadow-sm'
-                  : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
+                  ? 'bg-ink text-page shadow-sm'
+                  : 'text-ink-3 hover:text-ink-2 hover:bg-raised'
               }`}
             >
               <Icon size={13} />
@@ -94,16 +93,16 @@ export default function DemoSection() {
         </div>
 
         {/* Demo card */}
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.01] overflow-hidden">
+        <div className="rounded-xl border border-line bg-surface overflow-hidden">
 
           {/* Screenshot */}
-          <div className="relative w-full bg-black border-b border-white/[0.06]" style={{ aspectRatio: '16/9' }}>
+          <div className="relative w-full bg-surface border-b border-line" style={{ aspectRatio: '16/9' }}>
             {/* Browser chrome */}
-            <div className="absolute top-0 left-0 right-0 h-8 bg-[#0a0a0a] border-b border-white/[0.06] flex items-center px-3 gap-1.5 z-10">
-              <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
-              <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
-              <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
-              <span className="ml-4 text-[10px] font-mono text-white/20">cubot.dev/{current.id}</span>
+            <div className="absolute top-0 left-0 right-0 h-8 bg-well border-b border-line flex items-center px-3 gap-1.5 z-10">
+              <span className="w-2.5 h-2.5 rounded-full bg-line" />
+              <span className="w-2.5 h-2.5 rounded-full bg-line" />
+              <span className="w-2.5 h-2.5 rounded-full bg-line" />
+              <span className="ml-4 text-xs text-ink-3">cubot.dev/{current.id}</span>
             </div>
 
             <Image
@@ -115,11 +114,11 @@ export default function DemoSection() {
             />
 
             {/* Gradient fade at bottom */}
-            <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-page/60 to-transparent pointer-events-none" />
 
             {/* Badge overlay */}
             <div className="absolute top-12 right-4 z-10">
-              <span className={`text-[10px] font-mono px-2 py-1 rounded-md border bg-black/60 backdrop-blur-sm ${current.badgeColor}`}>
+              <span className={`text-xs px-2 py-1 rounded-lg border bg-well/60 backdrop-blur-sm ${current.badgeColor}`}>
                 {current.badge}
               </span>
             </div>
@@ -129,17 +128,17 @@ export default function DemoSection() {
           <div className="grid md:grid-cols-2 gap-8 p-8">
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <current.icon size={14} className="text-white/40" />
-                <h3 className="text-sm font-semibold text-white">{current.label}</h3>
-                <span className="text-xs text-white/30">—</span>
-                <span className="text-xs text-white/30">{current.tagline}</span>
+                <current.icon size={14} className="text-ink-3" />
+                <h3 className="text-sm font-semibold text-ink">{current.label}</h3>
+                <span className="text-xs text-ink-3">—</span>
+                <span className="text-xs text-ink-3">{current.tagline}</span>
               </div>
-              <p className="text-sm text-white/40 leading-relaxed">{current.description}</p>
+              <p className="text-sm text-ink-3 leading-relaxed">{current.description}</p>
             </div>
             <ul className="space-y-2.5">
               {current.bullets.map((b) => (
-                <li key={b} className="flex items-start gap-2.5 text-xs text-white/50">
-                  <Check size={11} className="text-white/25 flex-shrink-0 mt-0.5" />
+                <li key={b} className="flex items-start gap-2.5 text-xs text-ink-2">
+                  <Check size={11} className="text-ink-3 flex-shrink-0 mt-0.5" />
                   {b}
                 </li>
               ))}
