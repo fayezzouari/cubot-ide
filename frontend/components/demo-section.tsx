@@ -1,12 +1,25 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { Code2, Boxes, Box, Check, Route } from 'lucide-react';
 import { DEMO_MOCKS } from '@/components/demo-mocks';
 
-const demos = [
+type Demo = {
+  id: string;
+  icon: typeof Code2;
+  label: string;
+  tagline: string;
+  description: string;
+  image?: string;
+  bullets: string[];
+  tint: string;
+};
+
+const demos: Demo[] = [
   {
     id: 'ide',
+    image: '/jde-demo.png',
     icon: Code2,
     label: 'Code IDE',
     tagline: 'ROS and embedded development',
@@ -21,6 +34,7 @@ const demos = [
   },
   {
     id: 'blocks',
+    image: '/block-demo.png',
     icon: Boxes,
     label: 'Block Builder',
     tagline: 'Visual programming for robotics',
@@ -35,6 +49,7 @@ const demos = [
   },
   {
     id: 'cad',
+    image: '/cad-demo.png',
     icon: Box,
     label: 'CAD Designer',
     tagline: 'AI-generated 3D models',
@@ -49,6 +64,7 @@ const demos = [
   },
   {
     id: 'fleet',
+    image: '/fleet-demo.png',
     icon: Route,
     label: 'Fleet Planner',
     tagline: 'Multi-robot coordination',
@@ -122,7 +138,18 @@ export default function DemoSection() {
             <span className="ml-4 text-xs text-ink-3">cubot.dev/{current.id}</span>
           </div>
           <div className="relative w-full" style={{ aspectRatio: '16 / 9' }}>
-            <Mock />
+            {current.image ? (
+              <Image
+                src={current.image}
+                alt={`${current.label} screenshot`}
+                fill
+                className="object-cover object-top"
+                sizes="(max-width: 1024px) 100vw, 800px"
+                priority={current.id === 'ide'}
+              />
+            ) : (
+              <Mock />
+            )}
           </div>
         </div>
       </div>
