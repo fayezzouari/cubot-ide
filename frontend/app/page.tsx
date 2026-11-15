@@ -6,7 +6,7 @@ import WorkflowSection from '@/components/workflow-section';
 import FeaturesSection from '@/components/features-section';
 import CTASection from '@/components/cta-section';
 import Footer from '@/components/footer';
-import TrackDivider from '@/components/track-divider';
+import SectionJourney from '@/components/section-journey';
 import PixelSnow from '@/components/PixelSnow';
 
 export default function Home() {
@@ -44,15 +44,15 @@ export default function Home() {
       <div className="relative z-10">
         <Header />
         <HeroSection />
-        <DemoSection />
-        <TrackDivider />
-        <AboutSection />
-        <TrackDivider delay={-5} />
-        <WorkflowSection />
-        <TrackDivider delay={-9} />
-        <FeaturesSection />
-        <TrackDivider delay={-2} />
-        <CTASection />
+        <SectionJourney
+          stops={[
+            { label: 'See it', content: <DemoSection /> },
+            { label: 'Workspaces', anchor: 'about', content: <AboutSection /> },
+            { label: 'Workflow', content: <WorkflowSection /> },
+            { label: 'Features', anchor: 'features', content: <FeaturesSection /> },
+            { label: 'Get started', anchor: 'github', content: <CTASection /> },
+          ]}
+        />
         <Footer />
       </div>
     </main>
