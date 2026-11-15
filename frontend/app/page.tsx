@@ -9,7 +9,7 @@ import PixelSnow from '@/components/PixelSnow';
 
 export default function Home() {
   return (
-    <main className="bg-well text-ink font-sans relative">
+    <main className="bg-black text-ink font-sans relative">
 
       {/* Particle effect */}
       <div

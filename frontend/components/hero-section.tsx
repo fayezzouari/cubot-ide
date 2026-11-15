@@ -164,7 +164,7 @@ function useCubeTour() {
 
       const zoom = lerp(a < 0 ? 0 : 1, b < 0 ? 0 : 1, t);
       light.style.opacity = String(zoom);
-      light.style.background = `radial-gradient(circle at ${target.x}px ${target.y}px, transparent ${h * 0.17}px, rgba(6,6,6,0.9) ${h * 0.42}px)`;
+      light.style.background = `radial-gradient(circle at ${target.x}px ${target.y}px, transparent ${h * 0.17}px, rgba(0,0,0,0.92) ${h * 0.42}px)`;
       fading.forEach((el) => {
         el.style.opacity = String(1 - zoom);
         el.style.visibility = zoom > 0.99 ? 'hidden' : '';
