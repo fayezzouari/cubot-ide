@@ -1,26 +1,28 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
+const PROOF = ['No credit card', 'No installation', 'Open source'];
+
+const CALLOUTS = [
+  { code: 'AGV-01', text: 'to dock, 38 s', x: 193, y: 460, shift: '-translate-x-1/2' },
+  { code: 'AGV-02', text: 'waiting', x: 445, y: 566, shift: '-translate-x-1/3' },
+  { code: '', text: 'Charging dock', x: 885, y: 282, shift: '-translate-x-[88%] -translate-y-full' },
+];
+
 export default function CTASection() {
   return (
     <section id="github" className="py-24 px-6">
-      <div className="max-w-3xl mx-auto">
-
-        {/* Main CTA box */}
-        <div className="rounded-xl border border-line bg-surface p-12 text-center relative overflow-hidden">
-          {/* Subtle glow */}
-          <div className="absolute inset-0 pointer-events-none"
-            style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.06), transparent 70%)' }} />
-
-          <h2 className="text-3xl md:text-5xl font-bold text-ink mb-5 tracking-tight leading-tight relative z-10">
-            Build something real.<br />No hardware required.
+      <div className="max-w-6xl mx-auto grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-center gap-10 lg:gap-6">
+        <div>
+          <h2 className="text-4xl md:text-6xl font-bold text-ink mb-6 tracking-[-0.04em] leading-[1.05]">
+            Build something real. No hardware required.
           </h2>
-          <p className="text-sm text-ink-3 mb-10 leading-relaxed max-w-md mx-auto relative z-10">
+          <p className="text-base md:text-lg text-ink-2 mb-8 leading-relaxed max-w-md">
             CuBot is free and open-source. Open your browser, start a project, and
             go from code to virtual hardware in under a minute.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-center relative z-10">
+          <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/dashboard"
               className="inline-flex items-center gap-2 px-6 py-3 bg-ink hover:bg-white text-page font-medium text-sm rounded-lg transition-all"
@@ -40,19 +42,28 @@ export default function CTASection() {
               Star on GitHub
             </a>
           </div>
+
+          <div className="flex flex-wrap items-center gap-x-7 gap-y-2 mt-12">
+            {PROOF.map((item) => (
+              <span key={item} className="text-sm text-ink-3">{item}</span>
+            ))}
+          </div>
         </div>
 
-        {/* Mini proof strip */}
-        <div className="flex items-center justify-center gap-8 mt-10">
-          {[
-            'No credit card',
-            'No installation',
-            'Open source',
-          ].map((item, i) => (
-            <span key={i} className="text-xs text-ink-3">{item}</span>
+        <div className="relative" style={{ aspectRatio: '920 / 780' }} aria-hidden="true">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/landing/cta-fleet.svg" alt="" className="absolute inset-0 w-full h-full" />
+          {CALLOUTS.map(({ code, text, x, y, shift }) => (
+            <span
+              key={text}
+              className={`hidden sm:flex absolute items-center gap-2 h-9 px-3 rounded-lg bg-surface border border-line text-sm whitespace-nowrap ${shift}`}
+              style={{ left: `${(x / 920) * 100}%`, top: `${(y / 780) * 100}%` }}
+            >
+              {code && <span className="font-mono text-ws-fleet">{code}</span>}
+              <span className={code ? 'text-ink-2' : 'text-ink'}>{text}</span>
+            </span>
           ))}
         </div>
-
       </div>
     </section>
   );
