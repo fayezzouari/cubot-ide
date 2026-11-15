@@ -189,3 +189,19 @@
 .react-flow__controls-button:hover svg {
   stroke: rgba(255, 255, 255, 0.8) !important;
 }
+
+@keyframes track-run {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(100% + 356px)); }
+}
+
+.track-runner {
+  animation: track-run 18s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track-runner {
+    animation: none;
+    transform: translateX(38%);
+  }
+}

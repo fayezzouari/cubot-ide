@@ -33,15 +33,14 @@ const steps = [
 
 export default function WorkflowSection() {
   return (
-    <section className="py-24 px-6 border-t border-white/[0.06]">
+    <section className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
 
         <div className="mb-16">
-          <p className="text-xs font-mono text-white/30 mb-3 tracking-widest uppercase">Workflow</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+          <h2 className="text-3xl md:text-4xl font-bold text-ink mb-4 tracking-tight">
             From idea to hardware<br />in four steps.
           </h2>
-          <p className="text-white/40 text-sm max-w-md leading-relaxed">
+          <p className="text-ink-3 text-sm max-w-md leading-relaxed">
             A complete loop that takes you from writing the first line of code
             to running firmware on a real microcontroller.
           </p>
@@ -50,26 +49,26 @@ export default function WorkflowSection() {
         {/* Steps */}
         <div className="relative">
           {/* Connector line */}
-          <div className="absolute left-[19px] top-6 bottom-6 w-px bg-white/[0.05] hidden md:block" style={{ left: '2.25rem' }} />
+          <div className="absolute left-[19px] top-6 bottom-6 w-px bg-line hidden md:block" style={{ left: '2.25rem' }} />
 
           <div className="space-y-3">
             {steps.map(({ number, title, subtitle, description, tags }) => (
               <div
                 key={number}
-                className="group grid md:grid-cols-[auto_1fr_auto] gap-6 items-start p-6 rounded-xl border border-white/[0.06] bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/[0.10] transition-all"
+                className="group grid md:grid-cols-[auto_1fr_auto] gap-6 items-start p-6 rounded-xl border border-line bg-surface hover:bg-raised hover:border-line-strong transition-all"
               >
                 {/* Step number */}
-                <div className="w-9 h-9 rounded-lg border border-white/[0.08] bg-black flex items-center justify-center flex-shrink-0 relative z-10">
-                  <span className="text-[10px] font-mono text-white/30 group-hover:text-white/50 transition-colors">{number}</span>
+                <div className="w-9 h-9 rounded-lg border border-line bg-surface flex items-center justify-center flex-shrink-0 relative z-10">
+                  <span className="text-xs text-ink-3 group-hover:text-ink-2 transition-colors">{number}</span>
                 </div>
 
                 {/* Content */}
                 <div>
                   <div className="flex items-baseline gap-3 mb-1">
-                    <h3 className="text-sm font-semibold text-white">{title}</h3>
-                    <span className="text-xs text-white/30">{subtitle}</span>
+                    <h3 className="text-sm font-semibold text-ink">{title}</h3>
+                    <span className="text-xs text-ink-3">{subtitle}</span>
                   </div>
-                  <p className="text-xs text-white/35 leading-relaxed max-w-lg">{description}</p>
+                  <p className="text-xs text-ink-3 leading-relaxed max-w-lg">{description}</p>
                 </div>
 
                 {/* Tags */}
@@ -77,7 +76,7 @@ export default function WorkflowSection() {
                   {tags.map((tag) => (
                     <span
                       key={tag}
-                      className="text-[10px] font-mono text-white/25 border border-white/[0.06] px-2 py-0.5 rounded-md whitespace-nowrap"
+                      className="text-xs text-ink-3 border border-line px-2 py-0.5 rounded-lg whitespace-nowrap"
                     >
                       {tag}
                     </span>

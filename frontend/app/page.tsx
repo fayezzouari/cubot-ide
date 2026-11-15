@@ -6,19 +6,12 @@ import WorkflowSection from '@/components/workflow-section';
 import FeaturesSection from '@/components/features-section';
 import CTASection from '@/components/cta-section';
 import Footer from '@/components/footer';
+import SectionJourney from '@/components/section-journey';
 import PixelSnow from '@/components/PixelSnow';
 
 export default function Home() {
   return (
-    <main className="bg-black text-foreground font-sans relative">
-      {/* Dot grid */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0"
-        style={{
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)`,
-          backgroundSize: '48px 48px',
-        }}
-      />
+    <main className="bg-well text-ink font-sans relative">
 
       {/* Particle effect */}
       <div
@@ -51,11 +44,15 @@ export default function Home() {
       <div className="relative z-10">
         <Header />
         <HeroSection />
-        <DemoSection />
-        <AboutSection />
-        <WorkflowSection />
-        <FeaturesSection />
-        <CTASection />
+        <SectionJourney
+          stops={[
+            { label: 'See it', content: <DemoSection /> },
+            { label: 'Workspaces', anchor: 'about', content: <AboutSection /> },
+            { label: 'Workflow', content: <WorkflowSection /> },
+            { label: 'Features', anchor: 'features', content: <FeaturesSection /> },
+            { label: 'Get started', anchor: 'github', content: <CTASection /> },
+          ]}
+        />
         <Footer />
       </div>
     </main>

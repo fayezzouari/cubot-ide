@@ -58,25 +58,31 @@ const workspaces = [
 ];
 
 
+const TINTS: Record<string, string> = {
+  '/ide': 'text-ws-ide bg-ws-ide/10 border-ws-ide/25',
+  '/blocks': 'text-ws-blocks bg-ws-blocks/10 border-ws-blocks/25',
+  '/cad': 'text-ws-cad bg-ws-cad/10 border-ws-cad/25',
+  '/fleet': 'text-ws-fleet bg-ws-fleet/10 border-ws-fleet/25',
+};
+
 const mcus = [
-  { name: 'Arduino', chip: 'ATmega328P', color: 'text-green-400/40' },
-  { name: 'ESP32 (Upcoming)', chip: 'Xtensa LX6', color: 'text-blue-400/40' },
-  { name: 'STM32F4 (Upcoming)', chip: 'ARM Cortex-M4', color: 'text-purple-400/40' },
-  { name: 'STM32L476 (Upcoming)', chip: 'Cortex-M4 LP', color: 'text-orange-400/40' },
+  { name: 'Arduino', chip: 'ATmega328P', color: 'text-ws-cad' },
+  { name: 'ESP32 (Upcoming)', chip: 'Xtensa LX6', color: 'text-ws-ide' },
+  { name: 'STM32F4 (Upcoming)', chip: 'ARM Cortex-M4', color: 'text-ws-fleet' },
+  { name: 'STM32L476 (Upcoming)', chip: 'Cortex-M4 LP', color: 'text-ws-blocks' },
 ];
 
 export default function AboutSection() {
   return (
-    <section id="about" className="py-24 px-6 border-t border-white/[0.06]">
+    <section id="about" className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
 
         {/* Header */}
         <div className="mb-16">
-          <p className="text-xs font-mono text-white/30 mb-3 tracking-widest uppercase">Platform</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+          <h2 className="text-3xl md:text-4xl font-bold text-ink mb-4 tracking-tight">
             Four workspaces.<br />One platform.
           </h2>
-          <p className="text-white/40 text-sm max-w-md leading-relaxed">
+          <p className="text-ink-3 text-sm max-w-md leading-relaxed">
             Switch between a pro code editor, visual block builder, AI CAD designer
             and fleet planner — all connected to the same project.
           </p>
@@ -87,34 +93,34 @@ export default function AboutSection() {
           {workspaces.map(({ icon: Icon, title, subtitle, desc, items, tag }) => (
             <div
               key={title}
-              className="group p-6 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.03] transition-all relative overflow-hidden"
+              className="group p-6 rounded-xl border border-line bg-surface hover:border-line-strong hover:bg-raised transition-all relative overflow-hidden"
             >
               {/* Subtle glow on hover */}
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
                 style={{ background: 'radial-gradient(ellipse at top left, rgba(255,255,255,0.02), transparent 70%)' }} />
 
               <div className="flex items-center gap-3 mb-5">
-                <div className="w-9 h-9 rounded-lg border border-white/[0.08] bg-white/[0.04] flex items-center justify-center text-white/50">
+                <div className={`w-9 h-9 rounded-lg border flex items-center justify-center ${TINTS[tag] ?? 'border-line bg-raised text-ink-2'}`}>
                   <Icon size={16} />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-white text-sm">{title}</h3>
-                  <p className="text-xs text-white/30">{subtitle}</p>
+                  <h3 className="font-semibold text-ink text-sm">{title}</h3>
+                  <p className="text-xs text-ink-3">{subtitle}</p>
                 </div>
               </div>
 
-              <p className="text-sm text-white/35 leading-relaxed mb-5">{desc}</p>
+              <p className="text-sm text-ink-3 leading-relaxed mb-5">{desc}</p>
 
               <ul className="space-y-2">
                 {items.map((item) => (
-                  <li key={item} className="flex items-center gap-2 text-xs text-white/45">
-                    <Check size={10} className="text-white/25 flex-shrink-0" />
+                  <li key={item} className="flex items-center gap-2 text-xs text-ink-3">
+                    <Check size={10} className="text-ink-3 flex-shrink-0" />
                     {item}
                   </li>
                 ))}
               </ul>
 
-              <span className="absolute bottom-4 right-5 text-[10px] font-mono text-white/10 select-none">{tag}</span>
+              <span className="absolute bottom-4 right-5 text-xs text-line-strong select-none">{tag}</span>
             </div>
           ))}
         </div>
@@ -123,15 +129,15 @@ export default function AboutSection() {
 
         {/* MCU grid */}
         <div>
-          <p className="text-xs font-mono text-white/20 mb-6 tracking-widest uppercase">Supported Microcontrollers</p>
+          <p className="text-xs text-ink-3 mb-6">Supported Microcontrollers</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {mcus.map(({ name, chip, color }) => (
-              <div key={name} className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.10] transition-colors group">
-                <div className="w-8 h-8 rounded-lg border border-white/[0.08] flex items-center justify-center mb-3">
+              <div key={name} className="p-4 rounded-xl border border-line bg-surface hover:border-line-strong transition-colors group">
+                <div className="w-8 h-8 rounded-lg border border-line flex items-center justify-center mb-3">
                   <Cpu size={14} className={`${color} group-hover:opacity-80 transition-opacity`} />
                 </div>
-                <p className="text-xs font-semibold text-white/60 mb-0.5">{name}</p>
-                <p className="text-xs text-white/30 font-mono">{chip}</p>
+                <p className="text-xs font-semibold text-ink-2 mb-0.5">{name}</p>
+                <p className="text-xs text-ink-3">{chip}</p>
               </div>
             ))}
           </div>
