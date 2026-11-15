@@ -43,52 +43,48 @@ const features = [
 
 export default function FeaturesSection() {
   return (
-    <section id="features" className="py-24 px-6 border-t border-white/[0.06]">
+    <section id="features" className="py-24 px-6">
       <div className="max-w-6xl mx-auto">
 
         <div className="mb-16">
-          <p className="text-xs font-mono text-white/30 mb-3 tracking-widest uppercase">Capabilities</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+          <h2 className="text-3xl md:text-4xl font-bold text-ink mb-4 tracking-tight">
             Built for the full<br />development loop.
           </h2>
-          <p className="text-white/40 text-sm max-w-md leading-relaxed">
+          <p className="text-ink-3 text-sm max-w-md leading-relaxed">
             From first line of code to physical hardware — every step is covered,
             AI-assisted, and runs entirely in your browser.
           </p>
         </div>
 
         {/* Feature grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-white/[0.04] rounded-xl overflow-hidden">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-line rounded-xl overflow-hidden">
           {features.map(({ icon: Icon, title, description, detail }, index) => (
             <div
               key={index}
-              className="group p-6 bg-black hover:bg-white/[0.02] transition-colors relative"
+              className="group p-6 bg-surface hover:bg-raised transition-colors relative"
             >
               <div className="mb-5">
-                <div className="w-8 h-8 rounded-lg border border-white/[0.08] flex items-center justify-center text-white/40 mb-4 group-hover:border-white/[0.15] transition-colors">
+                <div className="w-8 h-8 rounded-lg border border-line flex items-center justify-center text-ink-3 mb-4 group-hover:border-line-strong transition-colors">
                   <Icon size={14} />
                 </div>
-                <h3 className="text-sm font-semibold text-white/85 mb-2">{title}</h3>
-                <p className="text-xs text-white/35 leading-relaxed">{description}</p>
+                <h3 className="text-sm font-semibold text-ink mb-2">{title}</h3>
+                <p className="text-xs text-ink-3 leading-relaxed">{description}</p>
               </div>
-              <span className="inline-flex items-center text-[10px] font-mono text-white/20 border border-white/[0.06] px-2 py-0.5 rounded-md">
+              <span className="inline-flex items-center text-xs text-ink-3 border border-line px-2 py-0.5 rounded-lg">
                 {detail}
-              </span>
-              <span className="absolute top-4 right-5 text-[10px] font-mono text-white/10 select-none">
-                {String(index + 1).padStart(2, '0')}
               </span>
             </div>
           ))}
         </div>
 
         {/* Supported platforms */}
-        <div className="mt-14 pt-10 border-t border-white/[0.04]">
-          <p className="text-xs font-mono text-white/20 mb-6 tracking-widest uppercase text-center">
+        <div className="mt-14 pt-10 border-t border-line">
+          <p className="text-xs text-ink-3 mb-6 text-center">
             Supported Hardware
           </p>
           <div className="flex flex-wrap items-center justify-center gap-8">
             {['Arduino', 'ESP32', 'STM32 Nucleo', 'ROSbot 2 Pro', 'LEGO Mindstorms', 'Raspberry Pi'].map((p) => (
-              <span key={p} className="text-xs text-white/20 hover:text-white/45 transition-colors font-mono cursor-default">
+              <span key={p} className="text-xs text-ink-3 hover:text-ink-3 transition-colors cursor-default">
                 {p}
               </span>
             ))}
