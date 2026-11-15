@@ -75,9 +75,6 @@ export default function IDEPage() {
     return [];
   }, [currentProject?.files, projectFileTree]);
 
-  // Build sandbox file tree using explicit type info from the backend.
-  const sandboxFileTree = useMemo(() => buildSandboxFileTree(sandboxEntries), [sandboxEntries]);
-
   // Determine the full relative path for a project file (dir + name)
   const projectFilePaths = useMemo(() => {
     if (!currentProject?.files) return new Set<string>();
@@ -90,6 +87,35 @@ export default function IDEPage() {
       })
     );
   }, [currentProject?.files]);
+
+  const explorerEntries = useMemo(() => {
+    const listed = new Set(sandboxEntries.map(entry => entry.path));
+    const tracked = [...projectFilePaths]
+      .filter(path => !listed.has(path))
+      .map(path => ({ path, type: 'file' as const }));
+    return [...sandboxEntries, ...tracked];
+  }, [sandboxEntries, projectFilePaths]);
+
+  const sandboxFileTree = useMemo(() => buildSandboxFileTree(explorerEntries), [explorerEntries]);
+
+  const activeWorkspaceRef = useRef<string | null>(null);
+  activeWorkspaceRef.current = activeWorkspaceId;
+
+  const refreshSandboxEntries = useCallback(async () => {
+    const wsId = activeWorkspaceRef.current;
+    if (!wsId) return;
+    try {
+      const { entries } = await sandboxApi.listFiles(wsId);
+      if (activeWorkspaceRef.current !== wsId) return;
+      setSandboxEntries(prev =>
+        prev.length === entries.length && prev.every((entry, i) => entry.path === entries[i].path && entry.type === entries[i].type)
+          ? prev
+          : entries,
+      );
+    } catch (err) {
+      console.error('Failed to refresh sandbox files:', err);
+    }
+  }, []);
 
   // Map from sandbox-relative-path → project file ID (tracked files)
   const sandboxToProjectMap = useMemo(() => {
@@ -218,6 +244,7 @@ export default function IDEPage() {
   /** Pull the latest file contents from the server after the agent changed files. */
   const refreshFilesFromServer = async (changed: FileOperation[] | FileChange[]) => {
     if (!currentProject) return;
+    void refreshSandboxEntries();
     await loadProject(currentProject.id);
     const updatedProject = await projectService.getWithFiles(currentProject.id);
     const newContents: Record<string, string> = {};
@@ -516,6 +543,8 @@ export default function IDEPage() {
           if (event.file_op) {
             // Refresh the editor as soon as a file lands so the user watches the change happen.
             void refreshFilesFromServer([event.file_op]);
+          } else {
+            void refreshSandboxEntries();
           }
           break;
         case 'done': {
@@ -1163,6 +1192,7 @@ export default function IDEPage() {
                     workspaceId={activeWorkspaceId ?? undefined}
                     onWorkspaceCreate={handleWorkspaceCreate}
                     onSyncComplete={handleSyncComplete}
+                    onActivity={refreshSandboxEntries}
                   />
                 </ResizablePanel>
               </ResizablePanelGroup>
