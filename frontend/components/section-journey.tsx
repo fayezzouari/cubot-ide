@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, Fragment, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import TrackDivider, { LineFollower } from '@/components/track-divider';
 import { cn } from '@/lib/utils';
 
@@ -8,9 +8,38 @@ export interface JourneyStop {
   label: string;
   anchor?: string;
   content: ReactNode;
+  /** Screens of scroll the stop stays on before driving to the next one. */
+  hold?: number;
 }
 
 const DWELL = 0.6;
+const DRIVE = 1 - DWELL;
+
+/** How far the reader has scrolled through one stop's hold, from 0 to 1. */
+class StopProgress {
+  value = 0;
+  private listeners = new Set<(value: number) => void>();
+  set(value: number) {
+    if (value === this.value) return;
+    this.value = value;
+    this.listeners.forEach((listener) => listener(value));
+  }
+  subscribe(listener: (value: number) => void) {
+    this.listeners.add(listener);
+    listener(this.value);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+}
+
+const StopContext = createContext<{ staged: boolean; progress: StopProgress | null }>({ staged: false, progress: null });
+
+/** Lets a stop's content follow the scroll while the journey holds on it. */
+export function useStopProgress() {
+  return useContext(StopContext);
+}
+
 const STAGED ='(min-width: 1024px) and (min-height: 640px) and (prefers-reduced-motion: no-preference)';
 
 export default function SectionJourney({ stops }: { stops: JourneyStop[] }) {
@@ -23,6 +52,13 @@ export default function SectionJourney({ stops }: { stops: JourneyStop[] }) {
   const [active, setActive] = useState(0);
   const [fits, setFits] = useState<number[]>([]);
   const last = stops.length - 1;
+  const holdKey = stops.map((stop) => stop.hold ?? DWELL).join(',');
+  const { holds, starts, total } = useMemo(() => {
+    const holds = holdKey.split(',').map(Number);
+    const starts = holds.map((_, i) => holds.slice(0, i).reduce((sum, hold) => sum + hold + DRIVE, 0));
+    return { holds, starts, total: starts[starts.length - 1] + holds[holds.length - 1] };
+  }, [holdKey]);
+  const progresses = useMemo(() => Array.from({ length: stops.length }, () => new StopProgress()), [stops.length]);
 
   useEffect(() => {
     const query = window.matchMedia(STAGED);
@@ -39,10 +75,13 @@ export default function SectionJourney({ stops }: { stops: JourneyStop[] }) {
       if (!el) return;
       const travel = el.offsetHeight - window.innerHeight;
       const progress = Math.min(Math.max(-el.getBoundingClientRect().top / travel, 0), 1);
-      const units = progress * (last + DWELL);
-      const stop = Math.min(Math.floor(units), last);
-      const drive = stop < last ? Math.min(Math.max((units - stop - DWELL) / (1 - DWELL), 0), 1) : 0;
+      const units = progress * total;
+      let stop = 0;
+      while (stop < last && starts[stop + 1] <= units) stop += 1;
+      const local = units - starts[stop];
+      const drive = stop < last ? Math.min(Math.max((local - holds[stop]) / DRIVE, 0), 1) : 0;
       const position = ((stop + drive) / last) * 100;
+      progresses.forEach((p, i) => p.set(i < stop ? 1 : i > stop ? 0 : Math.min(local / holds[stop], 1)));
       if (robot.current) robot.current.style.left = `${position}%`;
       if (trail.current) trail.current.style.width = `${position}%`;
       setActive(stop);
@@ -54,7 +93,7 @@ export default function SectionJourney({ stops }: { stops: JourneyStop[] }) {
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
     };
-  }, [staged, last]);
+  }, [staged, last, holds, starts, total, progresses]);
 
   useEffect(() => {
     if (!staged) return;
@@ -74,10 +113,10 @@ export default function SectionJourney({ stops }: { stops: JourneyStop[] }) {
       const el = root.current;
       if (!el) return;
       const travel = el.offsetHeight - window.innerHeight;
-      const top = el.getBoundingClientRect().top + window.scrollY + (travel * (index + DWELL / 4)) / (last + DWELL);
+      const top = el.getBoundingClientRect().top + window.scrollY + (travel * (starts[index] + 0.1)) / total;
       window.scrollTo({ top, behavior: 'smooth' });
     },
-    [last],
+    [starts, total],
   );
 
   useEffect(() => {
@@ -95,7 +134,7 @@ export default function SectionJourney({ stops }: { stops: JourneyStop[] }) {
   }, [staged, stops, go]);
 
   return (
-    <div ref={root} style={staged ? { height: `${(stops.length + DWELL) * 100}vh` } : undefined}>
+    <div ref={root} style={staged ? { height: `${(total + 1) * 100}vh` } : undefined}>
       <div className={staged ? 'sticky top-0 h-screen flex flex-col pt-20 overflow-hidden' : undefined}>
         <div ref={area} className={staged ? 'relative flex-1 min-h-0' : undefined}>
           {stops.map((stop, i) => (
@@ -119,7 +158,7 @@ export default function SectionJourney({ stops }: { stops: JourneyStop[] }) {
                   className={staged ? 'w-full [&>section]:py-0 [&>section]:px-10 xl:[&>section]:px-16 [&>section>div]:max-w-none' : undefined}
                   style={staged ? { transform: `scale(${fits[i] ?? 1})` } : undefined}
                 >
-                  {stop.content}
+                  <StopContext.Provider value={{ staged, progress: progresses[i] }}>{stop.content}</StopContext.Provider>
                 </div>
               </div>
             </Fragment>

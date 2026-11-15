@@ -45,7 +45,7 @@ export default function Home() {
         <SectionJourney
           stops={[
             { label: 'Workflow', content: <WorkflowSection /> },
-            { label: 'Features', anchor: 'features', content: <FeaturesSection /> },
+            { label: 'Features', anchor: 'features', hold: 4.5, content: <FeaturesSection /> },
             { label: 'Get started', anchor: 'github', content: <CTASection /> },
           ]}
         />
