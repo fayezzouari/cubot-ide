@@ -1,7 +1,5 @@
 import Header from '@/components/header';
 import HeroSection from '@/components/hero-section';
-import DemoSection from '@/components/demo-section';
-import AboutSection from '@/components/about-section';
 import WorkflowSection from '@/components/workflow-section';
 import FeaturesSection from '@/components/features-section';
 import CTASection from '@/components/cta-section';
@@ -46,10 +44,8 @@ export default function Home() {
         <HeroSection />
         <SectionJourney
           stops={[
-            { label: 'See it', content: <DemoSection /> },
-            { label: 'Workspaces', anchor: 'about', content: <AboutSection /> },
             { label: 'Workflow', content: <WorkflowSection /> },
-            { label: 'Features', anchor: 'features', content: <FeaturesSection /> },
+            { label: 'Features', anchor: 'features', hold: 4.5, content: <FeaturesSection /> },
             { label: 'Get started', anchor: 'github', content: <CTASection /> },
           ]}
         />
