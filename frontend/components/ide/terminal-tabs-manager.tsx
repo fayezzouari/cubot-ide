@@ -21,6 +21,7 @@ interface TerminalTabsManagerProps {
   workspaceId?: string;
   onWorkspaceCreate?: (workspaceId: string) => void;
   onSyncComplete?: (workspaceId: string) => void;
+  onActivity?: () => void;
 }
 
 // Module-level counter ensures unique IDs regardless of tab close/reopen cycles
@@ -30,6 +31,7 @@ export default function TerminalTabsManager({
   workspaceId,
   onWorkspaceCreate,
   onSyncComplete,
+  onActivity,
 }: TerminalTabsManagerProps) {
   const [tabs, setTabs] = useState<TerminalTab[]>([{ id: 'terminal-1', title: 'Terminal 1' }]);
   const [activeTabId, setActiveTabId] = useState('terminal-1');
@@ -176,7 +178,7 @@ export default function TerminalTabsManager({
                 }}
                 workspaceId={workspaceId}
                 onWorkspaceCreate={onWorkspaceCreate}
-                onSyncComplete={onSyncComplete}
+                onSyncComplete={onSyncComplete} onActivity={onActivity}
                 isActive={tab.id === activeTabId}
                 showHeader={false}
                 onStateChange={state => handleStateChange(tab.id, state)}
@@ -199,7 +201,7 @@ export default function TerminalTabsManager({
             <SandboxTerminal
               workspaceId={workspaceId}
               onWorkspaceCreate={onWorkspaceCreate}
-              onSyncComplete={onSyncComplete}
+              onSyncComplete={onSyncComplete} onActivity={onActivity}
               isActive={true}
               showHeader={false}
             />
