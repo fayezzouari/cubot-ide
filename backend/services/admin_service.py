@@ -110,8 +110,8 @@ async def list_users(search: str = "", skip: int = 0, limit: int = 50) -> AdminU
 
     items: List[AdminUserRow] = []
     for d in docs:
-        p, l = projects.get(d["google_id"], {}), lessons.get(d["google_id"], {})
-        seen = [t for t in (p.get("last"), l.get("last"), d.get("updated_at")) if t]
+        proj, lesson = projects.get(d["google_id"], {}), lessons.get(d["google_id"], {})
+        seen = [t for t in (proj.get("last"), lesson.get("last"), d.get("updated_at")) if t]
         items.append(AdminUserRow(
             id=str(d["_id"]),
             google_id=d["google_id"],
@@ -119,8 +119,8 @@ async def list_users(search: str = "", skip: int = 0, limit: int = 50) -> AdminU
             name=d["name"],
             picture=d.get("picture"),
             is_admin=settings.is_admin_email(d["email"]),
-            projects=p.get("count", 0),
-            lessons_passed=l.get("passed", 0),
+            projects=proj.get("count", 0),
+            lessons_passed=lesson.get("passed", 0),
             last_active_at=max(seen) if seen else None,
             created_at=d["created_at"],
         ))
