@@ -100,6 +100,7 @@ jobs:
           BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
@@ -182,6 +183,7 @@ jobs:
           BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID
           SECRET_KEY=$SECRET_KEY
           NEXTAUTH_SECRET=$NEXTAUTH_SECRET
+          ADMIN_EMAILS=$ADMIN_EMAILS
           ALLOWED_ORIGINS=$SITE_URL
           COMPILE_WORKDIR=/compile_tmp
           COMPILE_WORKDIR_HOST=$COMPILE_HOST_DIR

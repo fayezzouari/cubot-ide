@@ -12,6 +12,7 @@ from routes.sandbox import router as sandbox_router
 from routes.users import router as users_router
 from routes.fleet import router as fleet_router
 from routes.missions import router as missions_router
+from routes.admin import router as admin_router
 
 __all__ = [
     "files_router",
@@ -29,4 +30,5 @@ __all__ = [
     "users_router",
     "fleet_router",
     "missions_router",
+    "admin_router",
 ]

@@ -335,6 +335,7 @@ export interface UserProfile {
   email: string;
   name: string;
   picture?: string | null;
+  is_admin: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -360,4 +361,46 @@ export interface UserActivity {
   categories: ActivityCategory[];
   concepts: string[];
   events: ActivityEvent[];
+}
+
+// ── Admin ────────────────────────────────────────────────
+
+export type AdminMetricKey = 'users' | 'projects' | 'ai_messages' | 'lessons_passed';
+
+export interface AdminMetric {
+  key: AdminMetricKey;
+  label: string;
+  total: number;
+  today: number;
+  yesterday: number;
+}
+
+export interface AdminOverview {
+  metrics: AdminMetric[];
+  generated_at: string;
+}
+
+export type AdminUsagePoint = { date: string } & Record<AdminMetricKey, number>;
+
+export interface AdminUsage {
+  days: number;
+  points: AdminUsagePoint[];
+}
+
+export interface AdminUserRow {
+  id: string;
+  google_id: string;
+  email: string;
+  name: string;
+  picture?: string | null;
+  is_admin: boolean;
+  projects: number;
+  lessons_passed: number;
+  last_active_at?: string | null;
+  created_at: string;
+}
+
+export interface AdminUserPage {
+  total: number;
+  items: AdminUserRow[];
 }

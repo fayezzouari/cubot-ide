@@ -23,6 +23,7 @@ from routes import (
     users_router,
     fleet_router,
     missions_router,
+    admin_router,
 )
 import uvicorn
 
@@ -73,6 +74,7 @@ app.include_router(sandbox_router, prefix="/api", dependencies=_auth)
 app.include_router(users_router, prefix="/api", dependencies=_auth)
 app.include_router(fleet_router, prefix="/api", dependencies=_auth)
 app.include_router(missions_router, prefix="/api", dependencies=_auth)
+app.include_router(admin_router, prefix="/api", dependencies=_auth)
 
 
 @app.get("/")

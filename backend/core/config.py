@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     
     # Auth
     NEXTAUTH_SECRET: str
+    # Comma-separated emails that get admin rights. Checked on every request,
+    # so removing an email here revokes access on the next deploy.
+    ADMIN_EMAILS: str = ""
 
     # MongoDB
     MONGODB_URI: str = "mongodb://localhost:27017"
@@ -92,6 +95,13 @@ class Settings(BaseSettings):
 
     # CORS
     ALLOWED_ORIGINS: str = "*"
+
+    @property
+    def admin_emails(self) -> set[str]:
+        return {e.strip().lower() for e in self.ADMIN_EMAILS.split(",") if e.strip()}
+
+    def is_admin_email(self, email: Optional[str]) -> bool:
+        return bool(email) and email.strip().lower() in self.admin_emails
 
     class Config:
         env_file = ".env"

@@ -145,6 +145,8 @@ services:
       - DD_SERVICE=cubot-frontend
       - DD_ENV=${DD_ENV:-production}
       - DD_VERSION=${DD_VERSION:-1.0.0}
+      # Server-side calls (admin page gate) go straight to the backend container
+      - BACKEND_INTERNAL_URL=http://backend:8000/api
     depends_on:
       - backend
     networks:

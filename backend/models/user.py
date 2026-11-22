@@ -16,6 +16,7 @@ class UserResponse(BaseModel):
     email: str
     name: str
     picture: Optional[str] = None
+    is_admin: bool = False
     created_at: datetime
     updated_at: datetime
 
