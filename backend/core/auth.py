@@ -34,3 +34,13 @@ async def get_current_user(conn: HTTPConnection) -> dict:
 
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
+
+
+async def require_admin(current_user: CurrentUser) -> dict:
+    """Allow the request only when the signed-in email is listed in ADMIN_EMAILS."""
+    if not settings.is_admin_email(current_user.get("email")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return current_user
+
+
+AdminUser = Annotated[dict, Depends(require_admin)]
