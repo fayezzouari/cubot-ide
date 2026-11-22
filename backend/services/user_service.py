@@ -1,6 +1,7 @@
 from typing import Optional
 from datetime import datetime
 
+from core.config import settings
 from core.database import get_collection
 from models.user import UserSync, UserResponse
 
@@ -39,6 +40,7 @@ class UserService:
             email=doc["email"],
             name=doc["name"],
             picture=doc.get("picture"),
+            is_admin=settings.is_admin_email(doc["email"]),
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
         )
@@ -55,6 +57,7 @@ class UserService:
             email=doc["email"],
             name=doc["name"],
             picture=doc.get("picture"),
+            is_admin=settings.is_admin_email(doc["email"]),
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],
         )
