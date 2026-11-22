@@ -1,5 +1,8 @@
 import { apiClient } from './client';
 import type {
+  AdminOverview,
+  AdminUsage,
+  AdminUserPage,
   FileResponse,
   FileCreate,
   FileUpdate,
@@ -188,4 +191,17 @@ export const userService = {
 
   activity: () =>
     apiClient.get<UserActivity>('/users/me/activity'),
+};
+
+export const adminService = {
+  overview: () =>
+    apiClient.get<AdminOverview>('/admin/overview'),
+
+  usage: (days = 30) =>
+    apiClient.get<AdminUsage>(`/admin/usage?days=${days}`),
+
+  users: ({ search = '', skip = 0, limit = 50 }: { search?: string; skip?: number; limit?: number } = {}) =>
+    apiClient.get<AdminUserPage>(
+      `/admin/users?${new URLSearchParams({ search, skip: String(skip), limit: String(limit) })}`,
+    ),
 };
