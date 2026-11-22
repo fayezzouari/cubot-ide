@@ -181,7 +181,7 @@ export default function SectionJourney({ stops }: { stops: JourneyStop[] }) {
                   <span
                     className={cn(
                       'block w-2.5 h-2.5 -translate-y-1/2 rounded-full border transition-colors',
-                      i <= active ? 'bg-ink border-ink' : 'bg-well border-line-strong group-hover:border-ink-3',
+                      i <= active ? 'bg-ink border-ink' : 'bg-black border-line-strong group-hover:border-ink-3',
                     )}
                   />
                   <span

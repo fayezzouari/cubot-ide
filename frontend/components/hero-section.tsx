@@ -164,7 +164,7 @@ function useCubeTour() {
 
       const zoom = lerp(a < 0 ? 0 : 1, b < 0 ? 0 : 1, t);
       light.style.opacity = String(zoom);
-      light.style.background = `radial-gradient(circle at ${target.x}px ${target.y}px, transparent ${h * 0.17}px, rgba(6,6,6,0.9) ${h * 0.42}px)`;
+      light.style.background = `radial-gradient(circle at ${target.x}px ${target.y}px, transparent ${h * 0.17}px, rgba(0,0,0,0.92) ${h * 0.42}px)`;
       fading.forEach((el) => {
         el.style.opacity = String(1 - zoom);
         el.style.visibility = zoom > 0.99 ? 'hidden' : '';
@@ -197,6 +197,10 @@ function useCubeTour() {
 
   return { toured, track, stage, frame, scene, camera, spotlight, copy, cards };
 }
+
+// Wide enough to fill the page, but capped by the window height so the
+// bottom cube and its label stay on screen under the copy.
+const SCENE_WIDTH = 'clamp(760px, min(100%, calc((100vh - 356px) * 2.7)), 1600px)';
 
 export default function HeroSection() {
   const navigate = useNavigate();
@@ -238,7 +242,7 @@ export default function HeroSection() {
           <div
             ref={frame}
             className="relative left-1/2"
-            style={{ width: 'clamp(760px, 100%, 1600px)', marginLeft: 'calc(clamp(760px, 100%, 1600px) / -2)' }}
+            style={{ width: SCENE_WIDTH, marginLeft: `calc(${SCENE_WIDTH} / -2)` }}
           >
             <div ref={scene} className="relative -mt-[21.5%]" style={{ aspectRatio: `${SCENE.width} / ${SCENE.height}` }} aria-hidden="true">
               <div ref={camera} className="absolute inset-0 origin-top-left">
@@ -299,7 +303,7 @@ export default function HeroSection() {
                 ref={(el) => {
                   cards.current[i] = el;
                 }}
-                className="absolute left-[39%] top-[54%] w-[min(60rem,56%)] invisible opacity-0 rounded-2xl border border-line-strong bg-well/85 backdrop-blur-md p-5"
+                className="absolute left-[39%] top-[54%] w-[min(60rem,56%,calc(150vh_-_480px))] invisible opacity-0 rounded-2xl border border-line-strong bg-well/85 backdrop-blur-md p-5"
               >
                 <div className="relative mb-4 aspect-[1438/840] overflow-hidden rounded-lg border border-line">
                   <Image src={image} alt={`The ${name} workspace`} fill sizes="(max-width: 1700px) 56vw, 960px" className="object-cover object-top" />
